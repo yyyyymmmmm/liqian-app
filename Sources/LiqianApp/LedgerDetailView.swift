@@ -20,6 +20,7 @@ struct LedgerDetailView: View {
     @State private var batchResultText = ""
     @State private var showBatchResult = false
     @State private var deleteTrigger = 0
+    @State private var pdfURL: URL?
 
     private var isBai: Bool { ledger.isBai }
 
@@ -49,6 +50,10 @@ struct LedgerDetailView: View {
 
     private var peopleCount: Int {
         Set(records.map(\.person)).count
+    }
+
+    private var pdfFingerprint: String {
+        "\(records.count)-\(records.reduce(0) { $0 + $1.amountCents })-\(ledger.title)-\(ledger.date)-\(ledger.type)"
     }
 
     var body: some View {
@@ -112,6 +117,21 @@ struct LedgerDetailView: View {
                     Label("编辑礼簿", systemImage: "pencil")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    // 礼谱 PDF 在记录变化时预生成（同「我的」页 CSV 口径），点开即分享
+                    if let pdfURL {
+                        ShareLink(item: pdfURL) {
+                            Label("导出礼谱 PDF", systemImage: "doc.richtext")
+                        }
+                    }
+                } label: {
+                    Label("更多", systemImage: "ellipsis.circle")
+                }
+            }
+        }
+        .task(id: pdfFingerprint) {
+            pdfURL = GiftBookPDF.makePDF(ledger: ledger, records: records)
         }
         .safeAreaInset(edge: .bottom) {
             GlassEffectContainer(spacing: 12) {

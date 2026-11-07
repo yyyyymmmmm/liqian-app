@@ -22,6 +22,19 @@ struct BatchEntryView: View {
     @State private var saveTrigger = 0
     @State private var errorTrigger = 0
 
+    // 粘贴导入（v2）：整段文字粘贴 → Core 解析预览 → 成功行入库
+    private enum Mode { case rows, paste }
+    @State private var mode: Mode = .rows
+    @State private var pasteText = ""
+    @State private var parsedLines: [ParsedLine]?
+    @State private var pasteMessage: String?
+    @Query private var allRecords: [GiftRecord]
+
+    /// 本簿已有姓名（粘贴预览里给同名提示，导入仍并列保存）
+    private var existingNames: Set<String> {
+        Set(allRecords.filter { $0.ledgerID == ledger.id }.map(\.person))
+    }
+
     struct Row: Identifiable {
         let id = UUID()
         var person = ""
@@ -33,6 +46,17 @@ struct BatchEntryView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("录入方式", selection: $mode) {
+                        Text("逐个录入").tag(Mode.rows)
+                        Text("粘贴导入").tag(Mode.paste)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if mode == .paste {
+                    pasteSections
+                } else {
                 Section {
                     Picker("方向", selection: $direction) {
                         Text("收礼（别人给我）").tag(LiqianConstants.received)
@@ -86,6 +110,7 @@ struct BatchEntryView: View {
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                 }
+                }
             }
             .scrollContentBackground(.hidden)
             .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
@@ -96,8 +121,10 @@ struct BatchEntryView: View {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存全部") { save() }
-                        .tint(isBai ? Palette.baiPrimary : Palette.primary)
+                    if mode == .rows {
+                        Button("保存全部") { save() }
+                            .tint(isBai ? Palette.baiPrimary : Palette.primary)
+                    }
                 }
             }
             .sensoryFeedback(.success, trigger: saveTrigger)
@@ -148,5 +175,127 @@ struct BatchEntryView: View {
         saveTrigger += 1
         onSaved(out.count)
         dismiss()
+    }
+
+    // MARK: - 粘贴导入
+
+    @ViewBuilder
+    private var pasteSections: some View {
+        Section {
+            Text("把旧礼簿的文字整段粘进来，一行一笔：「姓名 金额 关系」，关系可不写。粘贴导入一律按收礼记（别人给我），关系没写先按「朋友」、方式「现金」、日期今天，记完点开单笔可以再改。")
+                .font(.system(size: 12.5))
+                .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+            TextEditor(text: $pasteText)
+                .frame(minHeight: 140)
+            Button {
+                parsedLines = LedgerTextParser.parse(pasteText)
+                pasteMessage = nil
+            } label: {
+                Label("解析预览", systemImage: "text.magnifyingglass")
+            }
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            if let pasteMessage {
+                Text(pasteMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.primary)
+            }
+        }
+
+        if let parsedLines {
+            Section {
+                ForEach(parsedLines) { line in
+                    parsedRow(line)
+                }
+                if parsedLines.contains(where: { $0.isSuccess }) {
+                    Button {
+                        confirmImport()
+                    } label: {
+                        Label(
+                            "确认导入 \(parsedLines.filter { $0.isSuccess }.count) 笔",
+                            systemImage: "checkmark.circle"
+                        )
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                }
+            } header: {
+                Text("解析预览")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func parsedRow(_ line: ParsedLine) -> some View {
+        switch line.result {
+        case .success(let name, let cents, let relation):
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? ""))
+                        .foregroundStyle(Palette.ink)
+                    if existingNames.contains(name) {
+                        Text("本簿已有此人，导入后并列保存")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                Spacer()
+                Text("第 \(line.lineNo) 行")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.stone)
+            }
+        case .failure(let reason):
+            HStack(spacing: 8) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(line.raw)
+                        .foregroundStyle(Palette.ink)
+                    Text(reason)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.red)
+                }
+                Spacer()
+                Text("第 \(line.lineNo) 行")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.stone)
+            }
+        }
+    }
+
+    private func confirmImport() {
+        guard let parsedLines else { return }
+        var imported = 0
+        var failedRaws: [String] = []
+        for line in parsedLines {
+            switch line.result {
+            case .success(let name, let cents, let relation):
+                modelContext.insert(
+                    GiftRecord(
+                        ledgerID: ledger.id,
+                        person: name,
+                        relation: relation ?? "朋友",
+                        amountCents: cents,
+                        direction: LiqianConstants.received,
+                        date: LiqianDate.todayString()
+                    )
+                )
+                imported += 1
+            case .failure:
+                failedRaws.append(line.raw)
+            }
+        }
+        guard imported > 0 else { return }
+        try? modelContext.save()
+        saveTrigger += 1
+        if failedRaws.isEmpty {
+            onSaved(imported)
+            dismiss()
+        } else {
+            // 失败行留在编辑器里，改好再导；已导入的笔数当面说清
+            pasteText = failedRaws.joined(separator: "\n")
+            self.parsedLines = nil
+            pasteMessage = "已导入 \(imported) 笔，剩下 \(failedRaws.count) 行没成功，改好后重新解析导入。"
+        }
     }
 }

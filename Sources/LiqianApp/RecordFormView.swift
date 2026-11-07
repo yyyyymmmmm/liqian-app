@@ -30,6 +30,9 @@ struct RecordFormView: View {
     @State private var amountError: String?
     @State private var savedMessage: String?
     @State private var saveTrigger = 0
+    @State private var showSeal = false
+    @State private var sealText = "礼"
+    @State private var sealTrigger = 0
     @State private var errorTrigger = 0
     @State private var deleteTrigger = 0
     @State private var confirmDelete = false
@@ -253,7 +256,15 @@ struct RecordFormView: View {
                     Button("保存") { save() }
                 }
             }
+            .overlay {
+                SealStampOverlay(
+                    char: sealText,
+                    bai: effectiveLedger?.isBai ?? false,
+                    presented: showSeal
+                )
+            }
             .sensoryFeedback(.impact(weight: .light, intensity: 0.5), trigger: amountText)
+            .sensoryFeedback(.impact(weight: .medium), trigger: sealTrigger)
             .sensoryFeedback(.success, trigger: saveTrigger)
             .sensoryFeedback(.warning, trigger: errorTrigger)
             .sensoryFeedback(.warning, trigger: deleteTrigger)
@@ -428,7 +439,10 @@ struct RecordFormView: View {
                 )
             )
             try? modelContext.save()
-            saveTrigger += 1
+            // 落印：盖印动画约 1 秒，不阻断输入；普通保存等印落完再关闭
+            sealText = effectiveLedger.map { String($0.title.prefix(1)) } ?? "礼"
+            showSeal = true
+            sealTrigger += 1
             if saveAndContinue {
                 person = ""
                 amountText = ""
@@ -437,8 +451,15 @@ struct RecordFormView: View {
                 amountError = nil
                 savedMessage = "已保存，继续记下一笔"
                 focus = .person
+                Task {
+                    try? await Task.sleep(for: .milliseconds(1050))
+                    showSeal = false
+                }
             } else {
-                dismiss()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(1050))
+                    dismiss()
+                }
             }
         }
     }

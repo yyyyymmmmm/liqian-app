@@ -59,6 +59,7 @@ struct MeView: View {
         NavigationStack {
             List {
                 asCardRow(yearCard)
+                asCardRow(annualReportRow)
                 asCardRow(pendingCard)
                 asCardRow(typeCard)
                 asCardRow(rankingCard)
@@ -146,6 +147,21 @@ struct MeView: View {
                 .foregroundStyle(Palette.stone)
         }
         .cardSurface()
+    }
+
+    /// 人情年度报告入口（v2）：按年汇总 + 分享图卡
+    private var annualReportRow: some View {
+        NavigationLink {
+            AnnualReportView()
+        } label: {
+            actionRow(
+                icon: "chart.bar.doc.horizontal",
+                title: "人情年度报告",
+                subtitle: "按年看往来，做一张能发给家人的报告图"
+            )
+        }
+        .buttonStyle(.plain)
+        .cardSurface(padding: 0)
     }
 
     private var pendingCard: some View {

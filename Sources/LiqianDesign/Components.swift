@@ -181,6 +181,85 @@ public extension View {
     }
 }
 
+// MARK: - 印章：朱砂圆角方印、白字衬线（礼谱 PDF 封面/汇总页用同款造型绘制）
+// PDF 与分享图卡是静态绘制，那边按此规格复刻：圆角 8、朱砂底、描金边（白事无金）。
+
+public struct SealStampView: View {
+    /// 印面字（通常取礼簿名首字）
+    public let char: String
+    public let size: CGFloat
+    public let bai: Bool
+    /// 描金边（白事强制关）
+    public let goldBorder: Bool
+
+    public init(char: String, size: CGFloat = 56, bai: Bool = false, goldBorder: Bool = true) {
+        self.char = char
+        self.size = size
+        self.bai = bai
+        self.goldBorder = goldBorder
+    }
+
+    public var body: some View {
+        let bg = bai ? Palette.baiPrimary : Palette.primary
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.16)
+                .fill(bg)
+            // 印面内框：白文印的内细线
+            RoundedRectangle(cornerRadius: size * 0.10)
+                .stroke(.white.opacity(0.55), lineWidth: 1)
+                .padding(size * 0.09)
+            Text(char)
+                .font(.liqianSerif(size: size * 0.52))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+        .overlay(
+            RoundedRectangle(cornerRadius: size * 0.16)
+                .stroke(bai || !goldBorder ? Color.clear : Palette.gold, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - 落印呈现：盖印动画（放大落下→回正停留→淡出），Reduce Motion 时只淡入淡出
+// 用法：父视图维护 presented 布尔，true 时 overlay 本视图；动画时长约 1 秒，
+// 父视图在 ~1.05 秒后置回 false 或执行后续动作（如 dismiss）。
+
+public struct SealStampOverlay: View {
+    public let char: String
+    public let bai: Bool
+    public let presented: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var landed = false
+
+    public init(char: String, bai: Bool = false, presented: Bool) {
+        self.char = char
+        self.bai = bai
+        self.presented = presented
+    }
+
+    public var body: some View {
+        ZStack {
+            if presented {
+                SealStampView(char: char, size: 84, bai: bai)
+                    .scaleEffect(reduceMotion ? 1 : (landed ? 1 : 1.7))
+                    .rotationEffect(.degrees(reduceMotion ? 0 : (landed ? 0 : -8)))
+                    .opacity(landed ? 1 : 0)
+                    .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                    .onAppear {
+                        landed = false
+                        if reduceMotion {
+                            withAnimation(.easeIn(duration: 0.2)) { landed = true }
+                        } else {
+                            withAnimation(.bouncy(duration: 0.45)) { landed = true }
+                        }
+                    }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - 按压反馈按钮样式：按下缩放 0.98（弹簧），减动效开启时不缩放
 
 public struct ScaleOnPressButtonStyle: ButtonStyle {

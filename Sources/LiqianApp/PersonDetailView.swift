@@ -46,6 +46,15 @@ struct PersonDetailView: View {
             .first { $0.name == name }?.pendingCents ?? 0
     }
 
+    /// 回礼参考区间：只用与这个人的历史往来算，没收过他的礼就不给（Core 纯函数）
+    private var suggestion: ReturnGiftSuggestion? {
+        LedgerMath.returnGiftSuggestion(
+            from: AppSupport.snapshots(records: allRecords, ledgers: ledgers),
+            person: name,
+            today: LiqianDate.todayString()
+        )
+    }
+
     private func ledger(of r: GiftRecord) -> Ledger? {
         ledgers.first { $0.id == r.ledgerID }
     }
@@ -54,6 +63,9 @@ struct PersonDetailView: View {
         ScrollView {
             VStack(spacing: 12) {
                 headerCard
+                if let suggestion {
+                    suggestionCard(suggestion)
+                }
                 if personRecords.isEmpty {
                     Text("还没有往来记录")
                         .font(.system(size: 15))
@@ -132,6 +144,36 @@ struct PersonDetailView: View {
             RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
                 .stroke(Palette.hairline, lineWidth: 1)
         )
+    }
+
+    private func suggestionCard(_ s: ReturnGiftSuggestion) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("回礼参考")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            Text(suggestionText(s))
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.ink)
+                .lineSpacing(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(LiqianMetrics.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+        .overlay(
+            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+                .stroke(Palette.hairline, lineWidth: 1)
+        )
+    }
+
+    private func suggestionText(_ s: ReturnGiftSuggestion) -> String {
+        let year = String(s.lastDate.prefix(4))
+        let typePart = s.lastType.isEmpty ? "" : " · \(s.lastType)"
+        var text = "上次 \(name) 随你 \(LedgerMath.fmtMoney(cents: s.lastAmountCents))"
+        text += "（\(year) 年\(typePart)），对等略添的参考区间 "
+        text += "\(LedgerMath.fmtMoney(cents: s.lowerCents))–\(LedgerMath.fmtMoney(cents: s.upperCents))，"
+        text += "仅供参考，量力而行。"
+        return text
     }
 
     private func headerStat(label: String, value: Int) -> some View {

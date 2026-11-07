@@ -231,6 +231,79 @@ public enum LedgerMath {
         }
         return map.values.sorted { $0.total > $1.total }
     }
+
+    /// 回礼参考区间：只用本人历史——取这个人最近一笔收礼为锚，
+    /// 给「对等略添」的整数区间。无收礼记录返回 nil（没依据不瞎给）。
+    /// 区间（先按元算再转分）：
+    /// - 下限 = 锚点金额向下取整到百元，不足百元按 100 元；
+    /// - 上限 = 锚点 ×1.2 向上取整到百元。
+    /// 例：500 元 → [500, 600]；450 元 → [400, 600]。
+    public static func returnGiftSuggestion(
+        from entries: [EntrySnapshot],
+        person: String,
+        today: String
+    ) -> ReturnGiftSuggestion? {
+        // 收礼无待送出概念，isPendingSend 只可能出现在随礼上，这里无需过滤
+        let received = entries.filter {
+            $0.person == person && $0.direction == LiqianConstants.received
+        }
+        // 最近一笔：日期最大；同日按传入顺序（约定新→旧）取先出现者
+        var latest: EntrySnapshot?
+        for e in received {
+            if let cur = latest {
+                if e.date > cur.date { latest = e }
+            } else {
+                latest = e
+            }
+        }
+        guard let anchor = latest else { return nil }
+
+        let baseYuan = Double(anchor.amountCents) / 100.0
+        var lowerYuan = Int((baseYuan / 100.0).rounded(.down)) * 100
+        if lowerYuan < 100 { lowerYuan = 100 }
+        let upperYuan = Int((baseYuan * 1.2 / 100.0).rounded(.up)) * 100
+
+        let anchorYear = Int(anchor.date.prefix(4)) ?? 0
+        let todayYear = Int(today.prefix(4)) ?? anchorYear
+        return ReturnGiftSuggestion(
+            lowerCents: lowerYuan * 100,
+            upperCents: upperYuan * 100,
+            lastAmountCents: anchor.amountCents,
+            lastDate: anchor.date,
+            lastType: anchor.ledgerType,
+            yearsAgo: max(0, todayYear - anchorYear)
+        )
+    }
+}
+
+/// 回礼参考区间的结果 + 依据素材（View 层拼文案，Core 只给事实）
+public struct ReturnGiftSuggestion: Sendable, Equatable {
+    public var lowerCents: Int
+    public var upperCents: Int
+    /// 锚点：最近一笔收礼金额（分）
+    public var lastAmountCents: Int
+    /// 锚点日期 yyyy-MM-dd
+    public var lastDate: String
+    /// 锚点事由（所属礼簿类型，如「婚礼」；无账本信息时为 ""）
+    public var lastType: String
+    /// 锚点距今整年数（按年份差）
+    public var yearsAgo: Int
+
+    public init(
+        lowerCents: Int,
+        upperCents: Int,
+        lastAmountCents: Int,
+        lastDate: String,
+        lastType: String,
+        yearsAgo: Int
+    ) {
+        self.lowerCents = lowerCents
+        self.upperCents = upperCents
+        self.lastAmountCents = lastAmountCents
+        self.lastDate = lastDate
+        self.lastType = lastType
+        self.yearsAgo = yearsAgo
+    }
 }
 
 public extension GiftRecord {
