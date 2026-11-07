@@ -1,0 +1,18 @@
+# 礼记 Deliverfile —— deliver 上传商店元数据的配置（骨架）。
+# 安全默认：只上传 metadata/ 下的文案与 screenshots/ 下的截图，
+# 不自动送审、不自动发布。正式运行 deliver 前，先核对
+# docs/STORE-ASSETS.md 的「上架前还差什么」清单，逐项销账。
+
+submit_for_review(false)
+automatic_release(false)
+
+# 价格：首版价格策略未定（买断会员走 StoreKit 内购，v5 才接）。
+# 免费上架时 price_tier 为 0；正式提交前由用户拍板后取消注释并回填。
+# price_tier(0)
+
+# TODO（开发者账号到位后回填）：
+# - team_id / itc_team_id 见 Appfile
+# - 隐私政策 URL、支持 URL 在 metadata/zh-Hans/privacy_url.txt、support_url.txt，
+#   当前为 TODO 占位，托管页上线后替换，切勿带占位送审
+# - app_review_information（审核备注：示例数据与 AI 自备 Key 的说明模板
+#   见 docs/STORE-ASSETS.md 上架清单第 9 项）

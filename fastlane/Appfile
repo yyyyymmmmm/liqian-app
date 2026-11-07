@@ -1,0 +1,13 @@
+# 礼记 Appfile —— fastlane 账号与标识配置（骨架）。
+# bundle id 已定（Project.swift: site.didichou.liqian）；其余团队类字段
+# 要等 Apple Developer 账号到位、在 App Store Connect 建好 App 记录后回填，
+# 未知项一律标 TODO，不编造。
+
+app_identifier("site.didichou.liqian")
+
+# apple_id("TODO")      # App Store Connect 分配的数值 Apple ID，建 App 后回填
+# team_id("TODO")       # Developer Portal Team ID（公司主体：知和数智，待确认）
+# itc_team_id("TODO")   # App Store Connect Team ID
+#
+# 认证建议：优先用 App Store Connect API Key（见 Fastfile 的 beta lane，
+# ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT 环境变量注入），不用在此写 Apple ID 密码。
