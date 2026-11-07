@@ -129,7 +129,7 @@ final class CloudSyncManager: ObservableObject {
     private static func makeCloudContainer(schema: Schema) -> ModelContainer? {
         let config = ModelConfiguration(
             schema: schema,
-            cloudKitDatabase: CloudKitDatabase.`private`(containerIdentifier)
+            cloudKitDatabase: .private(containerIdentifier)
         )
         return try? ModelContainer(for: schema, configurations: [config])
     }
