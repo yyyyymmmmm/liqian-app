@@ -40,6 +40,11 @@ let project = Project(
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
                 "CFBundleDisplayName": "礼记",
+                // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
+                // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
+                // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
+                "CFBundleShortVersionString": "4.4.0",
+                "CFBundleVersion": "44",
                 "UIFileSharingEnabled": true,
                 "LSSupportsOpeningDocumentsInPlace": true,
                 "ITSAppUsesNonExemptEncryption": false,
@@ -93,6 +98,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
+                "CFBundleShortVersionString": "4.4.0",
+                "CFBundleVersion": "44",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],
