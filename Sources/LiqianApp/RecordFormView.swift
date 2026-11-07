@@ -136,6 +136,24 @@ struct RecordFormView: View {
         )
     }
 
+    /// 回礼参考年涨幅设置（与人物详情卡同键同源）
+    @AppStorage(ReplyAdvisor.annualRateKey) private var annualRatePercent = ReplyAdvisor.defaultAnnualRatePercent
+
+    /// 回礼提示（v4.3）：记随礼、新建、已填姓名且与此人有收礼往来时才有；
+    /// 场合＝当前礼簿事由。没依据（没收过他的礼）返回 nil，提示行不出
+    private var replyAdvice: ReplyAdvice? {
+        guard existing == nil, direction == LiqianConstants.given else { return nil }
+        let q = person.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return nil }
+        return ReplyAdvisor.advice(
+            from: AppSupport.snapshots(records: allRecords, ledgers: allLedgers),
+            person: q,
+            occasionType: effectiveLedger?.type ?? "",
+            today: LiqianDate.todayString(),
+            annualRatePercent: annualRatePercent
+        )
+    }
+
     /// 同人提示：这个名字在本礼簿已有的笔数（编辑时不算自己这笔）
     private var sameLedgerCount: Int {
         let q = person.trimmingCharacters(in: .whitespaces)
@@ -238,6 +256,9 @@ struct RecordFormView: View {
             }
             amountBlock
             amountChips
+            if let advice = replyAdvice {
+                replyHintRow(advice)
+            }
             nameBlock
             supplementsBlock
         }
@@ -338,6 +359,27 @@ struct RecordFormView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// 回礼提示行：金额区下方一行小字，给区间与依据，点按填入建议值（锚定值）
+    private func replyHintRow(_ a: ReplyAdvice) -> some View {
+        Button {
+            amountText = Self.amountString(cents: a.suggestedCents)
+            amountError = nil
+        } label: {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                Image(systemName: "arrow.uturn.backward.circle")
+                    .font(.footnote)
+                Text("回礼参考 \(LedgerMath.fmtMoney(cents: a.lowerCents))–\(LedgerMath.fmtMoney(cents: a.upperCents))（\(a.reasons.first ?? "")），点按填 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
+                    .font(.footnote)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.primary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("回礼参考，点按填入建议金额 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
     }
 
     // MARK: - 姓名行：标签＋输入＋麦克风（一句话记账入口）；联想改横向 chips 行

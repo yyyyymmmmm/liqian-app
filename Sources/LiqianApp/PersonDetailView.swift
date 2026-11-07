@@ -60,13 +60,28 @@ struct PersonDetailView: View {
             .first { $0.name == name }?.pendingCents ?? 0
     }
 
-    /// 回礼参考区间：只用与这个人的历史往来算，没收过他的礼就不给（Core 纯函数）
-    private var suggestion: ReturnGiftSuggestion? {
-        LedgerMath.returnGiftSuggestion(
+    /// 回礼参考年涨幅设置（「我的 → 记录」里可改 0/3/5%）
+    @AppStorage(ReplyAdvisor.annualRateKey) private var annualRatePercent = ReplyAdvisor.defaultAnnualRatePercent
+
+    /// 回礼建议（v4.3 区间模型）：锚×年涨幅×场合系数×红白取整＋理由。
+    /// 本页没有具体场合，场合取锚所属事由（按上次的场合估）；没收过他的礼
+    /// 时 advice 为 nil，卡片出回退文案而不是消失。
+    private var advice: ReplyAdvice? {
+        ReplyAdvisor.advice(
             from: AppSupport.snapshots(records: allRecords, ledgers: ledgers),
             person: name,
-            today: LiqianDate.todayString()
+            occasionType: anchorOccasionType,
+            today: LiqianDate.todayString(),
+            annualRatePercent: annualRatePercent
         )
+    }
+
+    /// 锚所属事由：这个人最近一笔收礼所在礼簿的类型（personRecords 已按日期倒序）
+    private var anchorOccasionType: String {
+        guard let latest = personRecords.first(where: { $0.direction == LiqianConstants.received }) else {
+            return ""
+        }
+        return ledger(of: latest)?.type ?? ""
     }
 
     private func ledger(of r: GiftRecord) -> Ledger? {
@@ -80,9 +95,7 @@ struct PersonDetailView: View {
                 if !personDays.isEmpty {
                     reminderDaysCard
                 }
-                if let suggestion {
-                    suggestionCard(suggestion)
-                }
+                suggestionCard
                 if personRecords.isEmpty {
                     ContentUnavailableView {
                         Label("还没有往来记录", systemImage: "person.crop.circle")
@@ -206,28 +219,42 @@ struct PersonDetailView: View {
         .liqianCardSurface()
     }
 
-    private func suggestionCard(_ s: ReturnGiftSuggestion) -> some View {
+    /// 回礼参考卡（v4.3）：有依据出区间＋建议值＋理由逐行；
+    /// 没收过他的礼（advice == nil）出回退文案，不瞎给数
+    private var suggestionCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("回礼参考")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            Text(suggestionText(s))
-                .font(.subheadline)
-                .foregroundStyle(Palette.ink)
-                .lineSpacing(5)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if let a = advice {
+                HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
+                    Text("\(LedgerMath.fmtMoney(cents: a.lowerCents)) – \(LedgerMath.fmtMoney(cents: a.upperCents))")
+                        .font(.liqianMoney(.title3))
+                        .foregroundStyle(Palette.ink)
+                    Text("可参考 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.primary)
+                }
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    ForEach(a.reasons, id: \.self) { reason in
+                        Text("· \(reason)")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+                Text("只是按你和 \(name) 的往来记录算的，仅供参考，量力而行。")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                Text("还没收过 \(name) 的礼，没有可参考的往来记录。下次他办事，按当地通常的份量和你们的关系拿捏即可。")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.stone)
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .liqianCardSurface()
-    }
-
-    private func suggestionText(_ s: ReturnGiftSuggestion) -> String {
-        let year = String(s.lastDate.prefix(4))
-        let typePart = s.lastType.isEmpty ? "" : " · \(s.lastType)"
-        var text = "上次 \(name) 随你 \(LedgerMath.fmtMoney(cents: s.lastAmountCents))"
-        text += "（\(year) 年\(typePart)），对等略添的参考区间 "
-        text += "\(LedgerMath.fmtMoney(cents: s.lowerCents))–\(LedgerMath.fmtMoney(cents: s.upperCents))，"
-        text += "仅供参考，量力而行。"
-        return text
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func headerStat(label: String, value: Int) -> some View {

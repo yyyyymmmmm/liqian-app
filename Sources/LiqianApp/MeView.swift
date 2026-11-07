@@ -28,6 +28,8 @@ struct MeView: View {
     @State private var importTrigger = 0
     @AppStorage("privacyLock") private var privacyLock = false
     @AppStorage("hostName") private var hostName = ""
+    /// 回礼建议年涨幅（v4.3）：0/3/5%，人物详情卡与记一笔提示同键同源
+    @AppStorage(ReplyAdvisor.annualRateKey) private var annualRatePercent = ReplyAdvisor.defaultAnnualRatePercent
     @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
 
     /// 当前存在的示例账本 ID（统计隔离与示例状态都按它判定）
@@ -135,6 +137,22 @@ struct MeView: View {
                             title: "最近删除",
                             subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
                         )
+                    }
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        entryLabel(
+                            icon: "chart.line.uptrend.xyaxis",
+                            title: "回礼参考年涨幅",
+                            subtitle: "往来越久，回礼参考按年折算的幅度"
+                        )
+                        Spacer()
+                        Picker("回礼参考年涨幅", selection: $annualRatePercent) {
+                            Text("不折算").tag(0)
+                            Text("3% / 年").tag(3)
+                            Text("5% / 年").tag(5)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(Palette.stone)
                     }
                 } header: {
                     Text("记录")
