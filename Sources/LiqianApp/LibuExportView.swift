@@ -21,6 +21,17 @@ struct LibuExportView: View {
     var blessings: [VoiceBlessing] = []
 
     @Environment(\.dismiss) private var dismiss
+    /// Pro 权益单点（v5）：印刷版与汇册是门控面，成书说明页不门控
+    @EnvironmentObject private var entitlements: EntitlementCenter
+    @State private var showPaywall = false
+    @State private var showAlbum = false
+    @State private var printURL: URL?
+    @State private var printGenerating = false
+    @State private var printErrorText: String?
+    /// 先点印刷版、还没生成预览时置位：预览生成完自动接着装配印刷版
+    @State private var pendingPrint = false
+    /// 书脊宽（毫米，可见参数）：预览生成后按页数自动估算，可手调
+    @State private var spineMM: Double = 8
     /// 评分引导（v4.5）：只在礼谱生成成功后、且 ReviewPrompt 条件齐备时请求
     @Environment(\.requestReview) private var requestReview
     /// 全 App 记录/礼簿（只为评分引导算累计真实记录数，排除示例账本）
@@ -41,6 +52,11 @@ struct LibuExportView: View {
     /// 到场亲友数：成册口径（排除待送出）后的 distinct 人数，与谱内汇总一致
     private var guestCount: Int {
         Set(records.filter { !$0.isPendingSend }.map(\.person)).count
+    }
+
+    /// 成册口径笔数（成书说明页登记用）
+    private var countedCount: Int {
+        records.filter { !$0.isPendingSend }.count
     }
 
     var body: some View {
@@ -94,6 +110,90 @@ struct LibuExportView: View {
                 } header: {
                     Text("预览")
                 }
+
+                Section {
+                    if printGenerating {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            ProgressView()
+                            Text("正在装配印刷版…")
+                                .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                    } else if let printURL {
+                        PDFPreviewView(url: printURL)
+                            .frame(height: 360)
+                            .listRowInsets(EdgeInsets())
+                        ShareLink(item: printURL) {
+                            Label("分享 / 保存印刷版礼谱", systemImage: "square.and.arrow.up")
+                                .frame(minHeight: LiqianMetrics.minTapTarget)
+                        }
+                        Button("重新生成印刷版") { assemblePrint() }
+                    } else {
+                        Button {
+                            requestPrint()
+                        } label: {
+                            HStack(spacing: LiqianMetrics.spacingSM) {
+                                Label("导出印刷版礼谱", systemImage: "printer")
+                                Spacer()
+                                if !entitlements.canUse(.printBook) {
+                                    Text("Pro")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Palette.primary)
+                                }
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                        }
+                        .buttonStyle(.plain)
+                        if let printErrorText {
+                            Text(printErrorText)
+                                .font(.footnote)
+                                .foregroundStyle(Palette.danger)
+                        } else if pdfURL == nil {
+                            Text("印刷版沿用上方预览的同一份谱面（含谱序）：还没生成预览时，点这里会先生成预览再装配。")
+                                .font(.footnote)
+                                .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                        }
+                    }
+                    if pdfURL != nil {
+                        Stepper(value: $spineMM, in: 4...40, step: 0.5) {
+                            Text("书脊宽 \(spineMM, specifier: "%.1f") mm")
+                        }
+                        Text("书脊宽按页数自动估算（封面展开图用），印厂用纸不同可手调，改完重新生成印刷版生效。")
+                            .font(.footnote)
+                            .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    }
+
+                    Button {
+                        if entitlements.canUse(.familyAlbum) {
+                            showAlbum = true
+                        } else {
+                            showPaywall = true
+                        }
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            Label("家族汇册", systemImage: "books.vertical")
+                            Spacer()
+                            if !entitlements.canUse(.familyAlbum) {
+                                Text("Pro")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Palette.primary)
+                            }
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink {
+                        BookBindingView(ledger: ledger, countedCount: countedCount)
+                    } label: {
+                        Label("装订成书", systemImage: "book.closed")
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                    }
+                } header: {
+                    Text("成书")
+                } footer: {
+                    Text("印刷版礼谱（出血＋封面展开图＋印刷参数页）与家族汇册是 Pro 权益；装订成书首批为人工履约内测，先看说明登记意向。")
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("导出礼谱")
@@ -122,6 +222,15 @@ struct LibuExportView: View {
                 pdfURL = nil
                 errorText = nil
                 fallbackNote = nil
+                // 印刷版沿用同一谱面，谱序变了它也一并作废
+                printURL = nil
+                printErrorText = nil
+            }
+            .sheet(isPresented: $showPaywall) {
+                NavigationStack { PaywallView() }
+            }
+            .sheet(isPresented: $showAlbum) {
+                FamilyAlbumView()
             }
             .sensoryFeedback(.success, trigger: exportTrigger)
             .sensoryFeedback(.warning, trigger: exportErrorTrigger)
@@ -180,9 +289,51 @@ struct LibuExportView: View {
                 pdfURL = url
                 exportTrigger += 1
                 maybeRequestReview()
+                // 书脊宽按真实页数估算（用户可在成书区手调）
+                if let doc = PDFDocument(url: url) {
+                    spineMM = PrintBookSpec.spineWidthMM(pageCount: doc.pageCount)
+                }
+                if pendingPrint {
+                    pendingPrint = false
+                    assemblePrint()
+                }
             } else {
                 errorText = "礼谱生成失败，请重试。"
                 exportErrorTrigger += 1
+            }
+        }
+    }
+
+    /// 印刷版入口：门控先行；没有预览时先走生成流程，生成完自动装配
+    private func requestPrint() {
+        guard entitlements.canUse(.printBook) else {
+            showPaywall = true
+            return
+        }
+        if pdfURL != nil {
+            assemblePrint()
+        } else {
+            pendingPrint = true
+            generate()
+        }
+    }
+
+    /// 装配印刷版：屏幕版 PDF 原样套出血＋封面展开图＋参数页（屏幕版不动）
+    private func assemblePrint() {
+        guard let pdfURL else { return }
+        printGenerating = true
+        printErrorText = nil
+        let spine = spineMM
+        Task {
+            await Task.yield()
+            let url = GiftBookPrintPDF.makePrintPDF(
+                screenPDF: pdfURL, ledger: ledger, spineWidthMM: spine
+            )
+            printGenerating = false
+            if let url {
+                printURL = url
+            } else {
+                printErrorText = "印刷版装配失败，请重试。"
             }
         }
     }
@@ -204,8 +355,8 @@ struct LibuExportView: View {
     }
 }
 
-/// PDFKit 整谱预览（sheet 内翻页看全谱，确认无误再分享）
-private struct PDFPreviewView: UIViewRepresentable {
+/// PDFKit 整谱预览（sheet 内翻页看全谱，确认无误再分享；v5 起汇册页共用）
+struct PDFPreviewView: UIViewRepresentable {
     let url: URL
 
     func makeUIView(context: Context) -> PDFView {
