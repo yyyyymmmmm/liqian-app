@@ -14,12 +14,13 @@ struct MeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
+    @Query private var reminderDays: [ReminderDay]
 
     @State private var csvURL: URL?
     @State private var exportDocument = JSONBackupDocument(data: Data())
     @State private var showExporter = false
     @State private var showImporter = false
-    @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord])?
+    @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay])?
     @State private var showImportConfirm = false
     @State private var infoTitle = ""
     @State private var infoMessage = ""
@@ -111,6 +112,22 @@ struct MeView: View {
                         }
                     }
                     NavigationLink {
+                        RemindersView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(
+                                icon: "bell",
+                                title: "人情提醒",
+                                subtitle: "重要日子与待回礼提醒"
+                            )
+                            Spacer()
+                            if !reminderDays.isEmpty {
+                                Text("\(reminderDays.count) 个日子")
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                    NavigationLink {
                         TrashView()
                     } label: {
                         entryLabel(
@@ -185,14 +202,16 @@ struct MeView: View {
                     csvEntryRow
                     Button {
                         exportDocument = JSONBackupDocument(
-                            data: LiqianBackup.makeBackup(ledgers: ledgers, records: records)
+                            data: LiqianBackup.makeBackup(
+                                ledgers: ledgers, records: records, reminders: reminderDays
+                            )
                         )
                         showExporter = true
                     } label: {
                         entryLabel(
                             icon: "tray.and.arrow.up",
                             title: "导出备份（JSON）",
-                            subtitle: "包含全部礼簿与记录，可用于换机恢复"
+                            subtitle: "包含全部礼簿、记录与提醒日子，可用于换机恢复"
                         )
                     }
                     Button {
@@ -268,7 +287,7 @@ struct MeView: View {
                 Button("取消", role: .cancel) {}
             } message: {
                 if let p = pendingImport {
-                    Text("备份里有 \(p.ledgers.count) 本礼簿、\(p.records.count) 笔记录。现在手机里有 \(ledgers.count) 本礼簿、\(records.count) 笔记录，恢复后会被全部覆盖，覆盖了就回不来了。")
+                    Text("备份里有 \(p.ledgers.count) 本礼簿、\(p.records.count) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")。现在手机里有 \(ledgers.count) 本礼簿、\(records.count) 笔记录，恢复后会被全部覆盖，覆盖了就回不来了。")
                 }
             }
             .alert(infoTitle, isPresented: $showInfo) {
@@ -365,7 +384,7 @@ struct MeView: View {
         }
         do {
             let data = try Data(contentsOf: url)
-            pendingImport = try LiqianBackup.parseBackup(data)
+            pendingImport = try LiqianBackup.parseBackupFull(data)
             showImportConfirm = true
         } catch {
             showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
@@ -376,6 +395,7 @@ struct MeView: View {
         guard let p = pendingImport else { return }
         for r in records { modelContext.delete(r) }
         for l in ledgers { modelContext.delete(l) }
+        for d in reminderDays { modelContext.delete(d) }
         // 备份里的 id 是字符串：原生备份是 UUID 串可直转；
         // Flutter 旧备份是时间戳串，转不成 UUID 就新发一个，并按账本逐个建映射保证记录挂得上
         var idMap: [String: UUID] = [:]
@@ -410,12 +430,49 @@ struct MeView: View {
             )
             importedRecords += 1
         }
+        for bd in p.reminders {
+            modelContext.insert(
+                ReminderDay(
+                    id: bd.idUUID ?? UUID(),
+                    person: bd.person,
+                    relation: bd.relation,
+                    kind: bd.kind,
+                    calendarKind: bd.calendarKind,
+                    month: bd.month,
+                    day: bd.day,
+                    leadDays: bd.leadDays,
+                    enabled: bd.enabled,
+                    note: bd.note
+                )
+            )
+        }
         try? modelContext.save()
+        // 恢复后按新数据重排提醒（旧排期对应的是被覆盖掉的日子）
+        ReminderScheduler.reschedule(
+            days: p.reminders.map {
+                ReminderDayValue(
+                    id: $0.idUUID ?? UUID(), person: $0.person, relation: $0.relation,
+                    kind: $0.kind, calendarKind: $0.calendarKind, month: $0.month,
+                    day: $0.day, leadDays: $0.leadDays, enabled: $0.enabled, note: $0.note
+                )
+            },
+            snapshots: p.records.map { br in
+                EntrySnapshot(
+                    person: br.person,
+                    relation: br.relation,
+                    amountCents: br.amountCents,
+                    direction: br.direction,
+                    date: br.date,
+                    status: br.status,
+                    ledgerType: p.ledgers.first { $0.id == br.ledgerId }?.type ?? ""
+                )
+            }
+        )
         importTrigger += 1
         pendingImport = nil
         showInfo(
             title: "恢复完成",
-            message: "已导入 \(p.ledgers.count) 本礼簿、\(importedRecords) 笔记录。"
+            message: "已导入 \(p.ledgers.count) 本礼簿、\(importedRecords) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")。"
         )
     }
 

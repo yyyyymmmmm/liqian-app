@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
+    @Query private var allReminderDays: [ReminderDay]
     @State private var isLocked = true
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
@@ -78,6 +79,7 @@ struct ContentView: View {
             TrashStore.purgeExpired()
             refreshWidgetSummary()
             checkQuickRecord()
+            calibrateReminders()
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -111,6 +113,17 @@ struct ContentView: View {
         .sheet(isPresented: $showQuickRecord) {
             RecordFormView(personName: "", presetDirection: LiqianConstants.received)
         }
+    }
+
+    /// 人情提醒启动校准（v3.0）：防系统清掉待发通知、也让授权状态变化后
+    /// 排期跟上。口径与人情提醒页一致（示例账本记录不计入）。
+    private func calibrateReminders() {
+        let ids = SampleData.sampleIDs(ledgers: allLedgers)
+        let snapshots = AppSupport.snapshots(
+            records: allRecords.filter { !ids.contains($0.ledgerID) },
+            ledgers: allLedgers
+        )
+        ReminderScheduler.reschedule(days: allReminderDays.map(\.value), snapshots: snapshots)
     }
 
     /// 小组件速览：用全部记录算待回礼汇总后写入 App Group

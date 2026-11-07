@@ -11,6 +11,6 @@ struct LiqianApp: App {
                 // （v2.4 必修：此前日期选择器显示 "Nov 7, 2026" 英文格式）
                 .environment(\.locale, Locale(identifier: "zh_CN"))
         }
-        .modelContainer(for: [Ledger.self, GiftRecord.self])
+        .modelContainer(for: [Ledger.self, GiftRecord.self, ReminderDay.self])
     }
 }

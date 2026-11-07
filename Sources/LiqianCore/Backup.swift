@@ -114,19 +114,84 @@ extension BackupRecord {
     }
 }
 
+/// 人情提醒·重要日子（v3.0 可选段）：旧备份无此键 → 解码为 nil（视为无提醒）；
+/// 新备份带此段时旧版 App 按未知键忽略，不影响礼簿与记录的恢复。
+public struct BackupReminderDay: Codable, Sendable, Equatable {
+    public var id: String
+    public var person: String
+    public var relation: String
+    public var kind: String
+    public var calendarKind: String
+    public var month: Int
+    public var day: Int
+    public var leadDays: Int
+    public var enabled: Bool
+    public var note: String
+
+    public init(
+        id: String,
+        person: String,
+        relation: String = "",
+        kind: String = LiqianConstants.reminderBirthday,
+        calendarKind: String = LiqianConstants.calendarGregorian,
+        month: Int,
+        day: Int,
+        leadDays: Int = 3,
+        enabled: Bool = true,
+        note: String = ""
+    ) {
+        self.id = id
+        self.person = person
+        self.relation = relation
+        self.kind = kind
+        self.calendarKind = calendarKind
+        self.month = month
+        self.day = day
+        self.leadDays = leadDays
+        self.enabled = enabled
+        self.note = note
+    }
+
+    public var idUUID: UUID? { UUID(uuidString: id) }
+}
+
+extension BackupReminderDay {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        person = try c.decode(String.self, forKey: .person)
+        relation = try c.decodeIfPresent(String.self, forKey: .relation) ?? ""
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? LiqianConstants.reminderBirthday
+        calendarKind = try c.decodeIfPresent(String.self, forKey: .calendarKind) ?? LiqianConstants.calendarGregorian
+        month = try c.decode(Int.self, forKey: .month)
+        day = try c.decode(Int.self, forKey: .day)
+        leadDays = try c.decodeIfPresent(Int.self, forKey: .leadDays) ?? 3
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+    }
+}
+
 public struct BackupFile: Codable, Sendable, Equatable {
     public var ledgers: [BackupLedger]
     public var records: [BackupRecord]
+    /// v3.0 可选段：nil 表示备份里没有提醒数据（旧备份恒为 nil）
+    public var reminders: [BackupReminderDay]?
 
-    public init(ledgers: [BackupLedger], records: [BackupRecord]) {
+    public init(
+        ledgers: [BackupLedger], records: [BackupRecord],
+        reminders: [BackupReminderDay]? = nil
+    ) {
         self.ledgers = ledgers
         self.records = records
+        self.reminders = reminders
     }
 }
 
 public enum LiqianBackup {
     /// SwiftData 模型 → 备份 JSON（键序固定，便于 diff 与人工检查）
-    public static func makeBackup(ledgers: [Ledger], records: [GiftRecord]) -> Data {
+    public static func makeBackup(
+        ledgers: [Ledger], records: [GiftRecord], reminders: [ReminderDay] = []
+    ) -> Data {
         let file = BackupFile(
             ledgers: ledgers.map {
                 BackupLedger(
@@ -150,6 +215,20 @@ public enum LiqianBackup {
                     returned: $0.returned,
                     status: $0.status
                 )
+            },
+            reminders: reminders.map {
+                BackupReminderDay(
+                    id: $0.id.uuidString,
+                    person: $0.person,
+                    relation: $0.relation,
+                    kind: $0.kind,
+                    calendarKind: $0.calendarKind,
+                    month: $0.month,
+                    day: $0.day,
+                    leadDays: $0.leadDays,
+                    enabled: $0.enabled,
+                    note: $0.note
+                )
             }
         )
         let encoder = JSONEncoder()
@@ -159,8 +238,16 @@ public enum LiqianBackup {
 
     /// 解析备份；格式不对抛错，调用方提示用户且不动现有数据
     public static func parseBackup(_ data: Data) throws -> (ledgers: [BackupLedger], records: [BackupRecord]) {
+        let parsed = try parseBackupFull(data)
+        return (parsed.ledgers, parsed.records)
+    }
+
+    /// 解析备份（含 v3.0 提醒段）：旧备份无 reminders 键时返回空数组
+    public static func parseBackupFull(
+        _ data: Data
+    ) throws -> (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay]) {
         let file = try JSONDecoder().decode(BackupFile.self, from: data)
-        return (file.ledgers, file.records)
+        return (file.ledgers, file.records, file.reminders ?? [])
     }
 
     /// 导入确认前预览规模（同 Dart countJson）

@@ -9,7 +9,21 @@ struct PersonDetailView: View {
 
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
+    @Query private var allReminderDays: [ReminderDay]
     @State private var formMode: FormMode?
+
+    /// 这个人的重要日子（同名对齐，与全 App 人名口径一致），按下一次临近排序
+    private var personDays: [ReminderDay] {
+        allReminderDays
+            .filter { $0.person == name }
+            .sorted {
+                ReminderMath.nextOccurrence(
+                    calendarKind: $0.calendarKind, month: $0.month, day: $0.day, from: Date()
+                ) < ReminderMath.nextOccurrence(
+                    calendarKind: $1.calendarKind, month: $1.month, day: $1.day, from: Date()
+                )
+            }
+    }
 
     private enum FormMode: Identifiable {
         case create(direction: String)
@@ -63,6 +77,9 @@ struct PersonDetailView: View {
         ScrollView {
             VStack(spacing: LiqianMetrics.spacingSM) {
                 headerCard
+                if !personDays.isEmpty {
+                    reminderDaysCard
+                }
                 if let suggestion {
                     suggestionCard(suggestion)
                 }
@@ -148,6 +165,43 @@ struct PersonDetailView: View {
                     .foregroundStyle(Palette.primary)
                     .padding(.top, LiqianMetrics.spacingXS)
             }
+        }
+        .liqianCardSurface()
+    }
+
+    /// 重要日子只读区（v3.0）：只展示这个人的日子与下一次时间，
+    /// 编辑走「管理提醒」进人情提醒页，不在本页改数据。
+    private var reminderDaysCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            Text("重要日子")
+                .font(.headline)
+                .foregroundStyle(Palette.ink)
+            ForEach(personDays) { day in
+                let occurrence = ReminderMath.nextOccurrence(
+                    calendarKind: day.calendarKind, month: day.month, day: day.day, from: Date()
+                )
+                let n = ReminderMath.daysUntil(occurrence, from: Date())
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    Text(day.kind)
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    Text("\(ReminderMath.dateNote(calendarKind: day.calendarKind, occurrence: occurrence)) · \(n == 0 ? "就是今天" : "还有 \(n) 天")")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                    if !day.enabled {
+                        Text("已停用")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+            }
+            NavigationLink {
+                RemindersView()
+            } label: {
+                Label("管理提醒", systemImage: "bell")
+                    .font(.subheadline)
+            }
+            .tint(Palette.primary)
         }
         .liqianCardSurface()
     }

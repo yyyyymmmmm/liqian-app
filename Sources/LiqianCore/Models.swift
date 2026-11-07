@@ -14,6 +14,16 @@ public enum LiqianConstants {
     public static let sentStatus = "已送出"
     public static let pendingStatus = "待送出"
     public static let baiType = "白事"
+
+    // 人情提醒（v3.0）：日子类型与历法
+    public static let reminderKinds = ["生日", "结婚纪念日", "其他"]
+    public static let reminderBirthday = "生日"
+    public static let reminderAnniversary = "结婚纪念日"
+    public static let reminderOther = "其他"
+    public static let calendarGregorian = "公历"
+    public static let calendarLunar = "农历"
+    /// 提前天数可选值（天）：当天 / 提前 1 天 / 提前 3 天 / 提前 7 天
+    public static let reminderLeadOptions = [0, 1, 3, 7]
 }
 
 // MARK: - 日期（存储一律 String yyyy-MM-dd，与 Flutter 版一致）
@@ -234,5 +244,59 @@ public final class GiftRecord {
     /// 待送出的随礼：钱还没真送出去，不算数（与 Flutter 版 isPendingSend 一致）
     public var isPendingSend: Bool {
         direction == LiqianConstants.given && status == LiqianConstants.pendingStatus
+    }
+}
+
+/// 人情提醒·重要日子（v3.0）：独立模型，不挂 Ledger/GiftRecord，
+/// 靠 person 姓名与往来人物对齐（同名即同人，与全 App 的人名口径一致）。
+/// 每年重复；农历按年换算公历触发（换算口径见 ReminderMath.lunarNext）。
+@Model
+public final class ReminderDay {
+    @Attribute(.unique) public var id: UUID
+    public var person: String
+    /// 关系（LiqianConstants.relations 之一），未选为 ""
+    public var relation: String
+    /// 生日 / 结婚纪念日 / 其他
+    public var kind: String
+    /// 公历 / 农历
+    public var calendarKind: String
+    public var month: Int
+    public var day: Int
+    /// 提前天数：0 / 1 / 3 / 7
+    public var leadDays: Int
+    public var enabled: Bool
+    public var note: String
+
+    public init(
+        id: UUID = UUID(),
+        person: String,
+        relation: String = "",
+        kind: String = LiqianConstants.reminderBirthday,
+        calendarKind: String = LiqianConstants.calendarGregorian,
+        month: Int,
+        day: Int,
+        leadDays: Int = 3,
+        enabled: Bool = true,
+        note: String = ""
+    ) {
+        self.id = id
+        self.person = person
+        self.relation = relation
+        self.kind = kind
+        self.calendarKind = calendarKind
+        self.month = month
+        self.day = day
+        self.leadDays = leadDays
+        self.enabled = enabled
+        self.note = note
+    }
+
+    /// 纯值快照（调度计算与单测走它，不直接碰模型）
+    public var value: ReminderDayValue {
+        ReminderDayValue(
+            id: id, person: person, relation: relation, kind: kind,
+            calendarKind: calendarKind, month: month, day: day,
+            leadDays: leadDays, enabled: enabled, note: note
+        )
     }
 }
