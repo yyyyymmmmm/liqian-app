@@ -102,10 +102,13 @@ public enum LiqianDeepLink {
     }
 
     /// 从 URL 解析人物姓名；不是人物深链时返回 nil。
-    /// 从 percentEncodedPath 取原始串后只解一次编码，避免姓名含 % 时双重解码。
+    /// 从 URLComponents.percentEncodedPath 取编码原串后只解一次，
+    /// 避免姓名含 % 时双重解码。（URL.percentEncodedPath 在 CI 的
+    /// Foundation 版本上无此成员，URLComponents 版是长驻 API。）
     public static func personName(from url: URL) -> String? {
         guard url.scheme == "liqian", url.host == "person" else { return nil }
-        let raw = url.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let encodedPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? url.path
+        let raw = encodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !raw.isEmpty else { return nil }
         let name = raw.removingPercentEncoding ?? raw
         return name.isEmpty ? nil : name
