@@ -291,6 +291,35 @@ public enum LedgerMath {
         return rows
     }
 
+    // MARK: - v4.7.1 图表窗口与轴标（纯函数）
+
+    /// 自适应月份窗口：在基础键序列（升序 yyyy-MM）上，按「有数据的月份」
+    /// 收敛窗口——数据跨度（首个到末个数据月，含两端）≤ 4 个月时，只取
+    /// 「跨度 + 两端各 1 个月填充」（填充在序列内截断）；跨度更大、没有
+    /// 数据月、或数据月不在基础序列内时，原样返回基础序列。
+    /// 动机：近 12 个月只有 1 个月有数时硬摆 12 个空槽，图面 90% 空白、
+    /// 轴标还挤成一团（v4.7 真机实证）。
+    public static func adaptiveMonthKeys(baseKeys: [String], dataMonths: Set<String>) -> [String] {
+        let hits = baseKeys.indices.filter { dataMonths.contains(baseKeys[$0]) }
+        guard let first = hits.first, let last = hits.last else { return baseKeys }
+        let span = last - first + 1
+        guard span <= 4 else { return baseKeys }
+        let lo = max(0, first - 1)
+        let hi = min(baseKeys.count - 1, last + 1)
+        return Array(baseKeys[lo...hi])
+    }
+
+    /// 月份轴标签（短格式）：同年只写「N月」（无前导零）；窗口跨年时
+    /// 仅 1 月带年份（「26年1月」），让跨年点可辨认又不把每个标签拉长。
+    /// key 为 yyyy-MM；窗口 ≤ 12 个月时各月号至多出现一次，标签不重名。
+    public static func monthAxisLabel(key: String, multiYear: Bool) -> String {
+        let month = Int(key.suffix(2)) ?? 0
+        if multiYear, month == 1 {
+            return "\(String(key.prefix(4)).suffix(2))年1月"
+        }
+        return "\(month)月"
+    }
+
     /// 单笔金额分桶（元界：200 / 500 / 1000 / 2000）：收、随不分开，
     /// 每笔（待送出除外）按金额落桶，给笔数与金额合计双口径。
     public struct AmountBucket: Sendable, Equatable, Identifiable {

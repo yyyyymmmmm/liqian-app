@@ -20,6 +20,10 @@ struct ChartsView: View {
 
     @State private var scope: ChartScope = .all
     @State private var selectedYear = ""
+    /// 点选读数（v4.7.1）：月度三图共用的选中月份「轴标签」（窗口内唯一），
+    /// nil 或标签已随范围切换失效时，读数回退到最近有数据的月份
+    /// （effectiveTrendBucket / effectiveNetRow 统一兜底）。
+    @State private var selectedMonthLabel: String?
     @State private var personRoute: PeopleView.NameRoute?
     /// 钻取（v4.7）：场合行 → 礼簿详情；关系行 → 该关系人物列表
     @State private var ledgerRoute: Ledger?
@@ -102,23 +106,29 @@ struct ChartsView: View {
         var total: Int { received + given }
     }
 
-    /// 趋势图的 12 个月窗口：全部/近12个月档取最近 12 个月（缺月补零，轴才连续）；
-    /// 自然年档取该年 1–12 月。聚合只吃 scoped 数据，全部档的窗口外月份不进图
-    /// （全史由下方年度汇总承载，口径在卡内注明）。
+    /// 趋势图的月份窗口：基础序列为最近 12 个月（全部/近12个月档，缺月补零）
+    /// 或自然年 1–12 月；再经 Core 的 adaptiveMonthKeys 按数据跨度收敛——
+    /// 数据跨度 ≤4 个月时只画「跨度 + 两端各 1 个月」，不再硬摆 12 个空槽
+    /// （v4.7.1 修真机实证：单月有数时图面 90% 空白、长标签挤成糊）。
+    /// 轴标签走 Core 的 monthAxisLabel 短格式（同年「N月」、跨年仅 1 月带年份）；
+    /// 旧版「01月·26」长串 + 12 标签无稀释全量绘制正是重叠乱码的根因。
+    /// 聚合只吃 scoped 数据，全部档的窗口外月份不进图（全史由年度汇总承载）。
     private var monthBuckets: [MonthBucket] {
         let cal = Calendar.current
-        var keys: [String] = []
+        var baseKeys: [String] = []
         switch scope {
         case .year:
-            keys = (1...12).map { String(format: "%@-%02d", effectiveYear, $0) }
+            baseKeys = (1...12).map { String(format: "%@-%02d", effectiveYear, $0) }
         case .all, .last12:
             let now = Date()
             for back in stride(from: 11, through: 0, by: -1) {
                 let d = cal.date(byAdding: .month, value: -back, to: now) ?? now
                 let c = cal.dateComponents([.year, .month], from: d)
-                keys.append(String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0))
+                baseKeys.append(String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0))
             }
         }
+        let dataMonths = Set(LedgerMath.monthlyAggregates(from: scopedSnapshots).map(\.month))
+        let keys = LedgerMath.adaptiveMonthKeys(baseKeys: baseKeys, dataMonths: dataMonths)
         let multiYear = Set(keys.map { String($0.prefix(4)) }).count > 1
         return keys.map { key in
             var recv = 0
@@ -127,12 +137,76 @@ struct ChartsView: View {
                 if e.direction == LiqianConstants.received { recv += e.amountCents }
                 else if e.direction == LiqianConstants.given { giv += e.amountCents }
             }
-            let month = Int(key.suffix(2)) ?? 0
-            let label = multiYear
-                ? "\(key.suffix(2))月·\(String(key.prefix(4)).suffix(2))"
-                : "\(month)月"
-            return MonthBucket(key: key, label: label, received: recv, given: giv)
+            return MonthBucket(
+                key: key,
+                label: LedgerMath.monthAxisLabel(key: key, multiYear: multiYear),
+                received: recv, given: giv
+            )
         }
+    }
+
+    // MARK: - 点选读数与窗口度量（v4.7.1）
+
+    /// 当前生效的选中月（收送）：用户点选命中则用它，否则回退最近有数据的月份
+    private var effectiveTrendBucket: MonthBucket? {
+        if let label = selectedMonthLabel,
+           let hit = monthBuckets.first(where: { $0.label == label }) {
+            return hit
+        }
+        return monthBuckets.last(where: { $0.total > 0 }) ?? monthBuckets.last
+    }
+
+    /// 当前生效的选中月（净额/累计）：与收送图同一选中标签，两卡联动
+    private var effectiveNetRow: NetMonth? {
+        if let label = selectedMonthLabel,
+           let hit = netMonths.first(where: { $0.label == label }) {
+            return hit
+        }
+        return netMonths.last(where: { $0.net != 0 }) ?? netMonths.last
+    }
+
+    /// 横轴可见标签：stride 稀释到 ≤6 个（12 槽时隔月显示），三图共用
+    private var monthTickLabels: [String] {
+        let labels = monthBuckets.map(\.label)
+        guard labels.count > 6 else { return labels }
+        let step = Int(ceil(Double(labels.count) / 6.0))
+        return labels.enumerated().filter { $0.offset % step == 0 }.map(\.element)
+    }
+
+    /// 图高随槽位收敛：少槽不高（自适应窗口的配套，5 槽以下用紧凑高）
+    private var trendChartHeight: CGFloat { monthBuckets.count <= 5 ? 148 : 190 }
+    private var netChartHeight: CGFloat { monthBuckets.count <= 5 ? 96 : 120 }
+    private var cumulativeChartHeight: CGFloat { monthBuckets.count <= 5 ? 80 : 96 }
+
+    /// 选中月的逐笔明细（图表明细联动）：与图同口径——范围内、待送出不计，
+    /// 按日期倒序（同日金额大者先），展示层截断前 10 笔并注明总数
+    private var selectedMonthRecords: [GiftRecord] {
+        guard let key = effectiveTrendBucket?.key else { return [] }
+        return scopedRecords
+            .filter { $0.date.hasPrefix(key) && !$0.isPendingSend }
+            .sorted { a, b in
+                if a.date != b.date { return a.date > b.date }
+                return a.amountCents > b.amountCents
+            }
+    }
+
+    /// yyyy-MM → 「2026年10月」（读数行与明细标题用）
+    private func monthTitle(_ key: String) -> String {
+        "\(key.prefix(4))年\(Int(key.suffix(2)) ?? 0)月"
+    }
+
+    /// 净额读数文本：正数带 +，负数由 fmtMoney 自带 −（¥-N 口径），零 plain
+    private func netMoneyText(_ cents: Int) -> String {
+        cents > 0 ? "+" + LedgerMath.fmtMoney(cents: cents) : LedgerMath.fmtMoney(cents: cents)
+    }
+
+    /// 含零基线并留边距的 Y 域：负值能落到零轴下方、折线末点不贴边裁切
+    private func paddedDomain(values: [Double]) -> ClosedRange<Double> {
+        let lo = min(0, values.min() ?? 0)
+        let hi = max(0, values.max() ?? 0)
+        if hi - lo <= 0 { return (lo - 50)...(hi + 50) }
+        let pad = (hi - lo) * 0.15
+        return (lo == 0 ? 0 : lo - pad)...(hi + pad)
     }
 
     private struct YearRow: Identifiable {
@@ -277,6 +351,9 @@ struct ChartsView: View {
                 .padding(.horizontal, LiqianMetrics.spacingL)
                 .padding(.vertical, LiqianMetrics.spacingSM)
             }
+            // 底部留白与首页/礼簿页同口径（contentMargins 72）：iOS 26 悬浮
+            // Tab 栏会压住滚到底的页脚文字（v4.7.1 修真机实证遮挡）
+            .contentMargins(.bottom, 72, for: .scrollContent)
             .background(Palette.pageBG.ignoresSafeArea())
             .navigationTitle("图表")
             .navigationDestination(item: $personRoute) { route in
@@ -470,40 +547,54 @@ struct ChartsView: View {
                 legendDot(color: Palette.primary, text: "收礼")
                 legendDot(color: givenColor, text: "随礼")
             }
-            Chart(monthBuckets) { bucket in
-                BarMark(
-                    x: .value("月份", bucket.label),
-                    y: .value("收礼", Double(bucket.received) * entrance / 100.0)
-                )
-                .position(by: .value("方向", "收礼"))
-                .foregroundStyle(by: .value("方向", "收礼"))
-                .cornerRadius(2)
-                BarMark(
-                    x: .value("月份", bucket.label),
-                    y: .value("随礼", Double(bucket.given) * entrance / 100.0)
-                )
-                .position(by: .value("方向", "随礼"))
-                .foregroundStyle(by: .value("方向", "随礼"))
-                .cornerRadius(2)
-                if bucket.total > 0 {
-                    // 月合计标注的锚点：透明零尺寸点，只借其位置挂 annotation
-                    // （标注是独立覆盖层，不随锚点透明受影响；柱面只标月合计，
-                    // 逐柱精确值由按年汇总与无障碍标签承载，避免 24 个标签互撞）
-                    PointMark(
+            // 点选读数行（v4.7.1）：替代原静态逐柱合计标注——旧标注锚在柱顶、
+            // 数值能浮到轴最大值之外（真机实证 ¥2,700 标在 2000 刻度上方）。
+            // 改竞品通行做法：点/拖月份出虚线 RuleMark，精确值走本行文本。
+            if let sel = effectiveTrendBucket {
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    Text(monthTitle(sel.key))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    Text("收 " + LedgerMath.fmtMoney(cents: sel.received))
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                    Text("送 " + LedgerMath.fmtMoney(cents: sel.given))
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                    Text("净 " + netMoneyText(sel.received - sel.given))
+                        .font(.footnote.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Palette.ink)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(monthTitle(sel.key))：收 \(LedgerMath.fmtMoney(cents: sel.received))，送 \(LedgerMath.fmtMoney(cents: sel.given))，净 \(LedgerMath.fmtMoney(cents: sel.received - sel.given))")
+            }
+            Chart {
+                ForEach(monthBuckets) { bucket in
+                    BarMark(
                         x: .value("月份", bucket.label),
-                        y: .value("合计", Double(max(bucket.received, bucket.given)) / 100.0)
+                        y: .value("收礼", Double(bucket.received) * entrance / 100.0)
                     )
-                    .foregroundStyle(.clear)
-                    .symbolSize(0)
-                    .annotation(position: .top, spacing: 2) {
-                        Text(LedgerMath.fmtMoney(cents: bucket.total))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(Palette.stone)
-                    }
+                    .position(by: .value("方向", "收礼"))
+                    .foregroundStyle(by: .value("方向", "收礼"))
+                    .cornerRadius(2)
+                    BarMark(
+                        x: .value("月份", bucket.label),
+                        y: .value("随礼", Double(bucket.given) * entrance / 100.0)
+                    )
+                    .position(by: .value("方向", "随礼"))
+                    .foregroundStyle(by: .value("方向", "随礼"))
+                    .cornerRadius(2)
+                }
+                if let sel = effectiveTrendBucket {
+                    RuleMark(x: .value("月份", sel.label))
+                        .foregroundStyle(Palette.stone.opacity(0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
             }
             .chartForegroundStyleScale(["收礼": Palette.primary, "随礼": givenColor])
             .chartLegend(.hidden)
+            .chartXSelection(value: $selectedMonthLabel)
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine().foregroundStyle(Palette.line)
@@ -517,19 +608,83 @@ struct ChartsView: View {
                 }
             }
             .chartXAxis {
-                AxisMarks { _ in
+                AxisMarks(values: monthTickLabels) { _ in
                     AxisValueLabel()
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(Palette.stone)
                 }
             }
-            .frame(height: 190)
+            .frame(height: trendChartHeight)
             .accessibilityLabel(trendAccessibilityText)
 
             if scope == .all {
-                Text("趋势图显示最近 12 个月；更早的往来见下方按年汇总。")
+                Text(monthBuckets.count < 12
+                    ? "数据集中在 \(monthBuckets.count) 个月，趋势图已按跨度收敛；更早的往来见下方按年汇总。"
+                    : "趋势图显示最近 12 个月；更早的往来见下方按年汇总。")
                     .font(.caption)
                     .foregroundStyle(Palette.stone)
+            }
+
+            // 图表明细联动（v4.7.1，竞品对标 A）：选中月的逐笔明细就在图下，
+            // 点行进人物详情——图从「看」变成「用」（鲨鱼记账触图出当日
+            // 最大三笔的同构做法，这里给整月全量）。口径与图一致：
+            // 范围内、待送出不计（待送笔不进合计，也不在此列出）。
+            if let sel = effectiveTrendBucket {
+                Divider()
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(monthTitle(sel.key))明细")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    Text("共 \(selectedMonthRecords.count) 笔")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                }
+                if selectedMonthRecords.isEmpty {
+                    Text("这个月没有往来记录。点选或拖动上方图表可切换月份。")
+                        .font(.caption)
+                        .foregroundStyle(Palette.stone)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(selectedMonthRecords.prefix(10).enumerated()), id: \.element.id) { idx, record in
+                            Button {
+                                personRoute = PeopleView.NameRoute(name: record.person)
+                            } label: {
+                                HStack(spacing: LiqianMetrics.spacingS) {
+                                    DirectionTag(
+                                        direction: record.direction,
+                                        bai: ledgers.first { $0.id == record.ledgerID }?.isBai ?? false
+                                    )
+                                    Text(record.person)
+                                        .foregroundStyle(Palette.ink)
+                                        .lineLimit(1)
+                                    Text(ledgers.first { $0.id == record.ledgerID }?.title ?? "")
+                                        .font(.footnote)
+                                        .foregroundStyle(Palette.stone)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(LiqianDate.displayString(for: record.date))
+                                        .font(.footnote)
+                                        .foregroundStyle(Palette.stone)
+                                    Text(LedgerMath.fmtMoney(cents: record.amountCents))
+                                        .font(.liqianMoney(.body))
+                                        .foregroundStyle(Palette.ink)
+                                }
+                                .frame(minHeight: LiqianMetrics.minTapTarget)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            if idx < min(selectedMonthRecords.count, 10) - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                    if selectedMonthRecords.count > 10 {
+                        Text("还有 \(selectedMonthRecords.count - 10) 笔，点任意一笔可进人物详情，或到对应礼簿查看全部。")
+                            .font(.caption)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
             }
 
             if !yearRows.isEmpty {
@@ -547,10 +702,13 @@ struct ChartsView: View {
                 VStack(spacing: LiqianMetrics.spacingS) {
                     ForEach(yearRows) { row in
                         HStack(spacing: LiqianMetrics.spacingS) {
+                            // 年份标签固定宽单行（v4.7.1）：旧宽 52 装不下
+                            // 「2026 年」被挤成两行（真机实证），64 + 不换行
                             Text(row.year + " 年")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(Palette.ink)
-                                .frame(width: 52, alignment: .leading)
+                                .lineLimit(1)
+                                .frame(width: 64, alignment: .leading)
                             Text("收 " + LedgerMath.fmtMoney(cents: row.received))
                                 .font(.footnote.monospacedDigit())
                                 .foregroundStyle(Palette.stone)
@@ -591,20 +749,50 @@ struct ChartsView: View {
 
     // MARK: - 净额趋势（v4.7：月净额柱 + 窗口内累计折线，上下两图共用月份轴）
 
+    /// 窗口内有净额变动的月份数：决定累计图是画折线还是退化为落点
+    private var cumulativeChangeCount: Int { netMonths.filter { $0.net != 0 }.count }
+
     private var netTrendCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
             cardHeader("净额趋势", caption: "月净额（收 − 送）与累计净额")
-            Chart(netMonths) { row in
-                BarMark(
-                    x: .value("月份", row.label),
-                    y: .value("净额", Double(row.net) * entrance / 100.0)
-                )
-                .foregroundStyle(row.net >= 0 ? Palette.primary : givenColor)
-                .cornerRadius(2)
+            // 点选读数行（v4.7.1）：与收送图共用选中月份，两卡联动
+            if let sel = effectiveNetRow {
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    Text(monthTitle(sel.key))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    Text("净 " + netMoneyText(sel.net))
+                        .font(.footnote.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Palette.ink)
+                    Text("累计 " + LedgerMath.fmtMoney(cents: sel.cumulative))
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(monthTitle(sel.key))：净额 \(LedgerMath.fmtMoney(cents: sel.net))，累计净额 \(LedgerMath.fmtMoney(cents: sel.cumulative))")
+            }
+            Chart {
+                ForEach(netMonths) { row in
+                    BarMark(
+                        x: .value("月份", row.label),
+                        y: .value("净额", Double(row.net) * entrance / 100.0)
+                    )
+                    .foregroundStyle(row.net >= 0 ? Palette.primary : givenColor)
+                    .cornerRadius(2)
+                }
                 RuleMark(y: .value("零", 0))
                     .foregroundStyle(Palette.stone.opacity(0.35))
                     .lineStyle(StrokeStyle(lineWidth: 1))
+                if let sel = effectiveNetRow {
+                    RuleMark(x: .value("月份", sel.label))
+                        .foregroundStyle(Palette.stone.opacity(0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
             }
+            // Y 域显式含零并留边距：负净额月份必须能画到零轴下方（v4.7.1）
+            .chartYScale(domain: paddedDomain(values: netMonths.map { Double($0.net) / 100.0 }))
+            .chartXSelection(value: $selectedMonthLabel)
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine().foregroundStyle(Palette.line)
@@ -618,35 +806,67 @@ struct ChartsView: View {
                 }
             }
             .chartXAxis {
-                AxisMarks { _ in
+                AxisMarks(values: monthTickLabels) { _ in
                     AxisValueLabel()
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(Palette.stone)
                 }
             }
-            .frame(height: 120)
+            .frame(height: netChartHeight)
             .accessibilityLabel(netTrendAccessibilityText)
 
             Text("累计净额")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Palette.ink)
-            Chart(netMonths) { row in
-                LineMark(
-                    x: .value("月份", row.label),
-                    y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
-                )
-                .foregroundStyle(Palette.ink)
-                .lineStyle(StrokeStyle(lineWidth: 2))
-                PointMark(
-                    x: .value("月份", row.label),
-                    y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
-                )
-                .foregroundStyle(Palette.ink)
-                .symbolSize(14)
+            Chart {
+                if cumulativeChangeCount >= 2 {
+                    ForEach(netMonths) { row in
+                        LineMark(
+                            x: .value("月份", row.label),
+                            y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
+                        )
+                        .foregroundStyle(Palette.ink)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                        PointMark(
+                            x: .value("月份", row.label),
+                            y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
+                        )
+                        .foregroundStyle(Palette.ink)
+                        .symbolSize(14)
+                    }
+                    // 末点数值标签：锚点透明、只借位置挂标注；Y 域已留
+                    // 15% 边距，标签不会像旧版那样贴边被裁切（真机实证）
+                    if let last = netMonths.last {
+                        PointMark(
+                            x: .value("月份", last.label),
+                            y: .value("累计净额", Double(last.cumulative) * entrance / 100.0)
+                        )
+                        .foregroundStyle(.clear)
+                        .symbolSize(0)
+                        .annotation(position: .top, alignment: .trailing, spacing: 2) {
+                            Text(LedgerMath.fmtMoney(cents: last.cumulative))
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(Palette.ink)
+                        }
+                    }
+                } else {
+                    // 退化形态（v4.7.1）：净额变动不足两个月时不拉整窗斜线
+                    // ——旧版 11 个月为 0、末月突跳，折线射向图外且末点被裁；
+                    // 改为只在累计非零处落点，数值由下方说明行承载。
+                    ForEach(netMonths.filter { $0.cumulative != 0 }) { row in
+                        PointMark(
+                            x: .value("月份", row.label),
+                            y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
+                        )
+                        .foregroundStyle(Palette.ink)
+                        .symbolSize(36)
+                    }
+                }
                 RuleMark(y: .value("零", 0))
                     .foregroundStyle(Palette.stone.opacity(0.35))
                     .lineStyle(StrokeStyle(lineWidth: 1))
             }
+            .chartYScale(domain: paddedDomain(values: netMonths.map { Double($0.cumulative) / 100.0 }))
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine().foregroundStyle(Palette.line)
@@ -660,14 +880,24 @@ struct ChartsView: View {
                 }
             }
             .chartXAxis {
-                AxisMarks { _ in
+                AxisMarks(values: monthTickLabels) { _ in
                     AxisValueLabel()
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(Palette.stone)
                 }
             }
-            .frame(height: 96)
+            .frame(height: cumulativeChartHeight)
             .accessibilityLabel(cumulativeAccessibilityText)
+
+            if cumulativeChangeCount == 1, let only = netMonths.first(where: { $0.net != 0 }) {
+                Text("仅 \(monthTitle(only.key)) 有净额变动，累计净额 \(LedgerMath.fmtMoney(cents: netMonths.last?.cumulative ?? 0))。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.stone)
+            } else if cumulativeChangeCount == 0 {
+                Text("所选范围内收送相抵，累计净额无变化。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.stone)
+            }
 
             if scope == .all {
                 Text("累计净额自窗口首月起算；全史净额见总览卡「净往来」。")
@@ -783,6 +1013,61 @@ struct ChartsView: View {
         return String(format: "%.0f%%", Double(part) / Double(all) * 100)
     }
 
+    // MARK: - 占比条分段（v4.7.1，竞品对标 B：随手记式占比的一行化）
+
+    /// 事由占比：按往来总额（收+送）分段，色彩与关系环图同阶（sliceColor）
+    private var typeShareSegments: [ShareBar.Segment] {
+        let total = typeRows.reduce(0) { $0 + $1.received + $1.given }
+        guard total > 0 else { return [] }
+        return typeRows.enumerated().map { idx, row in
+            let frac = Double(row.received + row.given) / Double(total)
+            return ShareBar.Segment(
+                id: row.type,
+                fraction: frac * entrance,
+                rawFraction: frac,
+                color: sliceColor(index: idx),
+                // 前三段是深色阶（朱砂/墨 0.72/墨 0.50）用白字，其后浅阶用墨字
+                labelColor: idx <= 2 ? .white : Palette.ink,
+                percentText: String(format: "%.0f%%", frac * 100)
+            )
+        }
+    }
+
+    private var typeShareAccessibilityText: String {
+        let total = typeRows.reduce(0) { $0 + $1.received + $1.given }
+        guard total > 0 else { return "事由金额占比：暂无数据" }
+        let parts = typeRows.map {
+            "\($0.type) \(String(format: "%.0f%%", Double($0.received + $0.given) / Double(total) * 100))"
+        }
+        return "事由金额占比：" + parts.joined(separator: "，")
+    }
+
+    /// 红白占比：红事朱砂、白事素蓝（与红白条图同色义）
+    private var kindShareSegments: [ShareBar.Segment] {
+        let total = kindRows.reduce(0) { $0 + $1.received + $1.given }
+        guard total > 0 else { return [] }
+        return kindRows.map { row in
+            let frac = Double(row.received + row.given) / Double(total)
+            return ShareBar.Segment(
+                id: row.name,
+                fraction: frac * entrance,
+                rawFraction: frac,
+                color: row.isBai ? Palette.baiPrimary : Palette.primary,
+                labelColor: .white,
+                percentText: String(format: "%.0f%%", frac * 100)
+            )
+        }
+    }
+
+    private var kindShareAccessibilityText: String {
+        let total = kindRows.reduce(0) { $0 + $1.received + $1.given }
+        guard total > 0 else { return "红白金额占比：暂无数据" }
+        let parts = kindRows.map {
+            "\($0.name) \(String(format: "%.0f%%", Double($0.received + $0.given) / Double(total) * 100))"
+        }
+        return "红白金额占比：" + parts.joined(separator: "，")
+    }
+
     private var relationAccessibilityText: String {
         let parts = relationRows.map {
             "\($0.relation) \($0.count) 笔，往来 \(LedgerMath.fmtMoney(cents: $0.total))"
@@ -807,6 +1092,8 @@ struct ChartsView: View {
                     .font(.subheadline)
                     .foregroundStyle(Palette.stone)
             } else {
+                // 占比条（v4.7.1）：先给份额的一眼读数，下方成对条再给收/送结构
+                ShareBar(segments: typeShareSegments, accessibilityText: typeShareAccessibilityText)
                 Chart(typeRows) { row in
                     BarMark(
                         x: .value("收礼", Double(row.received) * entrance / 100.0),
@@ -877,6 +1164,10 @@ struct ChartsView: View {
     private var kindCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
             cardHeader("红白分开", caption: "红事与白事分开统计")
+            // 占比条（v4.7.1）：红/白总份额一行看清，下方条图再拆收/送
+            if kindRows.contains(where: { $0.received + $0.given > 0 }) {
+                ShareBar(segments: kindShareSegments, accessibilityText: kindShareAccessibilityText)
+            }
             Chart(kindRows) { row in
                 BarMark(
                     x: .value("收礼", Double(row.received) * entrance / 100.0),
@@ -1297,6 +1588,52 @@ struct ChartsView: View {
             return (wan == wan.rounded() ? String(format: "%.0f万", wan) : String(format: "%.1f万", wan))
         }
         return String(format: "%.0f", yuan)
+    }
+}
+
+// MARK: - 占比条（v4.7.1，竞品对标 B）
+
+/// 单行占比条：分段宽度＝金额占比，段够宽（≥16%）时段内标百分比；
+/// 与卡内条形图上下互补——占比条给「份额」的一眼读数，条形给收/送结构。
+/// 段宽由父层按入场进度（entrance）缩放实现生长动画，百分比按原始
+/// 占比判定与显示；Reduce Motion 时父层 entrance 恒 1，即瞬时呈现。
+private struct ShareBar: View {
+    struct Segment: Identifiable {
+        var id: String
+        /// 已按入场进度缩放的宽度占比
+        var fraction: Double
+        /// 原始占比（决定是否段内标注）
+        var rawFraction: Double
+        var color: Color
+        var labelColor: Color
+        var percentText: String
+    }
+
+    let segments: [Segment]
+    let accessibilityText: String
+
+    var body: some View {
+        GeometryReader { geo in
+            let gaps = CGFloat(max(segments.count - 1, 0)) * 2
+            HStack(spacing: 2) {
+                ForEach(segments) { seg in
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(seg.color)
+                        if seg.rawFraction >= 0.16 {
+                            Text(seg.percentText)
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(seg.labelColor)
+                        }
+                    }
+                    .frame(width: max(0, (geo.size.width - gaps) * seg.fraction))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: 18)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
     }
 }
 
