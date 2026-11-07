@@ -98,6 +98,7 @@ struct ContentView: View {
             TrashStore.purgeExpired()
             refreshWidgetSummary()
             checkQuickRecord()
+            checkShortcutPending()
             calibrateReminders()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -116,9 +117,16 @@ struct ContentView: View {
                 backgroundedAt = nil
                 refreshWidgetSummary()
                 checkQuickRecord()
+                checkShortcutPending()
             default:
                 break
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liqianShortcutAction)) { _ in
+            // App 运行中点长按快捷菜单：AppDelegate 已写标记，这里立即消费
+            // （checkQuickRecord 内部含隐私锁与无礼簿守卫；切 Tab 侧同理）
+            checkQuickRecord()
+            checkShortcutPending()
         }
         .onReceive(NotificationCenter.default.publisher(for: .liqianOpenAISettings)) { _ in
             // AI 引导 alert 的「去设置」落点：切到「我的」Tab（AI 设置行在该页）
@@ -197,6 +205,15 @@ struct ContentView: View {
         guard defaults?.bool(forKey: WidgetSummaryWriter.quickRecordKey) == true else { return }
         defaults?.set(false, forKey: WidgetSummaryWriter.quickRecordKey)
         presentQuickRecord()
+    }
+
+    /// 长按快捷菜单「查看待回礼」（v4.5）：消费标记后切「往来」Tab（待回礼
+    /// 汇总在该页）。隐私锁锁着时不承接——标记已消费直接丢弃，不解锁后补跳，
+    /// 与 liqian://person 深链的锁定口径一致。
+    private func checkShortcutPending() {
+        guard ShortcutActions.consumePendingTab() else { return }
+        if privacyLockEnabled && isLocked { return }
+        tabSelection = 1
     }
 
     private func presentQuickRecord() {

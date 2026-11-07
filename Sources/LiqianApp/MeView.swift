@@ -38,6 +38,9 @@ struct MeView: View {
     @State private var importTrigger = 0
     @AppStorage("privacyLock") private var privacyLock = false
     @AppStorage("hostName") private var hostName = ""
+    /// 上次成功导出备份的时间（v4.5 备份提醒）：@AppStorage 订阅，
+    /// fileExporter 成功回调里刷新；提醒逻辑见 BackupReminder
+    @AppStorage(BackupReminder.lastBackupAtKey) private var lastBackupStamp: Double = 0
     /// 回礼建议年涨幅（v4.3）：0/3/5%，人物详情卡与记一笔提示同键同源
     @AppStorage(ReplyAdvisor.annualRateKey) private var annualRatePercent = ReplyAdvisor.defaultAnnualRatePercent
     @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
@@ -79,6 +82,29 @@ struct MeView: View {
     /// 关于区版本号：动态读 Bundle，避免写死版本过期（PRO-AUDIT #31）
     static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
+    /// 备份提醒（v4.5）：hasData 用已排除示例的汇总快照判定（只有示例
+    /// 账目不算「有账没备份」）；文案规则见 BackupReminder
+    private var backupReminder: (title: String, subtitle: String)? {
+        BackupReminder.reminder(
+            hasData: !snapshots.isEmpty,
+            lastBackupAt: lastBackupStamp > 0
+                ? Date(timeIntervalSince1970: lastBackupStamp) : nil
+        )
+    }
+
+    /// 导出备份的唯一动作：数据区的导出行与备份提醒行共用
+    private func startBackupExport() {
+        exportDocument = JSONBackupDocument(
+            data: LiqianBackup.makeBackup(
+                ledgers: ledgers, records: records,
+                reminders: reminderDays, members: members,
+                signatures: guestSignatures, blessings: voiceBlessings,
+                customRelations: RelationCatalog.custom()
+            )
+        )
+        showExporter = true
     }
 
     private var csvFingerprint: String {
@@ -268,15 +294,7 @@ struct MeView: View {
                     }
                     csvEntryRow
                     Button {
-                        exportDocument = JSONBackupDocument(
-                            data: LiqianBackup.makeBackup(
-                                ledgers: ledgers, records: records,
-                                reminders: reminderDays, members: members,
-                                signatures: guestSignatures, blessings: voiceBlessings,
-                                customRelations: RelationCatalog.custom()
-                            )
-                        )
-                        showExporter = true
+                        startBackupExport()
                     } label: {
                         entryLabel(
                             icon: "tray.and.arrow.up",
@@ -292,6 +310,19 @@ struct MeView: View {
                             title: "从备份恢复",
                             subtitle: "选一个备份文件，覆盖现在的数据"
                         )
+                    }
+                    // 备份提醒（v4.5）：从未备份或超过 30 天时才出现，
+                    // 点行直接开始导出；备份成功后随 lastBackupStamp 刷新消失
+                    if let backupReminder {
+                        Button {
+                            startBackupExport()
+                        } label: {
+                            entryLabel(
+                                icon: "exclamationmark.circle",
+                                title: backupReminder.title,
+                                subtitle: backupReminder.subtitle
+                            )
+                        }
                     }
                 } header: {
                     Text("数据")
@@ -347,7 +378,12 @@ struct MeView: View {
                 contentType: .json,
                 defaultFilename: "礼记备份"
             ) { result in
-                if case .failure = result {
+                switch result {
+                case .success:
+                    // 备份提醒的计时起点（v4.5）：只有真导出成功才记，
+                    // 取消或失败不刷新，提醒行不会被误消
+                    lastBackupStamp = Date().timeIntervalSince1970
+                case .failure:
                     showInfo(title: "导出失败", message: "备份导出失败，请重试。")
                 }
             }
@@ -726,6 +762,32 @@ struct AboutView: View {
                     .foregroundStyle(Palette.ink)
             } footer: {
                 Text("开启 iCloud 同步时，数据通过你自己的 iCloud 账号在你的设备间同步，换手机或重装后自动回来；未开启时数据仅保存在本机。导出备份可手动保存一份到任意位置，与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。注意：来宾签名图片与语音祝福录音不在 JSON 备份内，它们保存在本机与 iCloud 中。")
+            }
+            // 法律与反馈（v4.5）：隐私/协议为内置文本页、离线可读；
+            // 反馈走系统邮件，地址与模板在 Feedback.swift
+            Section {
+                NavigationLink {
+                    LegalView(doc: LegalTexts.privacyPolicy)
+                } label: {
+                    Text("隐私政策")
+                        .foregroundStyle(Palette.ink)
+                }
+                NavigationLink {
+                    LegalView(doc: LegalTexts.userAgreement)
+                } label: {
+                    Text("用户协议")
+                        .foregroundStyle(Palette.ink)
+                }
+                Link(destination: FeedbackMail.url) {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("意见反馈")
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Text(FeedbackMail.address)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
             }
         }
         .listStyle(.insetGrouped)

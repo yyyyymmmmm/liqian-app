@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import StoreKit
 import LiqianCore
 import LiqianDesign
 
@@ -19,6 +20,11 @@ struct LibuExportView: View {
     var blessings: [VoiceBlessing] = []
 
     @Environment(\.dismiss) private var dismiss
+    /// 评分引导（v4.5）：只在礼谱生成成功后、且 ReviewPrompt 条件齐备时请求
+    @Environment(\.requestReview) private var requestReview
+    /// 全 App 记录/礼簿（只为评分引导算累计真实记录数，排除示例账本）
+    @Query private var allRecords: [GiftRecord]
+    @Query private var allLedgers: [Ledger]
 
     @State private var style: LibuPrefaceStyle = .wenyan
     @State private var generating = false
@@ -169,10 +175,27 @@ struct LibuExportView: View {
             if let url {
                 pdfURL = url
                 exportTrigger += 1
+                maybeRequestReview()
             } else {
                 errorText = "礼谱生成失败，请重试。"
                 exportErrorTrigger += 1
             }
+        }
+    }
+
+    /// 评分引导（v4.5）：礼谱生成成功是本 App 最明确的正向时刻。
+    /// 条件（累计真实记录 ≥20 笔、距上次请求 ≥120 天）都在 ReviewPrompt 里，
+    /// 不满足就完全沉默；先记时再请求，避免同一次成功重复触发。
+    /// 延迟 1.2 秒等预览与成功震动先落地，弹窗不抢第一眼。
+    /// 失败路径（上方 else）永远不走到这里。
+    private func maybeRequestReview() {
+        let sampleIDs = SampleData.sampleIDs(ledgers: allLedgers)
+        let total = allRecords.filter { !sampleIDs.contains($0.ledgerID) }.count
+        guard ReviewPrompt.shouldRequest(totalRecords: total) else { return }
+        ReviewPrompt.markRequested()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            requestReview()
         }
     }
 }
