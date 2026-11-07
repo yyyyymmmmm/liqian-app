@@ -114,7 +114,7 @@ struct RecordFormView: View {
         )
     }
 
-    /// 同人提示：这个名字在本账本已有的笔数（编辑时不算自己这笔）
+    /// 同人提示：这个名字在本礼簿已有的笔数（编辑时不算自己这笔）
     private var sameLedgerCount: Int {
         let q = person.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty, let lid = effectiveLedgerID else { return 0 }
@@ -139,8 +139,8 @@ struct RecordFormView: View {
                                 Label("一句话记账", systemImage: "text.bubble")
                                     .foregroundStyle(Palette.primary)
                                 Spacer()
-                                Text("说一句，自动填好")
-                                    .font(.system(size: 12.5))
+                                Text("一句话填写姓名与金额")
+                                    .font(.footnote)
                                     .foregroundStyle(Palette.stone)
                             }
                             .frame(minHeight: LiqianMetrics.minTapTarget)
@@ -171,19 +171,19 @@ struct RecordFormView: View {
 
                 Section {
                     Picker("方向", selection: $direction) {
-                        Text("收礼（别人给我）").tag(LiqianConstants.received)
-                        Text("随礼（我送出去）").tag(LiqianConstants.given)
+                        Text("收礼").tag(LiqianConstants.received)
+                        Text("随礼").tag(LiqianConstants.given)
                     }
                     .pickerStyle(.segmented)
                     if direction == LiqianConstants.given {
                         Picker("状态", selection: $status) {
                             Text("已送出").tag(LiqianConstants.sentStatus)
-                            Text("待送出（先记着）").tag(LiqianConstants.pendingStatus)
+                            Text("待送出").tag(LiqianConstants.pendingStatus)
                         }
                         .pickerStyle(.segmented)
                         if status == LiqianConstants.pendingStatus {
-                            Text("待送出的先记着，不算进往来差额，送出去后改成「已送出」。")
-                                .font(.system(size: 12.5))
+                            Text("待送出记录不计入往来差额，送出后请改记为「已送出」。")
+                                .font(.footnote)
                                 .foregroundStyle(Palette.stone)
                         }
                     }
@@ -195,7 +195,7 @@ struct RecordFormView: View {
                     if let personError {
                         Text(personError)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                     ForEach(suggestions) { p in
                         Button {
@@ -209,7 +209,7 @@ struct RecordFormView: View {
                                     .foregroundStyle(Palette.ink)
                                 Spacer()
                                 Text("\(p.relation) · 共 \(p.count) 笔往来")
-                                    .font(.system(size: 12.5))
+                                    .font(.footnote)
                                     .foregroundStyle(Palette.stone)
                             }
                             .frame(minHeight: LiqianMetrics.minTapTarget)
@@ -217,8 +217,8 @@ struct RecordFormView: View {
                         .buttonStyle(.plain)
                     }
                     if sameLedgerCount > 0 {
-                        Text("此人在本账本已有 \(sameLedgerCount) 笔，再记一笔会并列保存。")
-                            .font(.system(size: 12.5))
+                        Text("此人在本礼簿已有 \(sameLedgerCount) 笔，再记一笔会并列保存。")
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                     }
                 }
@@ -227,11 +227,11 @@ struct RecordFormView: View {
                     amountDisplay
                     amountChips
                     amountKeypad
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.spacingM))
                     if let amountError {
                         Text(amountError)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                 } header: {
                     Text("金额（元）")
@@ -249,7 +249,7 @@ struct RecordFormView: View {
                         }
                     }
                     DatePicker("日期", selection: $date, displayedComponents: .date)
-                    TextField("备注（可选）", text: $note, prompt: Text("实物礼写这里，如：两瓶酒"))
+                    TextField("备注（选填）", text: $note, prompt: Text("实物礼写这里，如：两瓶酒"))
                 }
 
                 if existing == nil {
@@ -310,7 +310,7 @@ struct RecordFormView: View {
                 Button("删除", role: .destructive) { deleteExisting() }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("删除后 30 天内可以在「我的 → 回收站」恢复。")
+                Text("删除后 30 天内可以在「我的 → 最近删除」恢复。")
             }
             .onAppear {
                 if needsLedgerPicker, selectedLedgerID == nil {
@@ -326,30 +326,30 @@ struct RecordFormView: View {
     // MARK: - 金额区：大号显示 + 常用金额 + 自定义大字键盘（三秒记账，不用系统键盘）
 
     private var amountDisplay: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
             Text("¥")
-                .font(.liqianSerif(size: 26))
+                .font(.liqianSerif(.title2))
                 .foregroundStyle(Palette.stone)
             Text(amountText.isEmpty ? "0" : amountText)
-                .font(.liqianMoney(size: 40))
+                .font(.liqianMoney(.largeTitle))
                 .foregroundStyle(amountText.isEmpty ? Palette.stone : Palette.ink)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, LiqianMetrics.spacingXS)
     }
 
     private var amountChips: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: LiqianMetrics.spacingS) {
             ForEach([100, 200, 300, 500, 800, 1000], id: \.self) { v in
                 Button {
                     amountText = "\(v)"
                     amountError = nil
                 } label: {
                     Text("\(v)")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.primary)
                         .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
                         .background(Palette.primaryTint, in: Capsule())
@@ -361,8 +361,8 @@ struct RecordFormView: View {
 
     private var amountKeypad: some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-            spacing: 8
+            columns: Array(repeating: GridItem(.flexible(), spacing: LiqianMetrics.spacingS), count: 3),
+            spacing: LiqianMetrics.spacingS
         ) {
             ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9"], id: \.self) { k in
                 keypadKey(k)
@@ -381,9 +381,9 @@ struct RecordFormView: View {
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(Palette.ink)
                 .frame(maxWidth: .infinity, minHeight: 56)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: 12))
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                         .stroke(Palette.hairline, lineWidth: 1)
                 )
         }
@@ -393,9 +393,9 @@ struct RecordFormView: View {
     /// 删除键：点按删一位，长按清空
     private var keypadDeleteKey: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                 .fill(Palette.card)
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                 .stroke(Palette.hairline, lineWidth: 1)
             Image(systemName: "delete.left")
                 .font(.system(size: 22))
@@ -403,7 +403,10 @@ struct RecordFormView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 56)
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("删除一位，长按清空")
+        .accessibilityAddTraits(.isButton)
         .onTapGesture { keypadInput("delete") }
         .onLongPressGesture(minimumDuration: 0.45) { keypadInput("clear") }
     }
@@ -441,7 +444,7 @@ struct RecordFormView: View {
         personError = name.isEmpty ? "姓名还没填" : nil
         let amountValue = Double(amountText.trimmingCharacters(in: .whitespaces))
         let cents: Int? = amountValue.flatMap { $0 > 0 ? Int(($0 * 100.0).rounded()) : nil }
-        amountError = cents == nil ? "金额不对，检查一下" : nil
+        amountError = cents == nil ? "请输入正确的金额" : nil
         guard personError == nil, let cents, let lid = effectiveLedgerID else {
             errorTrigger += 1
             return

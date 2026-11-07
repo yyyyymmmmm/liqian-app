@@ -61,32 +61,32 @@ struct PersonDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: LiqianMetrics.spacingSM) {
                 headerCard
                 if let suggestion {
                     suggestionCard(suggestion)
                 }
                 if personRecords.isEmpty {
                     Text("还没有往来记录")
-                        .font(.system(size: 15))
+                        .font(.body)
                         .foregroundStyle(Palette.stone)
-                        .padding(.top, 32)
+                        .padding(.top, LiqianMetrics.spacingXL)
                 } else {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: LiqianMetrics.spacingS) {
                         ForEach(personRecords) { r in
                             timelineRow(r)
                         }
                     }
                 }
             }
-            .padding(16)
+            .padding(LiqianMetrics.spacingM)
         }
         .background(Palette.paper.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
+            GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
+                HStack(spacing: LiqianMetrics.spacingSM) {
                     Button {
                         formMode = .create(direction: LiqianConstants.received)
                     } label: {
@@ -104,8 +104,8 @@ struct PersonDetailView: View {
                     }
                     .buttonStyle(.glass)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, LiqianMetrics.spacingM)
+                .padding(.vertical, LiqianMetrics.spacingS)
             }
         }
         .sheet(item: $formMode) { mode in
@@ -121,21 +121,21 @@ struct PersonDetailView: View {
     private var headerCard: some View {
         VStack(spacing: 0) {
             HStack {
-                headerStat(label: "他给我的", value: received)
+                headerStat(label: "收礼合计", value: received)
                 Spacer()
-                headerStat(label: "我给他的", value: given)
+                headerStat(label: "随礼合计", value: given)
             }
             Divider()
                 .overlay(Palette.hairline)
-                .padding(.vertical, 12)
+                .padding(.vertical, LiqianMetrics.spacingSM)
             Text(conclusion)
-                .font(.system(size: 15, weight: .bold))
+                .font(.body.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if pending > 0 {
-                Text("其中 \(LedgerMath.fmtMoney(cents: pending)) 是最近收下、还没回的")
-                    .font(.system(size: 12.5))
+                Text("其中 \(LedgerMath.fmtMoney(cents: pending)) 待回礼")
+                    .font(.footnote)
                     .foregroundStyle(Palette.primary)
-                    .padding(.top, 4)
+                    .padding(.top, LiqianMetrics.spacingXS)
             }
         }
         .padding(LiqianMetrics.cardPadding)
@@ -147,12 +147,12 @@ struct PersonDetailView: View {
     }
 
     private func suggestionCard(_ s: ReturnGiftSuggestion) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("回礼参考")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             Text(suggestionText(s))
-                .font(.system(size: 14))
+                .font(.subheadline)
                 .foregroundStyle(Palette.ink)
                 .lineSpacing(5)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,21 +177,21 @@ struct PersonDetailView: View {
     }
 
     private func headerStat(label: String, value: Int) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: LiqianMetrics.spacingXS) {
             Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianSerif(size: 18))
+                .font(.liqianSerif(.title3))
                 .foregroundStyle(Palette.ink)
             Text(label)
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
         .frame(maxWidth: .infinity)
     }
 
     private var conclusion: String {
-        if balance == 0 { return "往来两清" }
+        if balance == 0 { return "已结清" }
         return balance > 0
-            ? "他多给 \(LedgerMath.fmtMoney(cents: balance))，下次他办事记得回"
+            ? "对方多给 \(LedgerMath.fmtMoney(cents: balance))，下次对方办事记得回"
             : "我多给 \(LedgerMath.fmtMoney(cents: -balance))"
     }
 
@@ -201,9 +201,9 @@ struct PersonDetailView: View {
         return Button {
             formMode = .edit(r)
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text("\(l?.title ?? "")（\(l?.type ?? "")）")
                             .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                             .lineLimit(1)
@@ -213,15 +213,15 @@ struct PersonDetailView: View {
                         }
                     }
                     Text(subtitle(of: r))
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 }
                 Spacer()
                 Text("\(r.direction == LiqianConstants.received ? "+" : "-")\(LedgerMath.fmtMoney(cents: r.amountCents))")
-                    .font(.liqianMoney(size: 16))
+                    .font(.liqianMoney(.title3))
                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
             }
-            .padding(12)
+            .padding(LiqianMetrics.spacingSM)
             .background(
                 isBai ? Palette.baiCard : Palette.card,
                 in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -236,7 +236,7 @@ struct PersonDetailView: View {
     }
 
     private func subtitle(of r: GiftRecord) -> String {
-        var s = "\(r.date) · \(r.method)"
+        var s = "\(LiqianDate.displayString(for: r.date)) · \(r.method)"
         if !r.note.isEmpty { s += " · \(r.note)" }
         return s
     }

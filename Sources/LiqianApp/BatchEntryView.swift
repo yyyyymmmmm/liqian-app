@@ -15,7 +15,7 @@ struct BatchEntryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    /// 现场大字模式（办席当天用）：字号与行高放大，持久化记住选择
+    /// 大字模式（办席当天用）：字号与行高放大，持久化记住选择
     @AppStorage("batchBigMode") private var bigMode = false
     @State private var direction = LiqianConstants.received
     @State private var rows: [Row] = (0..<4).map { _ in Row() }
@@ -55,7 +55,7 @@ struct BatchEntryView: View {
     }
     @Query private var allRecords: [GiftRecord]
 
-    /// 本簿已有姓名（粘贴预览里给同名提示，导入仍并列保存）
+    /// 本礼簿已有姓名（粘贴预览里给同名提示，导入仍并列保存）
     private var existingNames: Set<String> {
         Set(allRecords.filter { $0.ledgerID == ledger.id }.map(\.person))
     }
@@ -87,26 +87,26 @@ struct BatchEntryView: View {
                 } else {
                 Section {
                     Picker("方向", selection: $direction) {
-                        Text("收礼（别人给我）").tag(LiqianConstants.received)
-                        Text("随礼（我送出去）").tag(LiqianConstants.given)
+                        Text("收礼").tag(LiqianConstants.received)
+                        Text("随礼").tag(LiqianConstants.given)
                     }
                     .pickerStyle(.segmented)
-                    Toggle("现场大字", isOn: $bigMode)
+                    Toggle("大字模式", isOn: $bigMode)
                         .tint(isBai ? Palette.baiPrimary : Palette.primary)
-                    Text("照着旧礼簿一行行填就行。关系先按「朋友」、方式先按「现金」记，日期是今天，记完点开单笔可以再改。")
-                        .font(.system(size: 12.5))
+                    Text("按旧礼簿逐行填写。关系默认「朋友」、方式默认「现金」、日期为今天，保存后可逐笔修改。")
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     if errorRow == nil, let errorMessage {
                         Text(errorMessage)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                 }
 
                 Section {
                     ForEach(rows.indices, id: \.self) { i in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                            HStack(spacing: LiqianMetrics.spacingS) {
                                 Text("\(i + 1)")
                                     .foregroundStyle(Palette.stone)
                                     .frame(width: 24)
@@ -114,7 +114,7 @@ struct BatchEntryView: View {
                                     .font(bigMode ? .system(size: 20) : nil)
                                 TextField("金额（元）", text: $rows[i].amount, prompt: Text("金额"))
                                     .keyboardType(.decimalPad)
-                                    .font(bigMode ? .liqianMoney(size: 34) : nil)
+                                    .font(bigMode ? .liqianMoneyFixed(size: 34) : nil)
                                     .frame(width: bigMode ? 150 : 96)
                                 Button(role: .destructive) {
                                     if rows.count > 1 {
@@ -123,14 +123,15 @@ struct BatchEntryView: View {
                                 } label: {
                                     Image(systemName: "minus.circle")
                                 }
+                                .accessibilityLabel("删除这一行")
                                 .buttonStyle(.plain)
                                 .disabled(rows.count <= 1)
                             }
                             if errorRow == i, let errorMessage {
                                 Text(errorMessage)
                                     .font(.footnote)
-                                    .foregroundStyle(.red)
-                                    .padding(.leading, 32)
+                                    .foregroundStyle(Palette.danger)
+                                    .padding(.leading, LiqianMetrics.spacingXL)
                             }
                         }
                         .frame(minHeight: bigMode ? 76 : LiqianMetrics.minTapTarget)
@@ -138,7 +139,7 @@ struct BatchEntryView: View {
                     Button {
                         rows.append(Row())
                     } label: {
-                        Label("加一行", systemImage: "plus")
+                        Label("添加一行", systemImage: "plus")
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                 }
@@ -173,23 +174,23 @@ struct BatchEntryView: View {
         }
     }
 
-    /// 实时汇总条（两种录入模式通用）：本簿已记笔数/合计/最近一笔，
+    /// 实时汇总条（两种录入模式通用）：本礼簿已记笔数/合计/最近一笔，
     /// 数据走 @Query，刚录进去的立刻算进来
     private var liveSummaryBar: some View {
         let mine = allRecords.filter { $0.ledgerID == ledger.id }
         let total = mine.reduce(0) { $0 + $1.amountCents }
-        return HStack(spacing: 6) {
-            Text("本簿已记 \(mine.count) 笔 · 合计 \(LedgerMath.fmtMoney(cents: total))")
+        return HStack(spacing: LiqianMetrics.spacingS) {
+            Text("本礼簿已记 \(mine.count) 笔 · 合计 \(LedgerMath.fmtMoney(cents: total))")
             if let latest = mine.last {
                 Text("· 最近：\(latest.person) \(LedgerMath.fmtMoney(cents: latest.amountCents))")
                     .lineLimit(1)
             }
             Spacer()
         }
-        .font(.system(size: 13))
+        .font(.footnote)
         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, LiqianMetrics.spacingM)
+        .padding(.vertical, LiqianMetrics.spacingS)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isBai ? Palette.baiPaper : Palette.paper)
         .overlay(alignment: .bottom) {
@@ -215,14 +216,14 @@ struct BatchEntryView: View {
             }
             guard let v = Double(amtText), v > 0 else {
                 errorRow = i
-                errorMessage = "第 \(i + 1) 行金额不对"
+                errorMessage = "第 \(i + 1) 行金额格式不正确"
                 errorTrigger += 1
                 return
             }
             out.append((name, Int((v * 100.0).rounded())))
         }
         if out.isEmpty {
-            errorMessage = "一行都没填，先填几笔再保存"
+            errorMessage = "尚未填写任何记录"
             errorTrigger += 1
             return
         }
@@ -249,7 +250,7 @@ struct BatchEntryView: View {
     private var pasteSections: some View {
         Section {
             Text("把旧礼簿的文字整段粘进来，一行一笔：「姓名 金额 关系」，关系可不写。粘贴导入一律按收礼记（别人给我），关系没写先按「朋友」、方式「现金」、日期今天，记完点开单笔可以再改。")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $pasteText)
                 .frame(minHeight: 140)
@@ -293,38 +294,38 @@ struct BatchEntryView: View {
     private func parsedRow(_ line: ParsedLine) -> some View {
         switch line.result {
         case .success(let name, let cents, let relation):
-            HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingS) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                VStack(alignment: .leading, spacing: 2) {
+                    .foregroundStyle(Palette.success)
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? ""))
                         .font(bigMode ? .system(size: 17) : nil)
                         .foregroundStyle(Palette.ink)
                     if existingNames.contains(name) {
-                        Text("本簿已有此人，导入后并列保存")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
+                        Text("本礼簿已有同名记录，导入后将并列保存")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.warning)
                     }
                 }
                 Spacer()
                 Text("第 \(line.lineNo) 行")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }
         case .failure(let reason):
-            HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingS) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-                VStack(alignment: .leading, spacing: 2) {
+                    .foregroundStyle(Palette.danger)
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text(line.raw)
                         .foregroundStyle(Palette.ink)
                     Text(reason)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.red)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.danger)
                 }
                 Spacer()
                 Text("第 \(line.lineNo) 行")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }
         }
@@ -372,7 +373,7 @@ struct BatchEntryView: View {
     private var aiSections: some View {
         Section {
             Text("微信接龙、备忘录流水这种格式乱的文字，粘进来让 AI 读。将把这段文字发送至 DeepSeek 解析，解析结果先进预览，你确认了才入库；金额是本地换算校验的。解析不了或不想发，左边「粘贴导入」是本地规则解析，不出这台手机。")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $aiText)
                 .frame(minHeight: 140)
@@ -392,11 +393,11 @@ struct BatchEntryView: View {
             if let aiError {
                 Text(aiError)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                 if let aiRawResponse {
-                    DisclosureGroup("查看原始返回（报障用）") {
+                    DisclosureGroup("查看原始返回（用于反馈问题）") {
                         Text(aiRawResponse)
-                            .font(.system(size: 11))
+                            .font(.caption)
                             .foregroundStyle(Palette.stone)
                             .textSelection(.enabled)
                     }
@@ -412,7 +413,7 @@ struct BatchEntryView: View {
         if let aiLines {
             Section {
                 if aiLines.isEmpty {
-                    Text("没解析出记录，换段文字试试，或者用「粘贴导入」的规则解析。")
+                    Text("未解析出记录。请更换文本，或改用规则解析。")
                         .foregroundStyle(Palette.stone)
                 } else {
                     ForEach(aiLines) { line in
@@ -433,8 +434,8 @@ struct BatchEntryView: View {
                 }
                 if !aiUncertain.isEmpty {
                     Text("第 \(aiUncertain.map(String.init).joined(separator: "、")) 行 AI 拿不准，没有列进来，请用逐个录入补上。")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.orange)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.warning)
                 }
             } header: {
                 Text("解析预览")
@@ -446,47 +447,47 @@ struct BatchEntryView: View {
     private func aiParsedRow(_ line: AIPreviewLine) -> some View {
         switch line.status {
         case .ok(let name, let cents, let relation, let method):
-            HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingS) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                    .foregroundStyle(Palette.success)
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? "") + (method.map { " · \($0)" } ?? ""))
                             .font(bigMode ? .system(size: 17) : nil)
                             .foregroundStyle(Palette.ink)
                         aiBadge
                     }
                     if existingNames.contains(name) {
-                        Text("本簿已有此人，导入后并列保存")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.orange)
+                        Text("本礼簿已有同名记录，导入后将并列保存")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.warning)
                     }
                 }
                 Spacer()
             }
         case .givenBlocked(let name, let cents):
-            HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingS) {
                 Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                    .foregroundStyle(Palette.warning)
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text("\(name) · \(LedgerMath.fmtMoney(cents: cents)) · 随礼")
                             .foregroundStyle(Palette.ink)
                         aiBadge
                     }
                     Text("随礼行暂不支持在这里导入，请用逐个录入记这一笔")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.warning)
                 }
                 Spacer()
             }
         case .failed(let reason):
-            HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingS) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                 Text(reason)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.red)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
                 Spacer()
                 aiBadge
             }
@@ -495,8 +496,9 @@ struct BatchEntryView: View {
 
     private var aiBadge: some View {
         Text("AI")
-            .font(.system(size: 10, weight: .bold))
+            .font(.caption2.weight(.bold))
             .foregroundStyle(Palette.primary)
+            // 徽标内边距为自身规格字面量（同签形控件豁免口径）
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(Palette.primaryTint, in: Capsule())
@@ -561,7 +563,7 @@ struct BatchEntryView: View {
                     )
                 }
             } catch {
-                aiError = "AI 返回的格式不对，没能解析。可以再试一次，或改用「粘贴导入」的规则解析。"
+                aiError = "AI 返回格式异常，无法解析。请重试，或改用规则解析。"
                 let raw = String(data: data, encoding: .utf8) ?? ""
                 aiRawResponse = String(raw.prefix(500))
             }

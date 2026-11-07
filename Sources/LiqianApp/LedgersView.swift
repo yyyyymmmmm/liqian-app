@@ -68,7 +68,7 @@ struct LedgersView: View {
                     if ledgers.isEmpty {
                         emptyState
                     } else {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: LiqianMetrics.spacingSM) {
                             ForEach(ledgers) { ledger in
                                 NavigationLink {
                                     LedgerDetailView(ledger: ledger)
@@ -123,7 +123,7 @@ struct LedgersView: View {
             stat(label: "礼簿", value: "\(ledgers.count) 本", color: Palette.ink, numericValue: ledgers.count)
         }
         .padding(.vertical, LiqianMetrics.spacingM)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, LiqianMetrics.spacingSM)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
         .overlay(
             RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -132,31 +132,31 @@ struct LedgersView: View {
     }
 
     private func stat(label: String, value: String, color: Color, numericValue: Int) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: LiqianMetrics.spacingXS) {
             Text(value)
-                .font(.liqianMoney(size: 22))
+                .font(.liqianMoney(.title2))
                 .foregroundStyle(color)
                 .contentTransition(.numericText())
                 .animation(reduceMotion ? nil : .snappy, value: numericValue)
             Text(label)
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
     }
 
     /// 待回礼卡：有人没回才出现，最多列 3 人，点行进人物详情
     private var pendingCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             HStack {
                 Text("待回礼")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
                 Text("共 \(pendingPeople.count) 人 · \(LedgerMath.fmtMoney(cents: pendingTotal))")
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }
-            .padding(.bottom, 4)
+            .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(pendingPeople.prefix(3)) { p in
                 Button {
                     personRoute = PeopleView.NameRoute(name: p.name)
@@ -166,11 +166,12 @@ struct LedgersView: View {
                             .foregroundStyle(Palette.ink)
                         Spacer()
                         Text(LedgerMath.fmtMoney(cents: p.pendingCents))
-                            .font(.liqianMoney(size: 15))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.primary)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(Palette.stone)
+                            .accessibilityHidden(true)
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                     .contentShape(Rectangle())
@@ -178,10 +179,10 @@ struct LedgersView: View {
                 .buttonStyle(.plain)
             }
             if pendingPeople.count > 3 {
-                Text("还有 \(pendingPeople.count - 3) 人没回，去「人情」页看全部。")
-                    .font(.system(size: 12))
+                Text("还有 \(pendingPeople.count - 3) 人待回礼，去「往来」页看全部。")
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
-                    .padding(.top, 4)
+                    .padding(.top, LiqianMetrics.spacingXS)
             }
         }
         .liqianCardSurface()
@@ -190,9 +191,9 @@ struct LedgersView: View {
     /// 本年收/随迷你柱状图：数据稀疏（低频应用，全年可能就几笔），
     /// 按月拆柱会只剩一两根孤柱误导人，直接用年度总量两根柱更诚实。
     private var yearChartCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("\(LiqianDate.currentYearString()) 年往来")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             Chart {
                 BarMark(
@@ -203,7 +204,7 @@ struct LedgersView: View {
                 .cornerRadius(6)
                 .annotation(position: .top, alignment: .center) {
                     Text(LedgerMath.fmtMoney(cents: thisYearSummary.recv))
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
                 BarMark(
@@ -214,7 +215,7 @@ struct LedgersView: View {
                 .cornerRadius(6)
                 .annotation(position: .top, alignment: .center) {
                     Text(LedgerMath.fmtMoney(cents: thisYearSummary.given))
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
             }
@@ -226,30 +227,30 @@ struct LedgersView: View {
 
     /// 最近往来 5 条：人名 + 事由 + 方向签，金额一律墨色（方向靠签区分，v3 纪律），点行进所属礼簿
     private var recentCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text("最近往来")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
-                .padding(.bottom, 4)
+                .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(recentRecords) { r in
                 Button {
                     if let l = ledger(of: r) { ledgerRoute = l }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         DirectionTag(direction: r.direction, bai: ledger(of: r)?.isBai ?? false)
                         Text(r.person)
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)
                         Text(ledger(of: r)?.type ?? "")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                             .lineLimit(1)
                         Spacer()
-                        Text(String(r.date.dropFirst(5)))
-                            .font(.system(size: 12.5))
+                        Text(LiqianDate.displayString(for: r.date))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                            .font(.liqianMoney(size: 15))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
@@ -272,7 +273,7 @@ struct LedgersView: View {
             }
             .foregroundStyle(Palette.primary)
             .frame(minHeight: LiqianMetrics.minTapTarget)
-            Button("先看看示例数据") {
+            Button("生成示例数据") {
                 SampleData.generate(into: modelContext)
             }
             .foregroundStyle(Palette.stone)

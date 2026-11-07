@@ -6,7 +6,7 @@ import LiqianDesign
 /// iOS 26 原生 Tab：玻璃底栏由系统提供，不做自定义栏（skill 口径）。
 /// 隐私锁（v1.1）：MeView 里开关（@AppStorage "privacyLock"），
 /// 开启时冷启动即锁、回前台超过 30 秒重新锁、切后台内容模糊遮罩。
-/// v2：启动清回收站过期条目、回前台刷新小组件速览、承接小组件深链与快捷指令的「记一笔」。
+/// v2：启动清理最近删除的过期条目、回前台刷新小组件速览、承接小组件深链与快捷指令的「记一笔」。
 struct ContentView: View {
     @AppStorage("privacyLock") private var privacyLockEnabled = false
     @Environment(\.scenePhase) private var scenePhase
@@ -27,7 +27,7 @@ struct ContentView: View {
                 Tab("礼簿", systemImage: "book.closed") {
                     LedgersView()
                 }
-                Tab("人情", systemImage: "person.2") {
+                Tab("往来", systemImage: "person.2") {
                     PeopleView()
                 }
                 Tab("我的", systemImage: "person.crop.circle") {
@@ -43,7 +43,8 @@ struct ContentView: View {
                         .fill(.ultraThinMaterial)
                         .ignoresSafeArea()
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 22))
+                        .font(.title2)
+                        .accessibilityHidden(true)
                         .foregroundStyle(Palette.stone)
                 }
             }

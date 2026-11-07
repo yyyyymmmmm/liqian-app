@@ -56,16 +56,16 @@ struct LedgerDetailView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("\(ledger.date) · \(LiqianDate.lunarString(for: ledger.date))")
-                        .font(.system(size: 12.5))
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                    Text("\(LiqianDate.displayString(for: ledger.date)) · \(LiqianDate.lunarString(for: ledger.date))")
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     statsCard
                 }
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
 
             Section {
                 if records.isEmpty {
@@ -75,7 +75,7 @@ struct LedgerDetailView: View {
                         recordRow(record)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     recordToDelete = record
@@ -133,8 +133,8 @@ struct LedgerDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
+            GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
+                HStack(spacing: LiqianMetrics.spacingSM) {
                     Button {
                         showRecordForm = true
                     } label: {
@@ -152,8 +152,8 @@ struct LedgerDetailView: View {
                     }
                     .buttonStyle(.glass)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, LiqianMetrics.spacingM)
+                .padding(.vertical, LiqianMetrics.spacingS)
             }
         }
         .sheet(isPresented: $showRecordForm) {
@@ -195,13 +195,13 @@ struct LedgerDetailView: View {
             }
             Button("取消", role: .cancel) { recordToDelete = nil }
         } message: {
-            Text("删除后 30 天内可以在「我的 → 回收站」恢复。")
+            Text("删除后 30 天内可以在「我的 → 最近删除」恢复。")
         }
         .confirmationDialog("删除这本礼簿？", isPresented: $confirmDeleteLedger, titleVisibility: .visible) {
             Button("删除", role: .destructive) { deleteLedger() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("礼簿里的记录会一并删除，30 天内可以在「我的 → 回收站」恢复。")
+            Text("礼簿里的记录会一并删除，30 天内可以在「我的 → 最近删除」恢复。")
         }
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
@@ -212,18 +212,18 @@ struct LedgerDetailView: View {
             Spacer()
             stat(label: "随礼", value: LedgerMath.fmtMoney(cents: given), count: givenCount, color: isBai ? Palette.baiInk : Palette.ink, numericValue: given)
             Spacer()
-            VStack(spacing: 2) {
+            VStack(spacing: LiqianMetrics.spacingXS) {
                 Text("\(peopleCount)")
-                    .font(.liqianSerif(size: 18))
+                    .font(.liqianSerif(.title3))
                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                     .contentTransition(.numericText())
                 Text("人数")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 12)
+        .padding(.vertical, LiqianMetrics.spacingSM)
+        .padding(.horizontal, LiqianMetrics.spacingSM)
         .background(
             isBai ? Palette.baiCard : Palette.card,
             in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -235,22 +235,22 @@ struct LedgerDetailView: View {
     }
 
     private func stat(label: String, value: String, count: Int, color: Color, numericValue: Int) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: LiqianMetrics.spacingXS) {
             Text(value)
-                .font(.liqianSerif(size: 18))
+                .font(.liqianSerif(.title3))
                 .foregroundStyle(color)
                 .contentTransition(.numericText())
                 .animation(reduceMotion ? nil : .snappy, value: numericValue)
             Text("\(label) · \(count) 笔")
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
         }
     }
 
     private var emptyState: some View {
         VStack(spacing: LiqianMetrics.spacingS) {
-            Text("这本礼簿还空着，记第一笔吧。")
-                .font(.system(size: 15))
+            Text("还没有记录，记第一笔。")
+                .font(.body)
                 .foregroundStyle(isBai ? Palette.baiPrimary : Palette.stone)
             Button("记一笔") {
                 showRecordForm = true
@@ -268,9 +268,9 @@ struct LedgerDetailView: View {
         Button {
             editingRecord = r
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text(r.person)
                             .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                         DirectionTag(direction: r.direction, bai: isBai)
@@ -279,15 +279,15 @@ struct LedgerDetailView: View {
                         }
                     }
                     Text(subtitle(of: r))
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 }
                 Spacer()
                 Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                    .font(.liqianMoney(size: 16))
+                    .font(.liqianMoney(.title3))
                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
             }
-            .padding(12)
+            .padding(LiqianMetrics.spacingSM)
             .background(
                 isBai ? Palette.baiCard : Palette.card,
                 in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -302,7 +302,7 @@ struct LedgerDetailView: View {
     }
 
     private func subtitle(of r: GiftRecord) -> String {
-        var s = "\(r.relation) · \(r.method) · \(r.date)"
+        var s = "\(r.relation) · \(r.method) · \(LiqianDate.displayString(for: r.date))"
         if !r.note.isEmpty { s += " · \(r.note)" }
         return s
     }

@@ -53,6 +53,11 @@ struct MeView: View {
         LedgerMath.people(from: snapshots).filter { $0.hasPending }
     }
 
+    /// 关于区版本号：动态读 Bundle，避免写死版本过期（PRO-AUDIT #31）
+    private static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
     private var csvFingerprint: String {
         "\(records.count)-\(ledgers.count)-\(records.reduce(0) { $0 + $1.amountCents })"
     }
@@ -99,7 +104,7 @@ struct MeView: View {
                 defaultFilename: "礼钱账本备份"
             ) { result in
                 if case .failure = result {
-                    showInfo(title: "导出失败", message: "备份没能存下来，再试一次。")
+                    showInfo(title: "导出失败", message: "备份导出失败，请重试。")
                 }
             }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
@@ -126,40 +131,40 @@ struct MeView: View {
 
     /// 总览卡：全时段总收/总送/往来人数，大数字一律墨色（v3 纪律）
     private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             HStack {
-                overviewStat(label: "总收礼", value: LedgerMath.fmtMoney(cents: totalReceived))
+                overviewStat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived))
                 Spacer()
-                overviewStat(label: "总随礼", value: LedgerMath.fmtMoney(cents: totalGiven))
+                overviewStat(label: "累计随礼", value: LedgerMath.fmtMoney(cents: totalGiven))
                 Spacer()
                 overviewStat(label: "往来亲友", value: "\(peopleCount) 位")
             }
             Text("\(ledgers.count) 本礼簿 · \(records.count) 笔记录（待送出不计入收支）")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
         .cardSurface()
     }
 
     private func overviewStat(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text(value)
-                .font(.liqianMoney(size: 20))
+                .font(.liqianMoney(.title2))
                 .foregroundStyle(Palette.ink)
                 .contentTransition(.numericText())
             Text(label)
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
     }
 
     private var pendingCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("还没回的礼")
-                .font(.system(size: 16, weight: .bold))
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            Text("待回礼")
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if pendingPeople.isEmpty {
-                Text("没有欠着的人情，轻松。")
+                Text("暂无待回礼记录")
                     .foregroundStyle(Palette.stone)
             } else {
                 ForEach(pendingPeople) { p in
@@ -172,19 +177,20 @@ struct MeView: View {
                             Spacer()
                             // 待回礼是行动提示，保留朱砂（v3 纪律的明示例外）
                             Text(LedgerMath.fmtMoney(cents: p.pendingCents))
-                                .font(.liqianMoney(size: 15))
+                                .font(.liqianMoney(.title3))
                                 .foregroundStyle(Palette.primary)
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(Palette.stone)
+                                .accessibilityHidden(true)
                         }
                         .frame(minHeight: LiqianMetrics.minTapTarget)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
-                Text("按「最近一次收礼之后还没送出」自动算的，不用手动标。")
-                    .font(.system(size: 12))
+                Text("按最近一笔收礼之后是否已送出自动计算，无需手动标记。")
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }
         }
@@ -212,7 +218,7 @@ struct MeView: View {
                 entryRow(
                     icon: "chart.bar.doc.horizontal",
                     title: "人情年度报告",
-                    subtitle: "按年看往来，做一张能发给家人的报告图",
+                    subtitle: "生成年度报告图卡，仅含汇总数据，不含个人明细。",
                     iconColor: Palette.primary
                 )
             }
@@ -236,7 +242,7 @@ struct MeView: View {
                 entryRow(
                     icon: "tray.and.arrow.up",
                     title: "导出备份（JSON）",
-                    subtitle: "全量备份：礼簿和记录都在，换手机靠它恢复",
+                    subtitle: "包含全部礼簿与记录，可用于换机恢复",
                     chevron: false
                 )
             }
@@ -259,8 +265,8 @@ struct MeView: View {
             } label: {
                 entryRow(
                     icon: "trash",
-                    title: "回收站",
-                    subtitle: "删掉的礼簿和记录，30 天内能恢复"
+                    title: "最近删除",
+                    subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
                 )
             }
             .buttonStyle(.plain)
@@ -271,7 +277,7 @@ struct MeView: View {
                 entryRow(
                     icon: "sparkles",
                     title: "示例数据",
-                    subtitle: hasSamples ? "已生成示例礼簿，点这里清除" : "生成两本示例礼簿，先看看效果",
+                    subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿",
                     chevron: false
                 )
             }
@@ -300,7 +306,7 @@ struct MeView: View {
                     entryRow(
                         icon: "tablecells",
                         title: "导出 CSV",
-                        subtitle: "全部记录导出成表格，Excel 能打开",
+                        subtitle: "导出为 CSV 表格，可用 Excel 打开",
                         chevron: false
                     )
                 }
@@ -309,7 +315,7 @@ struct MeView: View {
                 entryRow(
                     icon: "tablecells",
                     title: "导出 CSV",
-                    subtitle: "全部记录导出成表格，Excel 能打开",
+                    subtitle: "导出为 CSV 表格，可用 Excel 打开",
                     chevron: false
                 )
                 .opacity(0.5)
@@ -323,10 +329,10 @@ struct MeView: View {
     private func toggleSamples() {
         if hasSamples {
             SampleData.clearSamples(ledgers: ledgers, records: records, in: modelContext)
-            showInfo(title: "示例数据已清除", message: "两本示例礼簿和里面的记录都清掉了，你自己的数据没动。")
+            showInfo(title: "示例数据已清除", message: "示例数据已删除，你的数据未受影响。")
         } else {
             SampleData.generate(into: modelContext)
-            showInfo(title: "示例数据已生成", message: "「礼簿」页多了两本示例礼簿，人情页能看到往来差额和备礼清单的效果。")
+            showInfo(title: "示例数据已生成", message: "「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
         }
     }
 
@@ -351,9 +357,9 @@ struct MeView: View {
     private var aiStatusText: String {
         switch AIAccess.readiness() {
         case .noKey:
-            return "填你自己的 DeepSeek Key，用 AI 解析账目文字、生成贺词"
+            return "填你自己的 DeepSeek API Key，用 AI 解析账目文字、生成贺词"
         case .notEnabled:
-            return "Key 已填，开关还没打开"
+            return "已保存 API Key，AI 功能尚未启用"
         case .ready:
             return "已启用：智能解析、一句话记账、贺词生成"
         }
@@ -364,15 +370,15 @@ struct MeView: View {
     /// 隐私锁：开启后冷启动与回前台（>30 秒）要先解锁，后台预览模糊（逻辑在 ContentView）
     private var privacyCard: some View {
         Toggle(isOn: $privacyLock) {
-            HStack(spacing: 12) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
                 Image(systemName: "faceid")
                     .foregroundStyle(Palette.ink)
                     .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text("隐私锁")
                         .foregroundStyle(Palette.ink)
-                    Text("打开 App、从后台回来超过半分钟，都要先用 Face ID 或密码解锁；切到后台时内容会模糊。")
-                        .font(.system(size: 12.5))
+                    Text("从后台返回超过 30 秒需重新解锁；App 在后台时界面自动模糊。")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
             }
@@ -385,21 +391,21 @@ struct MeView: View {
     // MARK: - 分组：关于
 
     private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             HStack {
                 Text("版本")
                     .foregroundStyle(Palette.ink)
                 Spacer()
-                Text("原生版 v1.0")
+                Text("版本 \(Self.appVersion)")
                     .foregroundStyle(Palette.stone)
             }
             Divider().overlay(Palette.hairline)
-            Text("数据只存在这台手机上，不联网、不上传。换手机或重装前，先用上面「数据」里的导出备份存一份。")
-                .font(.system(size: 13.5))
+            Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。")
+                .font(.subheadline)
                 .foregroundStyle(Palette.stone)
                 .lineSpacing(5)
             Text("备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
-                .font(.system(size: 13.5))
+                .font(.subheadline)
                 .foregroundStyle(Palette.stone)
                 .lineSpacing(5)
         }
@@ -410,12 +416,12 @@ struct MeView: View {
 
     private func groupHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 13, weight: .semibold))
+            .font(.footnote.weight(.semibold))
             .foregroundStyle(Palette.stone)
             .frame(maxWidth: .infinity, alignment: .leading)
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 14, leading: 20, bottom: 2, trailing: 16))
+            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingSM, leading: LiqianMetrics.spacingL, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
     }
 
     private var groupDivider: some View {
@@ -432,28 +438,30 @@ struct MeView: View {
         iconColor: Color = Palette.ink,
         chevron: Bool = true
     ) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: LiqianMetrics.spacingSM) {
             Image(systemName: icon)
                 .foregroundStyle(iconColor)
                 .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                 Text(title)
                     .foregroundStyle(Palette.ink)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
             }
             Spacer()
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(Palette.stone)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, LiqianMetrics.cardPadding)
-        .padding(.vertical, 10)
+        .padding(.vertical, LiqianMetrics.spacingSM)
         .frame(minHeight: LiqianMetrics.minTapTarget)
         .contentShape(Rectangle())
     }
@@ -463,7 +471,7 @@ struct MeView: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure = result {
-                showInfo(title: "备份文件有问题", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
+                showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
             }
             return
         }
@@ -476,7 +484,7 @@ struct MeView: View {
             pendingImport = try LiqianBackup.parseBackup(data)
             showImportConfirm = true
         } catch {
-            showInfo(title: "备份文件有问题", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
+            showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
         }
     }
 
@@ -533,7 +541,7 @@ struct MeView: View {
         view
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.spacingM))
     }
 }
 
@@ -548,7 +556,7 @@ struct HostNameEditView: View {
         List {
             Section {
                 TextField("如：杨敏杰", text: $text)
-                    .font(.system(size: 16))
+                    .font(.body)
             } footer: {
                 Text("写主家在礼谱上落款用的名字，一般 2–4 个字。不填的话，礼谱上用「主家谨识」落款、盖「主家谨识」印。")
             }

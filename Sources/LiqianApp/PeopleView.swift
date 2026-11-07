@@ -45,11 +45,11 @@ struct PeopleView: View {
                     prepListCard
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
                 }
 
                 if searching {
-                    Section("人物") {
+                    Section("亲友") {
                         if filteredPeople.isEmpty {
                             emptyRow("没有叫这个名字的人")
                         } else {
@@ -67,9 +67,9 @@ struct PeopleView: View {
                     if summaries.isEmpty {
                         VStack(spacing: LiqianMetrics.spacingS) {
                             Text("还没有往来记录，先去礼簿里记一笔。")
-                                .font(.system(size: 15))
+                                .font(.body)
                                 .foregroundStyle(Palette.stone)
-                            Button("生成示例数据，先看看效果") {
+                            Button("生成示例数据") {
                                 SampleData.generate(into: modelContext)
                             }
                             .foregroundStyle(Palette.primary)
@@ -78,7 +78,7 @@ struct PeopleView: View {
                         .frame(maxWidth: .infinity)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .padding(.top, 32)
+                        .padding(.top, LiqianMetrics.spacingXL)
                     } else {
                         ForEach(summaries) { p in personRow(p) }
                     }
@@ -87,9 +87,9 @@ struct PeopleView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Palette.paper.ignoresSafeArea())
-            .navigationTitle("人情往来")
+            .navigationTitle("往来")
             .navigationBarTitleDisplayMode(.large)
-            .searchable(text: $query, prompt: "搜姓名，或者搜礼簿、事由")
+            .searchable(text: $query, prompt: "姓名、礼簿或事由")
             .navigationDestination(item: $personRoute) { route in
                 PersonDetailView(name: route.name)
             }
@@ -101,32 +101,33 @@ struct PeopleView: View {
 
     /// 备礼清单卡：待送出的礼集中展示，点行进人物详情去处理
     private var prepListCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text("备礼清单")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             Text("记下了还没送出去的礼，送出后把那笔改成「已送出」。")
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
-                .padding(.bottom, 4)
+                .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(pendingSends) { r in
                 Button {
                     personRoute = NameRoute(name: r.person)
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text(r.person)
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)
                         Spacer()
-                        Text(r.date)
-                            .font(.system(size: 12.5))
+                        Text(LiqianDate.displayString(for: r.date))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                            .font(.liqianMoney(size: 15))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(Palette.stone)
+                            .accessibilityHidden(true)
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                     .contentShape(Rectangle())
@@ -156,27 +157,27 @@ struct PeopleView: View {
         Button {
             personRoute = NameRoute(name: p.name)
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text(p.name)
                         .foregroundStyle(Palette.ink)
-                    Text("\(p.relation) · \(p.count) 笔 · 最近 \(p.lastDate)")
-                        .font(.system(size: 12.5))
+                    Text("\(p.relation) · \(p.count) 笔 · 最近 \(LiqianDate.displayString(for: p.lastDate))")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: LiqianMetrics.spacingXS) {
                     Text(balanceText(p))
-                        .font(.liqianMoney(size: 15))
+                        .font(.liqianMoney(.title3))
                         .foregroundStyle(Palette.ink)
                     if p.hasPending {
-                        Text("还有 \(LedgerMath.fmtMoney(cents: p.pendingCents)) 没回")
-                            .font(.system(size: 11))
+                        Text("待回礼 \(LedgerMath.fmtMoney(cents: p.pendingCents))")
+                            .font(.caption)
                             .foregroundStyle(Palette.primary)
                     }
                 }
             }
-            .padding(12)
+            .padding(LiqianMetrics.spacingSM)
             .background(
                 Palette.card,
                 in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -190,13 +191,13 @@ struct PeopleView: View {
         .buttonStyle(ScaleOnPressButtonStyle())
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
     }
 
     private func balanceText(_ p: PersonSummary) -> String {
-        if p.balance == 0 { return "两清" }
+        if p.balance == 0 { return "已结清" }
         return p.balance > 0
-            ? "他多给 \(LedgerMath.fmtMoney(cents: p.balance))"
+            ? "对方多给 \(LedgerMath.fmtMoney(cents: p.balance))"
             : "我多给 \(LedgerMath.fmtMoney(cents: -p.balance))"
     }
 
@@ -204,30 +205,31 @@ struct PeopleView: View {
         Button {
             ledgerRoute = l
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
                         .fill(l.isBai ? Palette.baiPrimary : Palette.primary)
                     Text(l.type.map { String($0) }.joined(separator: "\n"))
-                        .font(.liqianSerif(size: 12))
+                        .font(.liqianSerifFixed(size: 12))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .lineSpacing(1)
                 }
                 .frame(width: 30, height: 44)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text(l.title)
                         .foregroundStyle(Palette.ink)
-                    Text("\(l.type) · \(l.date)")
-                        .font(.system(size: 12.5))
+                    Text("\(l.type) · \(LiqianDate.displayString(for: l.date))")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(Palette.stone)
+                    .accessibilityHidden(true)
             }
-            .padding(12)
+            .padding(LiqianMetrics.spacingSM)
             .background(
                 l.isBai ? Palette.baiCard : Palette.card,
                 in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
@@ -241,6 +243,6 @@ struct PeopleView: View {
         .buttonStyle(ScaleOnPressButtonStyle())
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
     }
 }

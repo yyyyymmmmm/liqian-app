@@ -39,10 +39,10 @@ struct LockScreenView: View {
     var body: some View {
         ZStack {
             Palette.paper.ignoresSafeArea()
-            VStack(spacing: 24) {
+            VStack(spacing: LiqianMetrics.spacingL) {
                 coverMark
                 Text("礼钱账本已锁定")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(Palette.ink)
                 Button {
                     onUnlockTap()
@@ -70,7 +70,7 @@ struct LockScreenView: View {
                     )
                 )
             Text("礼\n簿")
-                .font(.liqianSerif(size: 24))
+                .font(.liqianSerifFixed(size: 24))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)

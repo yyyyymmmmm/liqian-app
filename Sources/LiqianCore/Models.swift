@@ -82,6 +82,20 @@ public enum LiqianDate {
         String(Calendar.current.component(.year, from: Date()))
     }
 
+    /// 界面日期显示（PRO-AUDIT §1.5 定版）：当年「M月d日」、跨年「yyyy年M月d日」。
+    /// 存储格式 yyyy-MM-dd 禁止直接出现在用户界面，展示一律走此函数。
+    /// 入参不是合法 yyyy-MM-dd 时原样返回（不崩、不编造）。
+    public static func displayString(for dateString: String, today: String = todayString()) -> String {
+        let parts = dateString.split(separator: "-")
+        guard parts.count == 3, let month = Int(parts[1]), let day = Int(parts[2]) else {
+            return dateString
+        }
+        if parts[0] == today.prefix(4) {
+            return "\(month)月\(day)日"
+        }
+        return "\(parts[0])年\(month)月\(day)日"
+    }
+
     // MARK: - 干支纪年（礼谱 v3：封面、谱序落款、纪年印三处统一）
 
     private static let tianGanNames = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]

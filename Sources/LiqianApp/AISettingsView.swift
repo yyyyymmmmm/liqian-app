@@ -14,7 +14,7 @@ struct AISettingsView: View {
         Form {
             Section {
                 if let savedLast4 {
-                    LabeledContent("当前 Key") {
+                    LabeledContent("当前 API Key") {
                         Text("已保存（尾号 \(savedLast4)）")
                             .foregroundStyle(Palette.stone)
                     }
@@ -25,16 +25,16 @@ struct AISettingsView: View {
                 Button {
                     saveKey()
                 } label: {
-                    Text(savedLast4 == nil ? "保存 Key" : "换一个 Key")
+                    Text(savedLast4 == nil ? "保存 API Key" : "更换 API Key")
                         .frame(minHeight: LiqianMetrics.minTapTarget)
                 }
                 .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 if savedLast4 != nil {
-                    Button("删除 Key", role: .destructive) {
+                    Button("删除 API Key", role: .destructive) {
                         KeychainStore.delete()
                         savedLast4 = nil
                         keyInput = ""
-                        message = "Key 已从钥匙串删掉，AI 功能停用。"
+                        message = "API Key 已从钥匙串删除，AI 功能停用。"
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                 }
@@ -46,7 +46,7 @@ struct AISettingsView: View {
             } header: {
                 Text("API Key")
             } footer: {
-                Text("去 platform.deepseek.com 申请，费用走你自己的 DeepSeek 账户。")
+                Text("在 platform.deepseek.com 申请 API Key，费用计入你的 DeepSeek 账户。")
             }
 
             Section {
@@ -54,12 +54,12 @@ struct AISettingsView: View {
                     .tint(Palette.primary)
                     .frame(minHeight: LiqianMetrics.minTapTarget)
             } footer: {
-                Text("关掉后，智能解析、一句话记账、贺词生成的入口点了会先提醒，不会偷偷调用。")
+                Text("关闭后，AI 功能将不可用。")
             }
 
             Section {
                 Text("Key 只存在这台手机的钥匙串里，不进备份、不上传到我们的服务器；用的时候 App 直接连 DeepSeek 官方接口。每次调用都由你当面点按钮触发，发送前界面会写清楚要发什么。AI 只帮忙读懂文字、写贺词——解析结果先进预览或表单，你核对了才保存；金额和往来差额永远是本地算的。")
-                    .font(.system(size: 13.5))
+                    .font(.subheadline)
                     .foregroundStyle(Palette.stone)
                     .lineSpacing(5)
             } header: {

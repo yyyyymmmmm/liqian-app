@@ -38,10 +38,13 @@ enum GiftBookPDF {
 
     private static let footerBrand = "礼钱账本 · 导出" // 会员版置 ""
 
-    // 印刷口径用浅色令牌的静态值（与 Palette 浅色一致；PDF 是留存物不跟深色模式）
-    private static let paper = uiColor(0xF6F1E7)
-    private static let cardInk = uiColor(0x2B2620)
-    private static let stone = uiColor(0x6B6353)
+    // 印刷色（PRO-AUDIT §3.2 整改）：与 Palette v3 浅色令牌逐项同值，改色先改
+    // docs/DESIGN.md 与 Palette 再同步此处；PDF 是留存物，只用浅色值不跟深色模式。
+    // 对应关系：paper/cardInk/stone/cinnabar/gold = Palette 的 paper/ink/stone/primary/gold；
+    // cinnabarDeep、baiDeep 为 PDF 印刷专用的同色系深阶（App 内无对应令牌）。
+    private static let paper = uiColor(0xFAF9F6)
+    private static let cardInk = uiColor(0x262520)
+    private static let stone = uiColor(0x6F6C64)
     private static let cinnabar = uiColor(0xA62B1F)
     private static let cinnabarDeep = uiColor(0x8E241B)
     private static let gold = uiColor(0xB98A2F)
@@ -531,7 +534,7 @@ enum GiftBookPDF {
                 let y = CGFloat(rng.next()) * side
                 let r = 0.5 + CGFloat(rng.next()) * 0.9
                 let a = 0.02 + CGFloat(rng.next()) * 0.03
-                UIColor(red: 0.45, green: 0.38, blue: 0.25, alpha: a).setFill()
+                stone.withAlphaComponent(a).setFill()
                 UIBezierPath(ovalIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)).fill()
             }
         }

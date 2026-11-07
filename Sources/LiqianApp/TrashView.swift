@@ -3,7 +3,7 @@ import SwiftUI
 import LiqianCore
 import LiqianDesign
 
-/// 回收站：删掉的礼簿/记录在这里躺 30 天，左滑可恢复或彻底删除。
+/// 最近删除：删掉的礼簿/记录在这里保留 30 天，左滑可恢复或彻底删除。
 struct TrashView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var items: [TrashItem] = []
@@ -14,9 +14,9 @@ struct TrashView: View {
         Group {
             if items.isEmpty {
                 ContentUnavailableView(
-                    "回收站是空的",
+                    "最近删除是空的",
                     systemImage: "trash",
-                    description: Text("删掉的礼簿和记录会在这里保留 30 天，过期自动清掉。")
+                    description: Text("删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复。")
                 )
             } else {
                 List {
@@ -46,25 +46,25 @@ struct TrashView: View {
             }
         }
         .background(Palette.paper.ignoresSafeArea())
-        .navigationTitle("回收站")
+        .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !items.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("清空回收站", role: .destructive) {
+                    Button("清空最近删除", role: .destructive) {
                         confirmClearAll = true
                     }
                 }
             }
         }
-        .confirmationDialog("清空回收站？", isPresented: $confirmClearAll, titleVisibility: .visible) {
+        .confirmationDialog("清空最近删除？", isPresented: $confirmClearAll, titleVisibility: .visible) {
             Button("全部彻底删除", role: .destructive) {
                 TrashStore.clearAll()
                 reload()
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("清空后就真的恢复不了了。")
+            Text("清空后无法恢复。")
         }
         .sensoryFeedback(.success, trigger: restoreTrigger)
         .onAppear { reload() }
@@ -75,43 +75,43 @@ struct TrashView: View {
     }
 
     private func row(_ item: TrashItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             switch item.kind {
             case .record:
                 if let r = item.record {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text(r.person)
                             .foregroundStyle(Palette.ink)
                         DirectionTag(direction: r.direction, bai: false)
                         Spacer()
                         Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                            .font(.liqianMoney(size: 15))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                     }
-                    Text("一笔记录 · \(r.date)")
-                        .font(.system(size: 12.5))
+                    Text("一笔记录 · \(LiqianDate.displayString(for: r.date))")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
             case .ledger:
                 if let l = item.ledger {
-                    HStack(spacing: 8) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
                         Text(l.title)
                             .foregroundStyle(Palette.ink)
                         Spacer()
                         Text("\(item.ledgerRecords?.count ?? 0) 笔")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                     }
-                    Text("整本礼簿 · \(l.type) · \(l.date)")
-                        .font(.system(size: 12.5))
+                    Text("整本礼簿 · \(l.type) · \(LiqianDate.displayString(for: l.date))")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
             }
             Text("删除于 \(Self.dateText(item.deletedAt)) · 还剩 \(item.daysLeft) 天")
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, LiqianMetrics.spacingXS)
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
     }

@@ -31,9 +31,9 @@ struct LibuExportView: View {
             List {
                 Section {
                     TextField("主家姓名，如：杨敏杰", text: $nameText)
-                        .font(.system(size: 16))
+                        .font(.body)
                     Text("封面落款、谱序落款和主家印都用这个名字；不填就用「主家谨识」。")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 } header: {
                     Text("落款姓名")
@@ -47,7 +47,7 @@ struct LibuExportView: View {
                     }
                     .pickerStyle(.segmented)
                     Text(styleNote)
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 } header: {
                     Text("谱序")
@@ -55,7 +55,7 @@ struct LibuExportView: View {
 
                 Section {
                     if generating {
-                        HStack(spacing: 10) {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
                             ProgressView()
                             Text("正在成谱…")
                                 .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
@@ -68,7 +68,7 @@ struct LibuExportView: View {
                         }
                         if let fallbackNote {
                             Text(fallbackNote)
-                                .font(.system(size: 12.5))
+                                .font(.footnote)
                                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                         }
                         Button("重新生成") { generate() }
@@ -81,7 +81,7 @@ struct LibuExportView: View {
                         }
                         if let errorText {
                             Text(errorText)
-                                .font(.system(size: 12.5))
+                                .font(.footnote)
                                 .foregroundStyle(isBai ? Palette.baiPrimary : Palette.primary)
                         }
                     }

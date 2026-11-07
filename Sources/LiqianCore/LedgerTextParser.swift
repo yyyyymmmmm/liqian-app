@@ -59,18 +59,18 @@ public enum LedgerTextParser {
             }
         }
         guard let ai = amountIndex else {
-            return .failure(reason: "没找到金额")
+            return .failure(reason: "未识别到金额")
         }
         if amountCents <= 0 {
-            return .failure(reason: "金额不对")
+            return .failure(reason: "金额格式不正确")
         }
 
         let rest = tokens.enumerated().filter { $0.offset != ai }.map { $0.element }
         guard let name = rest.first else {
-            return .failure(reason: "缺姓名")
+            return .failure(reason: "缺少姓名")
         }
         if name.rangeOfCharacter(from: .decimalDigits) != nil {
-            return .failure(reason: "姓名里有数字，看不懂")
+            return .failure(reason: "姓名不能包含数字")
         }
 
         // 剩余 token 只允许一段关系：已知关系词或任意 2 字
@@ -81,10 +81,10 @@ public enum LedgerTextParser {
             if LiqianConstants.relations.contains(r) || r.count == 2 {
                 relation = r
             } else {
-                return .failure(reason: "「\(r)」看不懂，只认关系词")
+                return .failure(reason: "无法识别「\(r)」，请填写关系（如亲戚、朋友、同事）")
             }
         } else if extras.count > 1 {
-            return .failure(reason: "内容太多，一行只记一笔")
+            return .failure(reason: "每行只能填写一笔记录")
         }
 
         return .success(name: name, amountCents: amountCents, relation: relation)

@@ -5,7 +5,7 @@ import LiqianCore
 /// 示例数据：两本以「示例」开头的礼簿，让新用户先看懂聚合口径再上手。
 /// 刻意埋了三个演示点：
 /// - 同名并列：王建国在婚礼簿里有两笔（同人同簿不合并，与正式口径一致）；
-/// - 跨簿差额：赵国强、马小东在两本簿都有往来，人情页能看到汇总与差额；
+/// - 跨簿差额：赵国强、马小东在两本簿都有往来，往来页能看到汇总与差额；
 /// - 待送出：王建国一笔待送出，演示备礼清单与「未回」自动规则。
 enum SampleData {
     static func hasSamples(ledgers: [Ledger]) -> Bool {
@@ -88,7 +88,7 @@ enum SampleData {
                 date: movingDate
             )
         )
-        // 马小东跨簿有随礼：人情页能看到「我多给」的差额
+        // 马小东跨簿有随礼：往来页能看到「我多给」的差额
         context.insert(
             GiftRecord(
                 ledgerID: moving.id,

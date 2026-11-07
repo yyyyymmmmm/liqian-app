@@ -39,7 +39,7 @@ struct QuickSentenceView: View {
                         axis: .vertical
                     )
                     .lineLimit(2...4)
-                    HStack(spacing: 12) {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
                         Button {
                             transcriber.toggle()
                         } label: {
@@ -47,24 +47,24 @@ struct QuickSentenceView: View {
                                 transcriber.isRecording ? "停止录音" : "语音输入",
                                 systemImage: transcriber.isRecording ? "stop.circle.fill" : "mic"
                             )
-                            .foregroundStyle(transcriber.isRecording ? .red : Palette.primary)
+                            .foregroundStyle(transcriber.isRecording ? Palette.danger : Palette.primary)
                             .frame(minHeight: LiqianMetrics.minTapTarget)
                         }
                         .buttonStyle(.plain)
                         Spacer()
                         if transcriber.isRecording {
                             Text("正在听，说完点停止…")
-                                .font(.system(size: 12.5))
+                                .font(.footnote)
                                 .foregroundStyle(Palette.stone)
                         }
                     }
                     if let speechError = transcriber.errorText {
                         Text(speechError)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
-                    Text("将把这句话发送至 DeepSeek 解析，解析完只预填表单，你核对后自己保存。")
-                        .font(.system(size: 12.5))
+                    Text("将把这句话发送至 DeepSeek 解析。结果仅预填到表单，请核对后保存。")
+                        .font(.footnote)
                         .foregroundStyle(Palette.stone)
                 }
 
@@ -72,7 +72,7 @@ struct QuickSentenceView: View {
                     Section {
                         Text(errorText)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                 }
 
@@ -191,7 +191,7 @@ private enum QuickSentenceParseError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unreadable:
-            return "DeepSeek 的返回看不懂，换个说法再试，或者直接在表单里手填。"
+            return "AI 返回内容格式异常，无法解析。请重试，或直接在表单中填写。"
         case .incomplete:
             return "这句话里没读出姓名或金额，补全一点再试，如「张三随了五百，微信」。"
         }
@@ -226,20 +226,20 @@ final class SpeechTranscriber: ObservableObject {
     func start() {
         errorText = nil
         guard recognizer?.isAvailable == true else {
-            errorText = "这台手机的语音识别暂时不可用，直接打字就行。"
+            errorText = "语音识别暂时不可用，可直接输入文字。"
             return
         }
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             Task { @MainActor in
                 guard let self else { return }
                 guard status == .authorized else {
-                    self.errorText = "语音识别没给权限，直接打字就行；要用的话去系统设置里打开。"
+                    self.errorText = "语音识别未获得权限，可直接输入文字；如需使用，请在系统设置中开启。"
                     return
                 }
                 AVAudioApplication.requestRecordPermission { granted in
                     Task { @MainActor in
                         guard granted else {
-                            self.errorText = "麦克风没给权限，直接打字就行；要用的话去系统设置里打开。"
+                            self.errorText = "麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。"
                             return
                         }
                         self.beginSession()
@@ -251,7 +251,7 @@ final class SpeechTranscriber: ObservableObject {
 
     private func beginSession() {
         guard let recognizer, recognizer.isAvailable else {
-            errorText = "这台手机的语音识别暂时不可用，直接打字就行。"
+            errorText = "语音识别暂时不可用，可直接输入文字。"
             return
         }
         do {
@@ -284,7 +284,7 @@ final class SpeechTranscriber: ObservableObject {
                 }
             }
         } catch {
-            errorText = "录音没启动起来：\(error.localizedDescription)。直接打字就行。"
+            errorText = "录音启动失败：\(error.localizedDescription)。可直接输入文字。"
             stop()
         }
     }

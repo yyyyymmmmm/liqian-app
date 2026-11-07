@@ -56,40 +56,40 @@ struct StatsView: View {
     // MARK: - 卡片们
 
     private var yearCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("\(year) 年往来")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
-            HStack(spacing: 16) {
-                HStack(spacing: 6) {
+            HStack(spacing: LiqianMetrics.spacingM) {
+                HStack(spacing: LiqianMetrics.spacingS) {
                     Text("收礼")
                         .foregroundStyle(Palette.stone)
                     Text(LedgerMath.fmtMoney(cents: yearSummary.recv))
-                        .font(.liqianMoney(size: 17))
+                        .font(.liqianMoney(.title3))
                         .foregroundStyle(Palette.ink)
                 }
-                HStack(spacing: 6) {
+                HStack(spacing: LiqianMetrics.spacingS) {
                     Text("随礼")
                         .foregroundStyle(Palette.stone)
                     Text(LedgerMath.fmtMoney(cents: yearSummary.given))
-                        .font(.liqianMoney(size: 17))
+                        .font(.liqianMoney(.title3))
                         .foregroundStyle(Palette.ink)
                 }
                 Text("共 \(yearSummary.count) 笔")
                     .foregroundStyle(Palette.stone)
             }
-            .font(.system(size: 15))
+            .font(.body)
             Text("全部：\(ledgers.count) 本礼簿 · \(records.count) 笔记录 · \(LedgerMath.people(from: snapshots).count) 位亲友")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
         .statsCardSurface()
     }
 
     private var typeCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("按事由")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if typeSummaries.isEmpty {
                 Text("还没有记录")
@@ -100,14 +100,14 @@ struct StatsView: View {
                         Text(t.type)
                             .foregroundStyle(Palette.ink)
                         Text("\(t.count) 笔")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Spacer()
                         Text("收 \(LedgerMath.fmtMoney(cents: t.received)) · 随 \(LedgerMath.fmtMoney(cents: t.given))")
-                            .font(.liqianMoney(size: 14))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                     }
-                    .padding(.vertical, 3)
+                    .padding(.vertical, LiqianMetrics.spacingXS)
                 }
             }
         }
@@ -116,9 +116,9 @@ struct StatsView: View {
 
     /// 往来排行 Top5：往来总额最大的几位，差额小字辅助判断
     private var rankingCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("往来排行")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if rankedPeople.isEmpty {
                 Text("还没有记录")
@@ -128,30 +128,31 @@ struct StatsView: View {
                     Button {
                         personRoute = PeopleView.NameRoute(name: p.name)
                     } label: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
                             Text("\(idx + 1)")
-                                .font(.liqianSerif(size: 15))
+                                .font(.liqianSerif(.subheadline))
                                 .foregroundStyle(Palette.stone)
                                 .frame(width: 18, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                                 Text(p.name)
                                     .foregroundStyle(Palette.ink)
                                 Text(p.relation)
-                                    .font(.system(size: 12))
+                                    .font(.footnote)
                                     .foregroundStyle(Palette.stone)
                             }
                             Spacer()
-                            VStack(alignment: .trailing, spacing: 2) {
+                            VStack(alignment: .trailing, spacing: LiqianMetrics.spacingXS) {
                                 Text(LedgerMath.fmtMoney(cents: p.received + p.given))
-                                    .font(.liqianMoney(size: 15))
+                                    .font(.liqianMoney(.title3))
                                     .foregroundStyle(Palette.ink)
                                 Text(balanceSmallText(p))
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Palette.stone)
                             }
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(Palette.stone)
+                                .accessibilityHidden(true)
                         }
                         .frame(minHeight: LiqianMetrics.minTapTarget)
                         .contentShape(Rectangle())
@@ -164,18 +165,18 @@ struct StatsView: View {
     }
 
     private func balanceSmallText(_ p: PersonSummary) -> String {
-        if p.balance == 0 { return "两清" }
+        if p.balance == 0 { return "已结清" }
         return p.balance > 0
-            ? "他多给 \(LedgerMath.fmtMoney(cents: p.balance))"
+            ? "对方多给 \(LedgerMath.fmtMoney(cents: p.balance))"
             : "我多给 \(LedgerMath.fmtMoney(cents: -p.balance))"
     }
 
     /// 关系分布：按关系聚合往来总额的横向条形图。
     /// v3：朱砂单色阶——同一色按总额占比变透明度，不引入新色。
     private var relationCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("关系分布")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if relationSummaries.isEmpty {
                 Text("还没有记录")
@@ -206,7 +207,7 @@ struct StatsView: View {
         view
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.spacingM))
     }
 }
 

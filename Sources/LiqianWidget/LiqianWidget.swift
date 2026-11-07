@@ -13,10 +13,10 @@ private enum WPalette {
         }))
     }
 
-    // 与 Palette v3 同步（纸白打底、墨色中性化，朱砂不变）
+    // 与 Palette v3 同步：paper/primary 为品牌值；ink/stone 与 App 同口径走系统语义色
     static let paper = dyn(0xFAF9F6, 0x171716)
-    static let ink = dyn(0x262520, 0xEBE9E3)
-    static let stone = dyn(0x6F6C64, 0xA6A29A)
+    static let ink = Color.primary
+    static let stone = Color.secondary
     static let primary = dyn(0xA62B1F, 0xD96A5C)
 }
 
@@ -87,8 +87,19 @@ struct Provider: TimelineProvider {
 
 /// 金额格式与 App 内 LedgerMath.fmtMoney 同口径（整数不带小数）
 private func fmtMoney(cents: Int) -> String {
-    if cents % 100 == 0 { return "¥\(cents / 100)" }
-    return String(format: "¥%.2f", Double(cents) / 100.0)
+    let sign = cents < 0 ? "-" : ""
+    let absCents = abs(cents)
+    let yuan = absCents / 100
+    let rem = absCents % 100
+    var head = String(yuan)
+    var grouped = ""
+    while head.count > 3 {
+        grouped = "," + head.suffix(3) + grouped
+        head = String(head.dropLast(3))
+    }
+    grouped = head + grouped
+    if rem == 0 { return "¥\(sign)\(grouped)" }
+    return "¥\(sign)\(grouped).\(rem < 10 ? "0" : "")\(rem)"
 }
 
 struct PendingWidgetView: View {
@@ -98,34 +109,34 @@ struct PendingWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("待回礼")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(WPalette.primary)
             if entry.hasData {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(entry.count)")
-                        .font(.system(size: family == .systemMedium ? 40 : 34, weight: .bold, design: .serif))
+                        .font(.system(.largeTitle, design: .serif, weight: .bold))
                         .foregroundStyle(WPalette.ink)
-                    Text("人还没回")
-                        .font(.system(size: 13))
+                    Text("人待回礼")
+                        .font(.footnote)
                         .foregroundStyle(WPalette.stone)
                 }
                 Text("共 \(fmtMoney(cents: entry.amountCents))")
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .font(.system(.callout, design: .serif, weight: .semibold))
                     .foregroundStyle(WPalette.ink)
                 if !entry.topName.isEmpty {
                     Text("最多的是 \(entry.topName)")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(WPalette.stone)
                         .lineLimit(1)
                 }
                 if family == .systemMedium {
-                    Text("点一下打开，记一笔新的")
-                        .font(.system(size: 12))
+                    Text("点按打开，记一笔")
+                        .font(.caption)
                         .foregroundStyle(WPalette.stone)
                 }
             } else {
                 Text("打开礼钱账本\n查看待回礼")
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundStyle(WPalette.ink)
                     .lineSpacing(4)
             }
@@ -145,7 +156,7 @@ struct LiqianWidget: Widget {
             PendingWidgetView(entry: entry)
         }
         .configurationDisplayName("待回礼")
-        .description("还没回的礼，一眼看清。")
+        .description("待回礼汇总")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

@@ -14,13 +14,14 @@ public struct DirectionTag: View {
 
     public var body: some View {
         let isReceived = direction == LiqianConstants.received
-        let bg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.givenTag
+        let bg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.baiPrimary
         Text(direction)
-            .font(.system(size: 11, weight: .medium))
+            .font(.caption2.weight(.medium))
             .foregroundStyle(.white)
+            // 签内边距为签形控件内部微调字面量（PRO-AUDIT §4.1 豁免口径），不走梯队
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(bg, in: RoundedRectangle(cornerRadius: 4))
+            .background(bg, in: RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner))
     }
 }
 
@@ -36,19 +37,21 @@ public struct PendingTag: View {
     public var body: some View {
         let color = bai ? Palette.baiPrimary : Palette.stone
         Text("待送出")
-            .font(.system(size: 11))
+            .font(.caption2)
             .foregroundStyle(color)
+            // 同 DirectionTag：签内边距字面量豁免
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
                     .stroke(color, lineWidth: 1)
             )
     }
 }
 
-// MARK: - 礼簿封面卡（全 App 唯一的记忆点，其余表面安静克制）
-// 左：封面块（朱砂/白事素灰蓝，竖排事由 + 印点，顶部高光模拟纸面光泽；v3 去描金边）
+// MARK: - 礼簿封面卡（列表行）
+// 左：事由小签（朱砂/白事素灰蓝窄签，竖排事由 + 印点）——PRO-AUDIT #6 定版：
+// 封面满块是唯一记忆点，只出现在礼簿详情页头部一次；列表逐行重复会把记忆点摊成底纹
 // 右：标题、日期备注、收/随小计与笔数（金额一律墨色，v3 纪律）
 
 public struct LedgerCoverCard: View {
@@ -67,43 +70,40 @@ public struct LedgerCoverCard: View {
     private var isBai: Bool { ledger.isBai }
 
     public var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: LiqianMetrics.spacingSM) {
             coverBlock
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                 Text(ledger.title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
-                    .lineLimit(1)
+                subtitleRow
                 HStack(spacing: 0) {
-                    Text("收 ")
-                        .font(.system(size: 12.5))
+                    Text("收礼")
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     Text(LedgerMath.fmtMoney(cents: receivedCents))
-                        .font(.liqianMoney(size: 15))
+                        .font(.liqianMoney(.title3))
                         .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                     Spacer().frame(width: 14)
-                    Text("随 ")
-                        .font(.system(size: 12.5))
+                    Text("随礼")
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     Text(LedgerMath.fmtMoney(cents: givenCents))
-                        .font(.liqianMoney(size: 15))
+                        .font(.liqianMoney(.title3))
                         .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                     Spacer()
                     Text("\(count) 笔")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 }
-                .padding(.top, 6)
+                .padding(.top, LiqianMetrics.spacingS)
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
         }
-        .padding(12)
+        .padding(LiqianMetrics.cardPadding)
         .frame(minHeight: LiqianMetrics.minTapTarget)
         .background(
             isBai ? Palette.baiCard : Palette.card,
@@ -116,47 +116,40 @@ public struct LedgerCoverCard: View {
         .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner))
     }
 
-    private var subtitle: String {
-        // 公历 + 农历（婚丧嫁娶看农历是刚需）；有备注时排在最后，超长由 lineLimit 截断
-        let base = "\(ledger.date) · \(LiqianDate.lunarString(for: ledger.date))"
-        return ledger.note.isEmpty ? base : "\(base) · \(ledger.note)"
+    /// 副标题分段排布（PRO-AUDIT §4.4：弃用中点拼接的元信息串）：
+    /// 公历（displayString 定版格式）/ 农历 / 备注各成一段，备注超长截断
+    private var subtitleRow: some View {
+        HStack(spacing: LiqianMetrics.spacingXS) {
+            Text(LiqianDate.displayString(for: ledger.date))
+            Text(LiqianDate.lunarString(for: ledger.date))
+            if !ledger.note.isEmpty {
+                Text(ledger.note)
+                    .lineLimit(1)
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
     }
 
+    /// 事由小签（PRO-AUDIT #6）：30×64 朱砂窄签、竖排事由、无高光拟物；
+    /// 满块封面移交礼簿详情页头部（LedgerDetailView 自有封面块）
     private var coverBlock: some View {
         let base = isBai ? Palette.baiPrimary : Palette.primary
         return ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
                 .fill(base)
-            // 顶部亮面：白 0.28 → 透明（同 Flutter 封面渐变口径）
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [.white.opacity(0.28), .white.opacity(0)],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                )
-            VStack(spacing: 6) {
+            VStack(spacing: LiqianMetrics.spacingXS) {
                 Text(ledger.type.map { String($0) }.joined(separator: "\n"))
-                    .font(.liqianSerif(size: 20))
+                    .font(.liqianSerifFixed(size: 15))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(2)
+                    .lineSpacing(1)
                 Circle()
                     .fill(isBai ? Palette.baiLine : Palette.paper)
-                    .frame(width: 7, height: 7)
-            }
-            VStack {
-                Rectangle()
-                    .fill(.white.opacity(0.4))
-                    .frame(height: 1)
-                    .padding(.horizontal, 9)
-                    .padding(.top, 3)
-                Spacer()
+                    .frame(width: 5, height: 5)
             }
         }
-        .frame(width: 56, height: 92)
-        // v3：封面块不再描金边，朱砂满底 + 白字本身就是边界
+        .frame(width: 30, height: 64)
     }
 }
 
@@ -203,7 +196,7 @@ public struct SealStampView: View {
                 .stroke(.white.opacity(0.55), lineWidth: 1)
                 .padding(size * 0.09)
             Text(char)
-                .font(.liqianSerif(size: size * 0.52))
+                .font(.liqianSerifFixed(size: size * 0.52))
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
@@ -247,6 +240,7 @@ public struct SealStampOverlay: View {
             }
         }
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

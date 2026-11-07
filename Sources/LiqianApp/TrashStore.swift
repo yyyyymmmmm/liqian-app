@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 import LiqianCore
 
-/// 回收站条目（快照式）：删除时把模型转成 Backup 快照存进 trash.json，
+/// 最近删除条目（快照式）：删除时把模型转成 Backup 快照存进 trash.json，
 /// 不动 SwiftData 现有 schema。恢复时按快照重新 insert，保留原始 UUID，
 /// 人物聚合（按姓名）自然恢复。
 struct TrashItem: Codable, Identifiable {
@@ -109,7 +109,7 @@ enum TrashStore {
 
     // MARK: - 恢复 / 清理
 
-    /// 把快照重新 insert 回数据库（保留原始 UUID），成功后条目自动移出回收站。
+    /// 把快照重新 insert 回数据库（保留原始 UUID），成功后条目自动移出最近删除。
     /// 记录恢复要求所属礼簿还在，避免产生挂空的孤儿记录。
     @discardableResult
     static func restore(id: UUID, into context: ModelContext) -> Bool {

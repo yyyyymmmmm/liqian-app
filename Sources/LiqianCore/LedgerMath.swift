@@ -121,10 +121,22 @@ public struct TypeSummary: Sendable, Equatable, Identifiable {
 }
 
 public enum LedgerMath {
-    /// 金额输出与 Dart fmtMoney 一致：整数输出 ¥N，有分输出两位小数
+    /// 金额输出：¥ + 千分位（PRO-AUDIT §1.5 定版，如 ¥10,000 / ¥66.50）；
+    /// 整数不带小数，非整保留两位；负数沿用旧口径 ¥-N。
     public static func fmtMoney(cents: Int) -> String {
-        if cents % 100 == 0 { return "¥\(cents / 100)" }
-        return String(format: "¥%.2f", Double(cents) / 100.0)
+        let sign = cents < 0 ? "-" : ""
+        let absCents = abs(cents)
+        let yuan = absCents / 100
+        let rem = absCents % 100
+        var head = String(yuan)
+        var grouped = ""
+        while head.count > 3 {
+            grouped = "," + head.suffix(3) + grouped
+            head = String(head.dropLast(3))
+        }
+        grouped = head + grouped
+        if rem == 0 { return "¥\(sign)\(grouped)" }
+        return "¥\(sign)\(grouped).\(rem < 10 ? "0" : "")\(rem)"
     }
 
     public static func sum(_ entries: [EntrySnapshot]) -> Int {

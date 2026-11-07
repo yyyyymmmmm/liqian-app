@@ -52,7 +52,7 @@ struct LedgerFormView: View {
                     if let titleError {
                         Text(titleError)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                 }
                 Section {
@@ -65,7 +65,7 @@ struct LedgerFormView: View {
                         TextField("事由名称", text: $customType, prompt: Text("如：店铺开业 / 孩子升学"))
                     }
                     DatePicker("日期", selection: $date, displayedComponents: .date)
-                    TextField("备注（可选）", text: $note)
+                    TextField("备注（选填）", text: $note)
                 }
             }
             .navigationTitle(existing == nil ? "新建礼簿" : "编辑礼簿")

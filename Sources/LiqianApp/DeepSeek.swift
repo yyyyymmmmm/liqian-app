@@ -57,7 +57,7 @@ enum AIReadiness {
         case .ready:
             return ""
         case .noKey:
-            return "还没填 DeepSeek 的 API Key。先到「我的 → AI 智能助手」里填上你自己的 key，存在本机钥匙串里，不会上传。"
+            return "还没填 DeepSeek 的 API Key。先到「我的 → AI 智能助手」里填上你自己的 API Key，存在本机钥匙串里，不会上传。"
         case .notEnabled:
             return "AI 功能还没打开。先到「我的 → AI 智能助手」里把开关打开。"
         }
@@ -89,16 +89,16 @@ enum DeepSeekError: LocalizedError {
             return "还没填 DeepSeek 的 API Key，先到「我的 → AI 智能助手」里填上。"
         case .http(let code):
             if code == 401 || code == 403 {
-                return "DeepSeek 拒绝了这个 Key（HTTP \(code)），检查一下 Key 填得对不对、账户还有没有余额。"
+                return "API Key 被拒绝，请检查是否填写正确、账户余额是否充足。"
             }
             if code == 429 {
-                return "DeepSeek 正在限流（HTTP 429），等一会儿再试。"
+                return "请求过于频繁，请稍后重试"
             }
-            return "DeepSeek 返回异常（HTTP \(code)），稍后再试。"
-        case .network(let detail):
-            return "连不上 DeepSeek：\(detail)。检查一下网络再试。"
+            return "DeepSeek 返回异常，请稍后重试。"
+        case .network:
+            return "网络连接失败，请检查网络后重试"
         case .badResponse(let detail):
-            return "DeepSeek 的返回看不懂：\(detail)"
+            return "AI 返回内容格式异常，无法解析：\(detail)"
         }
     }
 }

@@ -47,10 +47,10 @@ struct GreetingView: View {
                         Text("亲切").tag("亲切")
                     }
                     .pickerStyle(.segmented)
-                    TextField("主家姓名（可空）", text: $hostName, prompt: Text("如：张建国"))
-                    TextField("你和主家的关系（可空）", text: $relationToHost, prompt: Text("如：表弟、同事、老同学"))
+                    TextField("主家姓名（选填）", text: $hostName, prompt: Text("如：张建国"))
+                    TextField("你和主家的关系（选填）", text: $relationToHost, prompt: Text("如：表弟、同事、老同学"))
                     Text("这本礼簿是「\(ledger.type)」。将把上面这几项发送至 DeepSeek 生成文字。")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 }
 
@@ -58,7 +58,7 @@ struct GreetingView: View {
                     Section {
                         Text(errorText)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                     }
                 }
 
@@ -67,7 +67,7 @@ struct GreetingView: View {
                         Task { await generate() }
                     } label: {
                         HStack {
-                            Text(candidates.isEmpty ? "生成 3 条候选" : "再生成 3 条")
+                            Text(candidates.isEmpty ? "生成 3 条" : "重新生成")
                             if isGenerating {
                                 Spacer()
                                 ProgressView()
@@ -81,7 +81,7 @@ struct GreetingView: View {
                 if !candidates.isEmpty {
                     Section {
                         ForEach(candidates.indices, id: \.self) { i in
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
                                 Text(candidates[i])
                                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                                     .lineSpacing(4)
@@ -94,19 +94,19 @@ struct GreetingView: View {
                                         copiedIndex == i ? "已复制" : "复制这条",
                                         systemImage: copiedIndex == i ? "checkmark" : "doc.on.doc"
                                     )
-                                    .font(.system(size: 13.5))
+                                    .font(.subheadline)
                                     .foregroundStyle(isBai ? Palette.baiPrimary : Palette.primary)
                                     .frame(minHeight: LiqianMetrics.minTapTarget)
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, LiqianMetrics.spacingXS)
                         }
                         Text("AI 生成，请核对后再用；人名、称谓最容易出错，看清了再发。")
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     } header: {
-                        Text("候选")
+                        Text("生成结果")
                     }
                 }
             }
@@ -144,7 +144,7 @@ struct GreetingView: View {
             let parts = Self.splitCandidates(text)
             isGenerating = false
             if parts.isEmpty {
-                errorText = "这次没生成出可用的文字，再点一次试试。"
+                errorText = "未生成可用内容，请重试。"
             } else {
                 candidates = parts
             }

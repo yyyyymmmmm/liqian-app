@@ -29,6 +29,19 @@ final class LedgerMathTests: XCTestCase {
         XCTAssertEqual(LedgerMath.fmtMoney(cents: 100_50), "¥100.50")
         XCTAssertEqual(LedgerMath.fmtMoney(cents: 0), "¥0")
         XCTAssertEqual(LedgerMath.fmtMoney(cents: 5), "¥0.05")
+        // 千分位（PRO-AUDIT §1.5）：万元整数、带分大额、负数
+        XCTAssertEqual(LedgerMath.fmtMoney(cents: 1_000_000), "¥10,000")
+        XCTAssertEqual(LedgerMath.fmtMoney(cents: 123_456_789), "¥1,234,567.89")
+        XCTAssertEqual(LedgerMath.fmtMoney(cents: -1_000_000), "¥-10,000")
+        XCTAssertEqual(LedgerMath.fmtMoney(cents: -100_50), "¥-100.50")
+    }
+
+    // MARK: displayString（界面日期显示定版：当年 M月d日 / 跨年 yyyy年M月d日）
+
+    func testDisplayString() {
+        XCTAssertEqual(LiqianDate.displayString(for: "2026-11-16", today: "2026-11-07"), "11月16日")
+        XCTAssertEqual(LiqianDate.displayString(for: "2025-01-29", today: "2026-11-07"), "2025年1月29日")
+        XCTAssertEqual(LiqianDate.displayString(for: "bad", today: "2026-11-07"), "bad")
     }
 
     func testSum() {

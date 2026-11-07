@@ -58,17 +58,17 @@ struct AnnualReportView: View {
         var s = "\(year) 年与 \(peopleCount) 位亲友有往来，共 \(summary.count) 笔，"
         s += "收礼 \(LedgerMath.fmtMoney(cents: summary.recv))，随礼 \(LedgerMath.fmtMoney(cents: summary.given))。"
         if !pendingPeople.isEmpty {
-            s += "目前还有 \(pendingPeople.count) 人的礼没回，合计 \(LedgerMath.fmtMoney(cents: pendingTotal))。"
+            s += "目前待回礼 \(pendingPeople.count) 人，合计 \(LedgerMath.fmtMoney(cents: pendingTotal))。"
         }
         return s
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: LiqianMetrics.spacingSM) {
                 if years.isEmpty {
                     Text("还没有记录，先记几笔再来看年度报告。")
-                        .font(.system(size: 15))
+                        .font(.body)
                         .foregroundStyle(Palette.stone)
                         .padding(.top, 40)
                 } else {
@@ -80,7 +80,7 @@ struct AnnualReportView: View {
                     shareCard
                 }
             }
-            .padding(16)
+            .padding(LiqianMetrics.spacingM)
         }
         .background(Palette.paper.ignoresSafeArea())
         .navigationTitle("人情年度报告")
@@ -105,20 +105,20 @@ struct AnnualReportView: View {
     }
 
     private var headlineCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             Text("\(year) 年人情报告")
-                .font(.liqianSerif(size: 20))
+                .font(.liqianSerif(.title3))
                 .foregroundStyle(Palette.ink)
-            HStack(spacing: 20) {
+            HStack(spacing: LiqianMetrics.spacingL) {
                 headlineStat(label: "收礼", value: summary.recv, color: Palette.ink)
                 headlineStat(label: "随礼", value: summary.given, color: Palette.ink)
                 headlineStat(label: "往来人数", text: "\(peopleCount)", color: Palette.ink)
             }
             Text("共 \(summary.count) 笔往来（待送出不计入，与全年口径一致）")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
             Text(summarySentence)
-                .font(.system(size: 14))
+                .font(.subheadline)
                 .foregroundStyle(Palette.ink)
                 .lineSpacing(5)
         }
@@ -126,51 +126,51 @@ struct AnnualReportView: View {
     }
 
     private func headlineStat(label: String, value: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianMoney(size: 19))
+                .font(.liqianMoney(.title3))
                 .foregroundStyle(color)
                 .contentTransition(.numericText())
             Text(label)
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
     }
 
     private func headlineStat(label: String, text: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text(text)
-                .font(.liqianMoney(size: 19))
+                .font(.liqianMoney(.title3))
                 .foregroundStyle(color)
             Text(label)
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
     }
 
     private var topCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("往来最多")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if topPeople.isEmpty {
                 Text("这一年还没有往来记录")
                     .foregroundStyle(Palette.stone)
             } else {
                 ForEach(Array(topPeople.prefix(3).enumerated()), id: \.element.id) { idx, p in
-                    HStack(spacing: 10) {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
                         Text("\(idx + 1)")
-                            .font(.liqianSerif(size: 15))
+                            .font(.liqianSerif(.subheadline))
                             .foregroundStyle(Palette.stone)
                             .frame(width: 18, alignment: .leading)
                         Text(p.name)
                             .foregroundStyle(Palette.ink)
                         Text(p.relation)
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Spacer()
                         Text(LedgerMath.fmtMoney(cents: p.received + p.given))
-                            .font(.liqianMoney(size: 15))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                     }
                     .frame(minHeight: 36)
@@ -181,9 +181,9 @@ struct AnnualReportView: View {
     }
 
     private var typeCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("按事由")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if typeRows.isEmpty {
                 Text("还没有记录")
@@ -194,14 +194,14 @@ struct AnnualReportView: View {
                         Text(t.type)
                             .foregroundStyle(Palette.ink)
                         Text("\(t.count) 笔")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Spacer()
                         Text("收 \(LedgerMath.fmtMoney(cents: t.received)) · 随 \(LedgerMath.fmtMoney(cents: t.given))")
-                            .font(.liqianMoney(size: 14))
+                            .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
                     }
-                    .padding(.vertical, 3)
+                    .padding(.vertical, LiqianMetrics.spacingXS)
                 }
             }
         }
@@ -209,19 +209,19 @@ struct AnnualReportView: View {
     }
 
     private var pendingCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("待回礼（至今）")
-                .font(.system(size: 16, weight: .bold))
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            Text("待回礼（累计）")
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
             if pendingPeople.isEmpty {
-                Text("没有欠着的人情，轻松。")
+                Text("暂无待回礼记录")
                     .foregroundStyle(Palette.stone)
             } else {
-                Text("\(pendingPeople.count) 人 · 合计 \(LedgerMath.fmtMoney(cents: pendingTotal)) 还没回")
-                    .font(.system(size: 15))
+                Text("待回礼 \(pendingPeople.count) 人 · 合计 \(LedgerMath.fmtMoney(cents: pendingTotal))")
+                    .font(.body)
                     .foregroundStyle(Palette.ink)
-                Text("按「最近一次收礼之后还没送出」自动算的，这笔账不分年份。")
-                    .font(.system(size: 12))
+                Text("按最近一笔收礼之后是否已送出自动计算，不分年份。")
+                    .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }
         }
@@ -229,12 +229,12 @@ struct AnnualReportView: View {
     }
 
     private var shareCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             Text("分享图卡")
-                .font(.system(size: 16, weight: .bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
-            Text("把这一年的人情往来做成一张图，发给家人一起看看。图上只有汇总数字，不带任何人的明细金额。")
-                .font(.system(size: 12.5))
+            Text("生成年度报告图卡，仅含汇总数据，不含个人明细。")
+                .font(.footnote)
                 .foregroundStyle(Palette.stone)
             Button {
                 makeShareImage()
@@ -323,7 +323,7 @@ struct AnnualReportCard: View {
                 VStack(spacing: 3) {
                     ForEach(verticalTitle.indices, id: \.self) { i in
                         Text(verticalTitle[i])
-                            .font(.liqianSerif(size: 23))
+                            .font(.liqianSerifFixed(size: 23))
                             .foregroundStyle(Palette.ink)
                     }
                 }
@@ -343,7 +343,7 @@ struct AnnualReportCard: View {
     private func stat(label: String, value: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.liqianMoney(size: 26))
+                .font(.liqianMoneyFixed(size: 26))
                 .foregroundStyle(color)
             Text(label)
                 .font(.system(size: 12))
