@@ -247,6 +247,13 @@ struct SceneModeView: View {
         .onAppear {
             if baseline == nil { baseline = ledgerReceived }
             presenter.update(name: session.last?.person, count: session.count, bai: isBai)
+            // 锁屏 Live Activity（v4.5）：进场开横幅（已有进行中的只同步进度，
+            // 不重建）；系统未授权/重签不可用时控制器内部静默跳过
+            SceneLiveActivityController.start(
+                ledgerTitle: ledger.title, isBai: isBai,
+                entryCount: session.count, totalCents: sessionCents,
+                lastPerson: session.last?.person ?? ""
+            )
             // 收礼台一开就是几个小时：本页在场期间不息屏
             UIApplication.shared.isIdleTimerDisabled = true
             Task { @MainActor in
@@ -257,6 +264,8 @@ struct SceneModeView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             announcer.stop()
+            // 离场即收横幅（复核单是本页的 sheet，弹出不触发本页 disappear）
+            SceneLiveActivityController.end()
         }
         .sensoryFeedback(.success, trigger: saveTrigger)
         .sensoryFeedback(.warning, trigger: errorTrigger)
@@ -519,6 +528,10 @@ struct SceneModeView: View {
             announcer.announce(name: name, amountCents: cents, bai: isBai)
         }
         presenter.update(name: name, count: session.count, bai: isBai)
+        // 锁屏横幅同步本场进度（v4.5）
+        SceneLiveActivityController.update(
+            entryCount: session.count, totalCents: sessionCents, lastPerson: name
+        )
         person = ""
         amountText = ""
         focus = .name

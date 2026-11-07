@@ -48,6 +48,9 @@ let project = Project(
                 "NSSpeechRecognitionUsageDescription": "用于将语音转写为记账文字",
                 "NSMicrophoneUsageDescription": "用于语音记账，把你说的话转成文字",
                 "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
+                // 现场模式 Live Activity（v4.5）：锁屏横幅显示本场收礼进度，
+                // 仅本地启动/更新（不走 APNs 推送），无此键 Activity.request 必失败
+                "NSSupportsLiveActivities": true,
                 // CloudKit 静默推送：数据在其他设备变更时系统唤醒同步（feat/icloud）
                 "UIBackgroundModes": ["remote-notification"],
                 // 活礼谱（v4.2）：注册 liqian scheme——此前小组件的

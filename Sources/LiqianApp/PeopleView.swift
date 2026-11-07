@@ -13,6 +13,13 @@ struct PeopleView: View {
     @State private var prepToDelete: GiftRecord?
     @State private var showSampleDone = false
     @State private var showAdvisor = false
+    /// 小组件人物深链（v4.5）：ContentView 收到 liqian://person/<姓名> 后
+    /// 切到本页并把姓名放进这个绑定，本页消费后置路由并清空绑定
+    @Binding private var deepLinkPerson: String?
+
+    init(deepLinkPerson: Binding<String?> = .constant(nil)) {
+        _deepLinkPerson = deepLinkPerson
+    }
 
     /// 人物详情路由（按姓名）
     struct NameRoute: Identifiable, Hashable {
@@ -152,6 +159,8 @@ struct PeopleView: View {
             .navigationDestination(isPresented: $showAdvisor) {
                 AdvisorView()
             }
+            .onAppear { consumeDeepLinkPerson() }
+            .onChange(of: deepLinkPerson) { _, _ in consumeDeepLinkPerson() }
             .alert("示例数据已生成", isPresented: $showSampleDone) {
                 Button("好") {}
             } message: {
@@ -162,6 +171,16 @@ struct PeopleView: View {
 
     /// 备礼清单行：待送出的礼，点行进人物详情去处理；
     /// 左滑删除（进最近删除）／标记已送出行（v2.5 包 3）
+    /// 消费小组件人物深链：姓名还在往来名单里才置路由；人已不在（记录删光）
+    /// 就静默作罢，不硬跳一个空详情。消费完立即清空绑定防重复触发。
+    private func consumeDeepLinkPerson() {
+        guard let name = deepLinkPerson else { return }
+        deepLinkPerson = nil
+        guard summaries.contains(where: { $0.name == name }) else { return }
+        query = ""
+        personRoute = NameRoute(name: name)
+    }
+
     private func prepRow(_ r: GiftRecord) -> some View {
         Button {
             personRoute = NameRoute(name: r.person)

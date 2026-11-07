@@ -21,6 +21,9 @@ struct ContentView: View {
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
     @State private var tabSelection = 0
+    /// 小组件人物深链（v4.5）：liqian://person/<姓名> 的待达姓名，
+    /// 交给 PeopleView 消费（切到往来页后由它置人物路由并清空）
+    @State private var personDeepLinkName: String?
     /// 存储健康（v4.2）：应急内存模式绝不沉默，顶部挂红条警示
     @EnvironmentObject private var cloudSync: CloudSyncManager
 
@@ -41,7 +44,7 @@ struct ContentView: View {
                     LedgersView()
                 }
                 Tab("往来", systemImage: "person.2", value: 1) {
-                    PeopleView()
+                    PeopleView(deepLinkPerson: $personDeepLinkName)
                 }
                 Tab("我的", systemImage: "person.crop.circle", value: 2) {
                     MeView()
@@ -127,6 +130,15 @@ struct ContentView: View {
                 presentQuickRecord()
                 return
             }
+            // 小组件人物深链（v4.5）：liqian://person/<姓名>——切到往来页，
+            // 姓名经 personDeepLinkName 交 PeopleView 打开该人物详情；
+            // 隐私锁锁着时同样不承接（不绕过锁定页）
+            if let name = LiqianDeepLink.personName(from: url) {
+                if privacyLockEnabled && isLocked { return }
+                tabSelection = 1
+                personDeepLinkName = name
+                return
+            }
             // 活礼谱（v4.2）：祝福深链 liqian://blessing/<id>（礼谱祝福
             // 索引页二维码扫码落点）；隐私锁锁着时不弹（不绕过锁定页）
             if let id = LiqianDeepLink.blessingID(from: url),
@@ -154,10 +166,29 @@ struct ContentView: View {
         ReminderScheduler.reschedule(days: allReminderDays.map(\.value), snapshots: snapshots)
     }
 
-    /// 小组件速览：用全部记录算待回礼汇总后写入 App Group
+    /// 小组件速览：用全部记录算待回礼汇总后写入 App Group。
+    /// v4.5 起一并带上本月收/送与下一个重要日子（小组件套件数据源）。
+    /// 本月口径：记录 date（yyyy-MM-dd）前缀匹配当前年月；随礼只计已送出
+    /// （待送出不算，口径同 PersonSummary.given）；与旧字段同源，不做示例隔离。
     private func refreshWidgetSummary() {
         let snapshots = AppSupport.snapshots(records: allRecords, ledgers: allLedgers)
-        WidgetSummaryWriter.write(people: LedgerMath.people(from: snapshots))
+        let monthPrefix = String(LiqianDate.todayString().prefix(7))
+        var monthReceived = 0
+        var monthGiven = 0
+        for entry in snapshots where entry.date.hasPrefix(monthPrefix) {
+            if entry.direction == LiqianConstants.received {
+                monthReceived += entry.amountCents
+            } else if entry.direction == LiqianConstants.given,
+                      entry.status != LiqianConstants.pendingStatus {
+                monthGiven += entry.amountCents
+            }
+        }
+        WidgetSummaryWriter.write(
+            people: LedgerMath.people(from: snapshots),
+            monthReceivedCents: monthReceived,
+            monthGivenCents: monthGiven,
+            nextReminder: WidgetSummaryWriter.nextReminder(from: allReminderDays.map(\.value))
+        )
     }
 
     /// 快捷指令落下的标记：读到就清掉并弹记一笔表单

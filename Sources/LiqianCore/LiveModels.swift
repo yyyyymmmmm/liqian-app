@@ -93,6 +93,23 @@ public enum LiqianDeepLink {
         let raw = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return UUID(uuidString: raw)
     }
+
+    /// 人物深链（小组件待回礼列表点按直达）：liqian://person/<姓名百分号编码>
+    /// 姓名是全 App 的人物主键口径（同名即同人），故路径段直接放姓名。
+    public static func personURL(name: String) -> String {
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        return "liqian://person/\(encoded)"
+    }
+
+    /// 从 URL 解析人物姓名；不是人物深链时返回 nil。
+    /// 从 percentEncodedPath 取原始串后只解一次编码，避免姓名含 % 时双重解码。
+    public static func personName(from url: URL) -> String? {
+        guard url.scheme == "liqian", url.host == "person" else { return nil }
+        let raw = url.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !raw.isEmpty else { return nil }
+        let name = raw.removingPercentEncoding ?? raw
+        return name.isEmpty ? nil : name
+    }
 }
 
 // MARK: - ISO8601 时间串（备份元数据段的 createdAt 用）
