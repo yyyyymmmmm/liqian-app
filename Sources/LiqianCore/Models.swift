@@ -81,6 +81,51 @@ public enum LiqianDate {
     public static func currentYearString() -> String {
         String(Calendar.current.component(.year, from: Date()))
     }
+
+    // MARK: - 干支纪年（礼谱 v3：封面、谱序落款、纪年印三处统一）
+
+    private static let tianGanNames = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
+    private static let diZhiNames = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+
+    /// 干支年（民间礼谱口径：以农历年推干支）。
+    /// chinese 日历的 year 分量是 60 年周期内的序号（1…60，如 2026 年为周期第 43 年），
+    /// 干支序号 = 周期年 − 1；与按公历年 (Y−4) mod 60 取干支恒等（公元 4 年为甲子年）：
+    /// 2026-11-16 → 丙午、2025-01-29 → 乙巳、2024-02-10 → 甲辰。
+    public static func ganzhiYear(for dateString: String) -> String {
+        let date = date(from: dateString)
+        let cal = Calendar(identifier: .chinese)
+        let cycleYear = cal.component(.year, from: date)
+        let index = ((cycleYear - 1) % 60 + 60) % 60
+        return tianGanNames[index % 10] + diZhiNames[index % 12]
+    }
+
+    /// 全谱统一日期写法：「丙午年十月初八」（干支年 + 农历月日，不带「农历」二字）
+    public static func ganzhiFullDate(for dateString: String) -> String {
+        let lunar = lunarString(for: dateString)
+        let monthDay = lunar.hasPrefix("农历") ? String(lunar.dropFirst(2)) : lunar
+        return ganzhiYear(for: dateString) + "年" + monthDay
+    }
+
+    // MARK: - 农历月份雅称（纪年印用：干支年 + 月雅称，如「丙午冬月」）
+
+    private static let lunarMonthAliases = [
+        "端月", "杏月", "桃月", "槐月", "蒲月", "荷月",
+        "巧月", "桂月", "菊月", "冬月", "葭月", "腊月",
+    ]
+
+    /// 按农历月序号（1…12）取雅称，越界回退「N月」
+    public static func lunarMonthAlias(month: Int) -> String {
+        lunarMonthAliases.indices.contains(month - 1)
+            ? lunarMonthAliases[month - 1]
+            : "\(month)月"
+    }
+
+    /// 某日期所在农历月的雅称
+    public static func lunarMonthAlias(for dateString: String) -> String {
+        let date = date(from: dateString)
+        let cal = Calendar(identifier: .chinese)
+        return lunarMonthAlias(month: cal.component(.month, from: date))
+    }
 }
 
 // MARK: - SwiftData 模型

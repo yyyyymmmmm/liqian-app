@@ -25,6 +25,7 @@ struct MeView: View {
     @State private var showInfo = false
     @State private var importTrigger = 0
     @AppStorage("privacyLock") private var privacyLock = false
+    @AppStorage("hostName") private var hostName = ""
 
     private var snapshots: [EntrySnapshot] {
         AppSupport.snapshots(records: records, ledgers: ledgers)
@@ -275,6 +276,19 @@ struct MeView: View {
                 )
             }
             .buttonStyle(.plain)
+            groupDivider
+            NavigationLink {
+                HostNameEditView()
+            } label: {
+                entryRow(
+                    icon: "signature",
+                    title: "礼谱落款姓名",
+                    subtitle: hostName.isEmpty
+                        ? "还没设置，礼谱落款先用「主家谨识」"
+                        : "礼谱封面、谱序落款与主家印用「\(hostName)」"
+                )
+            }
+            .buttonStyle(.plain)
         }
         .cardSurface(padding: 0)
     }
@@ -520,6 +534,49 @@ struct MeView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+    }
+}
+
+/// 礼谱落款姓名编辑页：与导出 sheet 共用 @AppStorage("hostName")，
+/// 礼谱的封面落款、谱序落款、主家印都读它；空 = 回退「主家谨识」。
+struct HostNameEditView: View {
+    @AppStorage("hostName") private var hostName = ""
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        List {
+            Section {
+                TextField("如：杨敏杰", text: $text)
+                    .font(.system(size: 16))
+            } footer: {
+                Text("写主家在礼谱上落款用的名字，一般 2–4 个字。不填的话，礼谱上用「主家谨识」落款、盖「主家谨识」印。")
+            }
+            if !hostName.isEmpty {
+                Section {
+                    Button("清除落款姓名", role: .destructive) {
+                        hostName = ""
+                        text = ""
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.paper.ignoresSafeArea())
+        .navigationTitle("礼谱落款姓名")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("保存") {
+                    hostName = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    dismiss()
+                }
+            }
+        }
+        .onAppear {
+            if text.isEmpty { text = hostName }
+        }
     }
 }
 

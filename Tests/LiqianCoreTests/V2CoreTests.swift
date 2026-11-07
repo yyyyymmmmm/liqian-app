@@ -141,3 +141,27 @@ final class LedgerTextParserTests: XCTestCase {
         }
     }
 }
+
+// MARK: - 干支纪年与月份雅称（礼谱 v3）
+
+final class GanzhiTests: XCTestCase {
+    func testGanzhiYearAssertions() {
+        // 规范断言（LIBU-V3-SPEC §2）：以农历年推干支
+        XCTAssertEqual(LiqianDate.ganzhiYear(for: "2026-11-16"), "丙午")
+        XCTAssertEqual(LiqianDate.ganzhiYear(for: "2025-01-29"), "乙巳")
+        XCTAssertEqual(LiqianDate.ganzhiYear(for: "2024-02-10"), "甲辰")
+        // 锚点：2023 年春节（癸卯年正月初一）
+        XCTAssertEqual(LiqianDate.ganzhiYear(for: "2023-01-22"), "癸卯")
+    }
+
+    func testGanzhiFullDate() {
+        XCTAssertEqual(LiqianDate.ganzhiFullDate(for: "2026-11-16"), "丙午年十月初八")
+    }
+
+    func testLunarMonthAlias() {
+        // 2026-11-16 是农历十月 → 冬月
+        XCTAssertEqual(LiqianDate.lunarMonthAlias(for: "2026-11-16"), "冬月")
+        XCTAssertEqual(LiqianDate.lunarMonthAlias(month: 1), "端月")
+        XCTAssertEqual(LiqianDate.lunarMonthAlias(month: 12), "腊月")
+    }
+}
