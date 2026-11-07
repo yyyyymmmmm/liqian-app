@@ -137,6 +137,7 @@ struct LedgerDetailView: View {
                 }
             }
         }
+        .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
             GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
                 HStack(spacing: LiqianMetrics.spacingSM) {

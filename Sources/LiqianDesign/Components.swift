@@ -14,11 +14,13 @@ public struct DirectionTag: View {
 
     public var body: some View {
         let isReceived = direction == LiqianConstants.received
-        // 填充一律走 Fill 令牌（白字对比达 AA）；primary/baiPrimary 本体只作文字/图标强调
-        let bg = isReceived ? (bai ? Palette.baiPrimaryFill : Palette.primaryFill) : Palette.baiPrimaryFill
+        // 浅签口径（对标大厂列表）：实心填充每行一枚会把强调色摊成底纹；
+        // 改浅底＋同色文字，方向靠色相区分，白事/随礼统一素灰蓝
+        let fg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.baiPrimary
+        let bg = fg.opacity(0.13)
         Text(direction)
             .font(.caption2.weight(.medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(fg)
             // 签内边距为签形控件内部微调字面量（PRO-AUDIT §4.1 豁免口径），不走梯队
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

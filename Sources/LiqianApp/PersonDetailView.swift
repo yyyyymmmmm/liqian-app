@@ -93,6 +93,7 @@ struct PersonDetailView: View {
         .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
             GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
                 HStack(spacing: LiqianMetrics.spacingSM) {
