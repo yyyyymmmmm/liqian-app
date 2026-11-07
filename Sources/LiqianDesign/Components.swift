@@ -130,10 +130,6 @@ public struct LedgerCoverCard: View {
             isBai ? Palette.baiCard : Palette.card,
             in: RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner)
-                .stroke(isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-        )
         .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner))
     }
 
@@ -179,7 +175,10 @@ public struct LedgerCoverCard: View {
     }
 }
 
-// MARK: - 统一卡片表面：卡面色 + hairline 描边 + 18 圆角（白事传 bai: true 换白事令牌）
+// MARK: - 统一卡片表面：卡面色与页面底的微色阶分层（v4.6 质感审计第 1 条起
+// 去描边：分层靠 Palette.card vs pageBG 约 ΔL*2 的色阶 + 间距，不画 hairline；
+// 白事传 bai: true 换白事令牌。功能性描边不在此列——方向签（对比度 ≥4.5:1）、
+// 白事素蓝线、金额键盘键面线各有其保留理由，见 docs/V46-NOTES.md 质感审计节）
 
 public extension View {
     func liqianCardSurface(bai: Bool = false, padding: CGFloat = LiqianMetrics.cardPadding) -> some View {
@@ -190,15 +189,33 @@ public extension View {
                 bai ? Palette.baiCard : Palette.card,
                 in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(bai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-            )
     }
 }
 
 // MARK: - 印章：纯朱砂圆角方印、白字衬线、无金边（v3；礼谱 PDF 封面/汇总页用同款造型绘制）
 // PDF 与分享图卡是静态绘制，那边按此规格复刻：圆角 8、朱砂底、白字、内细框。
+
+// MARK: - 金额文本组件（质感审计第 2 条）：内部读 colorScheme，暗色自动降字重一档
+
+public struct LiqianMoneyText: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let text: String
+    private let style: Font.TextStyle
+    private let color: Color
+
+    public init(_ text: String, style: Font.TextStyle = .title3, color: Color = Palette.ink) {
+        self.text = text
+        self.style = style
+        self.color = color
+    }
+
+    public var body: some View {
+        Text(text)
+            .font(.liqianMoney(style, dark: colorScheme == .dark))
+            .foregroundStyle(color)
+    }
+}
 
 public struct SealStampView: View {
     /// 印面字（通常取礼簿名首字）

@@ -312,6 +312,13 @@ public extension Font {
         .system(style, weight: .semibold).monospacedDigit()
     }
 
+    /// 金额（质感审计第 2 条，v4.6）：暗色模式字重降一档——深色底上 semibold
+    /// 会被发光感放大显粗，降 medium 后与浅色观感对齐；浅色恒 semibold 定版。
+    /// 调用方读 colorScheme 后传 dark；成组件版见 Components.LiqianMoneyText。
+    static func liqianMoney(_ style: Font.TextStyle = .title3, dark: Bool) -> Font {
+        .system(style, weight: dark ? .medium : .semibold).monospacedDigit()
+    }
+
     /// 固定字号衬线金额：**仅限静态成品**（年度报告分享图卡，衬线白名单 moment），
     /// 界面内金额禁止使用（界面大字金额走 .system(size:weight:).monospacedDigit()）
     static func liqianMoneyFixed(size: CGFloat) -> Font {

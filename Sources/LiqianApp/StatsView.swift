@@ -10,6 +10,7 @@ import LiqianDesign
 struct StatsView: View {
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var personRoute: PeopleView.NameRoute?
 
@@ -52,6 +53,7 @@ struct StatsView: View {
                     summaryPair(label: "收礼", cents: yearSummary.recv)
                     summaryPair(label: "随礼", cents: yearSummary.given)
                     Text("共 \(yearSummary.count) 笔")
+                        .monospacedDigit()
                         .foregroundStyle(Palette.stone)
                 }
                 .font(.body)
@@ -59,6 +61,7 @@ struct StatsView: View {
                 Text("\(year) 年往来")
             } footer: {
                 Text("全部：\(ledgers.count - sampleIDs.count) 本礼簿 · \(statRecords.count) 笔记录 · \(LedgerMath.people(from: snapshots).count) 位亲友")
+                    .monospacedDigit()
             }
 
             Section {
@@ -72,6 +75,7 @@ struct StatsView: View {
                                 .foregroundStyle(Palette.ink)
                             Text("\(t.count) 笔")
                                 .font(.footnote)
+                                .monospacedDigit()
                                 .foregroundStyle(Palette.stone)
                             Spacer()
                             Text("收 \(LedgerMath.fmtMoney(cents: t.received)) · 随 \(LedgerMath.fmtMoney(cents: t.given))")
@@ -167,7 +171,7 @@ struct StatsView: View {
             Text(label)
                 .foregroundStyle(Palette.stone)
             Text(LedgerMath.fmtMoney(cents: cents))
-                .font(.liqianMoney(.title3))
+                .font(.liqianMoney(.title3, dark: colorScheme == .dark))
                 .foregroundStyle(Palette.ink)
                 .contentTransition(.numericText())
         }

@@ -373,8 +373,7 @@ struct ChartsView: View {
                 .foregroundStyle(Palette.stone)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text("\(value)")
-                    .font(.system(.title2, weight: colorScheme == .dark ? .medium : .semibold)
-                        .monospacedDigit())
+                    .font(.liqianMoney(.title2, dark: colorScheme == .dark))
                     .foregroundStyle(Palette.ink)
                     .contentTransition(.numericText(value: Double(value)))
                 Text(unit)
@@ -413,16 +412,20 @@ struct ChartsView: View {
                 .foregroundStyle(by: .value("方向", "随礼"))
                 .cornerRadius(2)
                 if bucket.total > 0 {
+                    // 月合计标注的锚点：透明零尺寸点，只借其位置挂 annotation
+                    // （标注是独立覆盖层，不随锚点透明受影响；柱面只标月合计，
+                    // 逐柱精确值由按年汇总与无障碍标签承载，避免 24 个标签互撞）
                     PointMark(
                         x: .value("月份", bucket.label),
                         y: .value("合计", Double(max(bucket.received, bucket.given)) / 100.0)
                     )
+                    .foregroundStyle(.clear)
+                    .symbolSize(0)
                     .annotation(position: .top, spacing: 2) {
                         Text(LedgerMath.fmtMoney(cents: bucket.total))
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(Palette.stone)
                     }
-                    .opacity(0)
                 }
             }
             .chartForegroundStyleScale(["收礼": Palette.primary, "随礼": givenColor])
@@ -854,8 +857,7 @@ private struct RollingMoneyText: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: startDate == nil)) { context in
             Text(LedgerMath.fmtMoney(cents: Int(displayedValue(at: context.date).rounded())))
-                .font(.system(style, weight: colorScheme == .dark ? .medium : .semibold)
-                    .monospacedDigit())
+                .font(.liqianMoney(style, dark: colorScheme == .dark))
                 .foregroundStyle(Palette.ink)
         }
         .onAppear { beginRoll(from: 0) }

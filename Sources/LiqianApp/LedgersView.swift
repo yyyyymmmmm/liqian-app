@@ -18,6 +18,7 @@ struct LedgersView: View {
     @State private var showSampleDone = false
     @Namespace private var zoomSpace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 统计隔离（PRO-AUDIT-2 第 2 项）：示例账本的记录不计入首页任何汇总/速览
     private var sampleIDs: Set<UUID> { SampleData.sampleIDs(ledgers: ledgers) }
@@ -224,16 +225,12 @@ struct LedgersView: View {
         .padding(.vertical, LiqianMetrics.spacingM)
         .padding(.horizontal, LiqianMetrics.spacingSM)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                .stroke(Palette.hairline, lineWidth: 1)
-        )
     }
 
     private func stat(label: String, value: String, color: Color, numericValue: Int) -> some View {
         VStack(spacing: LiqianMetrics.spacingXS) {
             Text(value)
-                .font(.liqianMoney(.title2))
+                .font(.liqianMoney(.title2, dark: colorScheme == .dark))
                 .foregroundStyle(color)
                 .contentTransition(.numericText())
                 .animation(reduceMotion ? nil : .snappy, value: numericValue)
