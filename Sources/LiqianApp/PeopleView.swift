@@ -168,7 +168,7 @@ struct PeopleView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(balanceText(p))
                         .font(.liqianMoney(size: 15))
-                        .foregroundStyle(p.balance > 0 ? Palette.primary : Palette.ink)
+                        .foregroundStyle(Palette.ink)
                     if p.hasPending {
                         Text("还有 \(LedgerMath.fmtMoney(cents: p.pendingCents)) 没回")
                             .font(.system(size: 11))

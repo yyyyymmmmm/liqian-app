@@ -48,8 +48,8 @@ public struct PendingTag: View {
 }
 
 // MARK: - 礼簿封面卡（全 App 唯一的记忆点，其余表面安静克制）
-// 左：封面块（朱砂/白事素灰蓝，竖排事由 + 印点 + 描金边，顶部高光模拟纸面光泽）
-// 右：标题、日期备注、收/随小计与笔数
+// 左：封面块（朱砂/白事素灰蓝，竖排事由 + 印点，顶部高光模拟纸面光泽；v3 去描金边）
+// 右：标题、日期备注、收/随小计与笔数（金额一律墨色，v3 纪律）
 
 public struct LedgerCoverCard: View {
     public let ledger: Ledger
@@ -84,7 +84,7 @@ public struct LedgerCoverCard: View {
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     Text(LedgerMath.fmtMoney(cents: receivedCents))
                         .font(.liqianMoney(size: 15))
-                        .foregroundStyle(isBai ? Palette.baiInk : Palette.primary)
+                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
                     Spacer().frame(width: 14)
                     Text("随 ")
                         .font(.system(size: 12.5))
@@ -156,10 +156,7 @@ public struct LedgerCoverCard: View {
             }
         }
         .frame(width: 56, height: 92)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isBai ? Palette.baiLine : Palette.gold, lineWidth: 1)
-        )
+        // v3：封面块不再描金边，朱砂满底 + 白字本身就是边界
     }
 }
 
@@ -181,22 +178,19 @@ public extension View {
     }
 }
 
-// MARK: - 印章：朱砂圆角方印、白字衬线（礼谱 PDF 封面/汇总页用同款造型绘制）
-// PDF 与分享图卡是静态绘制，那边按此规格复刻：圆角 8、朱砂底、描金边（白事无金）。
+// MARK: - 印章：纯朱砂圆角方印、白字衬线、无金边（v3；礼谱 PDF 封面/汇总页用同款造型绘制）
+// PDF 与分享图卡是静态绘制，那边按此规格复刻：圆角 8、朱砂底、白字、内细框。
 
 public struct SealStampView: View {
     /// 印面字（通常取礼簿名首字）
     public let char: String
     public let size: CGFloat
     public let bai: Bool
-    /// 描金边（白事强制关）
-    public let goldBorder: Bool
 
-    public init(char: String, size: CGFloat = 56, bai: Bool = false, goldBorder: Bool = true) {
+    public init(char: String, size: CGFloat = 56, bai: Bool = false) {
         self.char = char
         self.size = size
         self.bai = bai
-        self.goldBorder = goldBorder
     }
 
     public var body: some View {
@@ -213,10 +207,6 @@ public struct SealStampView: View {
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
-        .overlay(
-            RoundedRectangle(cornerRadius: size * 0.16)
-                .stroke(bai || !goldBorder ? Color.clear : Palette.gold, lineWidth: 1)
-        )
     }
 }
 

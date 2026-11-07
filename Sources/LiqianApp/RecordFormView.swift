@@ -232,7 +232,7 @@ struct RecordFormView: View {
                         if let savedMessage {
                             Text(savedMessage)
                                 .font(.footnote)
-                                .foregroundStyle(Palette.primary)
+                                .foregroundStyle(Palette.stone)
                         }
                     }
                 }

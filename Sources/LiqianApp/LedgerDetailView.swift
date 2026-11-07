@@ -203,7 +203,7 @@ struct LedgerDetailView: View {
 
     private var statsCard: some View {
         HStack {
-            stat(label: "收礼", value: LedgerMath.fmtMoney(cents: received), count: receivedCount, color: isBai ? Palette.baiPrimary : Palette.primary, numericValue: received)
+            stat(label: "收礼", value: LedgerMath.fmtMoney(cents: received), count: receivedCount, color: isBai ? Palette.baiInk : Palette.ink, numericValue: received)
             Spacer()
             stat(label: "随礼", value: LedgerMath.fmtMoney(cents: given), count: givenCount, color: isBai ? Palette.baiInk : Palette.ink, numericValue: given)
             Spacer()
@@ -280,11 +280,7 @@ struct LedgerDetailView: View {
                 Spacer()
                 Text(LedgerMath.fmtMoney(cents: r.amountCents))
                     .font(.liqianMoney(size: 16))
-                    .foregroundStyle(
-                        r.direction == LiqianConstants.received
-                            ? (isBai ? Palette.baiPrimary : Palette.primary)
-                            : (isBai ? Palette.baiInk : Palette.ink)
-                    )
+                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
             }
             .padding(12)
             .background(

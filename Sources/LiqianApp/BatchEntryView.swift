@@ -232,7 +232,7 @@ struct BatchEntryView: View {
             if let pasteMessage {
                 Text(pasteMessage)
                     .font(.footnote)
-                    .foregroundStyle(Palette.primary)
+                    .foregroundStyle(Palette.stone)
             }
         }
 

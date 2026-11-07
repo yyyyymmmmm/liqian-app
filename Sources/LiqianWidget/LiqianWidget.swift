@@ -13,9 +13,10 @@ private enum WPalette {
         }))
     }
 
-    static let paper = dyn(0xF6F1E7, 0x171512)
-    static let ink = dyn(0x2B2620, 0xEDE6D6)
-    static let stone = dyn(0x6B6353, 0xA79C8A)
+    // 与 Palette v3 同步（纸白打底、墨色中性化，朱砂不变）
+    static let paper = dyn(0xFAF9F6, 0x171716)
+    static let ink = dyn(0x262520, 0xEBE9E3)
+    static let stone = dyn(0x6F6C64, 0xA6A29A)
     static let primary = dyn(0xA62B1F, 0xD96A5C)
 }
 

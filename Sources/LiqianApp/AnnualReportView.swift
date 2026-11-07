@@ -110,7 +110,7 @@ struct AnnualReportView: View {
                 .font(.liqianSerif(size: 20))
                 .foregroundStyle(Palette.ink)
             HStack(spacing: 20) {
-                headlineStat(label: "收礼", value: summary.recv, color: Palette.primary)
+                headlineStat(label: "收礼", value: summary.recv, color: Palette.ink)
                 headlineStat(label: "随礼", value: summary.given, color: Palette.ink)
                 headlineStat(label: "往来人数", text: "\(peopleCount)", color: Palette.ink)
             }
@@ -296,7 +296,7 @@ struct AnnualReportCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 16) {
-                stat(label: "收礼", value: LedgerMath.fmtMoney(cents: receivedCents), color: Palette.primary)
+                stat(label: "收礼", value: LedgerMath.fmtMoney(cents: receivedCents), color: Palette.ink)
                 stat(label: "随礼", value: LedgerMath.fmtMoney(cents: givenCents), color: Palette.ink)
                 stat(label: "往来亲友", value: "\(peopleCount) 位", color: Palette.ink)
                 Divider().overlay(Palette.hairline)
@@ -335,7 +335,7 @@ struct AnnualReportCard: View {
         .background(Palette.paper)
         .overlay(
             RoundedRectangle(cornerRadius: 18)
-                .stroke(Palette.gold, lineWidth: 1)
+                .stroke(Palette.hairline, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 18))
     }

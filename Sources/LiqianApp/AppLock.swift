@@ -56,7 +56,7 @@ struct LockScreenView: View {
         }
     }
 
-    /// 与礼簿封面同语言的品牌标记：朱砂封面块 + 竖排字 + 描金边
+    /// 与礼簿封面同语言的品牌标记：朱砂封面块 + 竖排字（v3 无金边）
     private var coverMark: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
@@ -76,9 +76,5 @@ struct LockScreenView: View {
                 .lineSpacing(4)
         }
         .frame(width: 64, height: 100)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Palette.gold, lineWidth: 1)
-        )
     }
 }

@@ -219,11 +219,7 @@ struct PersonDetailView: View {
                 Spacer()
                 Text("\(r.direction == LiqianConstants.received ? "+" : "-")\(LedgerMath.fmtMoney(cents: r.amountCents))")
                     .font(.liqianMoney(size: 16))
-                    .foregroundStyle(
-                        r.direction == LiqianConstants.received
-                            ? (isBai ? Palette.baiInk : Palette.primary)
-                            : Palette.ink
-                    )
+                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
             }
             .padding(12)
             .background(

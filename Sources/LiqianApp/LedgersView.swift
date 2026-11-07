@@ -116,7 +116,7 @@ struct LedgersView: View {
 
     private var summaryCard: some View {
         HStack {
-            stat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived), color: Palette.primary, numericValue: totalReceived)
+            stat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived), color: Palette.ink, numericValue: totalReceived)
             Spacer()
             stat(label: "累计随礼", value: LedgerMath.fmtMoney(cents: totalGiven), color: Palette.ink, numericValue: totalGiven)
             Spacer()
@@ -224,7 +224,7 @@ struct LedgersView: View {
         .liqianCardSurface()
     }
 
-    /// 最近往来 5 条：人名 + 事由 + 方向签，金额按方向着色，点行进所属礼簿
+    /// 最近往来 5 条：人名 + 事由 + 方向签，金额一律墨色（方向靠签区分，v3 纪律），点行进所属礼簿
     private var recentCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("最近往来")
@@ -250,9 +250,7 @@ struct LedgersView: View {
                             .foregroundStyle(Palette.stone)
                         Text(LedgerMath.fmtMoney(cents: r.amountCents))
                             .font(.liqianMoney(size: 15))
-                            .foregroundStyle(
-                                r.direction == LiqianConstants.received ? Palette.primary : Palette.ink
-                            )
+                            .foregroundStyle(Palette.ink)
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                     .contentShape(Rectangle())
