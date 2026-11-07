@@ -48,6 +48,16 @@ let project = Project(
                 "NSSpeechRecognitionUsageDescription": "用于将语音转写为记账文字",
                 "NSMicrophoneUsageDescription": "用于语音记账，把你说的话转成文字",
                 "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
+                // 活礼谱（v4.2）：注册 liqian scheme——此前小组件的
+                // liqian://quick-record 也未注册（靠系统宽容才通），
+                // 祝福深链 liqian://blessing/<id>（礼谱索引页二维码）依赖它。
+                // 合并注意：若其他分支已注册同一 scheme，保留一份即可。
+                "CFBundleURLTypes": [
+                    [
+                        "CFBundleURLName": "site.didichou.liqian",
+                        "CFBundleURLSchemes": ["liqian"],
+                    ],
+                ],
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],

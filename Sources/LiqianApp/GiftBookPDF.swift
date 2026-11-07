@@ -20,6 +20,10 @@ import LiqianCore
 /// v3.1（docs/V31-NOTES.md）：内页按关系分段登记——段段换页另起，
 /// 段首出题签（繁体关系名＋汉字笔数）；只有一段时不出题签。随礼与
 /// 收礼同册（逐笔注「隨禮」），无独立随礼卷，分段统一作用于全册。
+/// v4.2 活礼谱（docs/V42-LIBULIVE-NOTES.md）：有语音祝福的笔在内页
+/// 姓名列旁出「聲」小印记；汇总后、答谢前插入「簽名頁」（来宾签名图＋
+/// 姓名小字，无签名的不占位）；卷末補記之后加「祝福索引」页（姓名＋
+/// 深链二维码，需装 App 扫码聆听，页上已注明）。
 /// 免费版每页地脚带「礼钱账本 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -84,7 +88,9 @@ enum GiftBookPDF {
         ledger: Ledger,
         records: [GiftRecord],
         hostName: String = UserDefaults.standard.string(forKey: "hostName") ?? "",
-        prefaceText: String? = nil
+        prefaceText: String? = nil,
+        signatures: [GuestSignature] = [],
+        blessings: [VoiceBlessing] = []
     ) -> URL? {
         let bai = ledger.isBai
         let ledgerHost = (ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,6 +111,36 @@ enum GiftBookPDF {
             seenDates.insert(r.date)
             firstOfDayIDs.insert(r.id)
         }
+
+        // 活礼谱（v4.2）：祝福只认成册口径内的笔；签名按成册顺序排
+        // （挂笔的跟记录序，未挂笔的按签名时间附后），记录不在成册
+        // 口径内的签名不入谱。姓名查找表供索引页用。
+        let countedIDs = Set(counted.map(\.id))
+        let countedOrder = Dictionary(
+            uniqueKeysWithValues: counted.enumerated().map { ($1.id, $0) }
+        )
+        let personByRecordID = Dictionary(
+            uniqueKeysWithValues: counted.map { ($0.id, $0.person) }
+        )
+        let blessedRecordIDs = Set(
+            blessings.filter { countedIDs.contains($0.recordID) }.map(\.recordID)
+        )
+        let orderedBlessings = blessings
+            .filter { countedIDs.contains($0.recordID) }
+            .sorted {
+                let a = countedOrder[$0.recordID] ?? Int.max
+                let b = countedOrder[$1.recordID] ?? Int.max
+                if a != b { return a < b }
+                return $0.createdAt < $1.createdAt
+            }
+        let orderedSignatures = signatures
+            .filter { $0.recordID == nil || countedIDs.contains($0.recordID!) }
+            .sorted {
+                let a = $0.recordID.flatMap { countedOrder[$0] } ?? Int.max
+                let b = $1.recordID.flatMap { countedOrder[$0] } ?? Int.max
+                if a != b { return a < b }
+                return $0.createdAt < $1.createdAt
+            }
 
         let bounds = CGRect(x: 0, y: 0, width: pageW, height: pageH)
         let renderer = UIGraphicsPDFRenderer(bounds: bounds)
@@ -130,7 +166,7 @@ enum GiftBookPDF {
                     drawContentPage(
                         context: context, ledger: ledger, bai: bai,
                         pageRecords: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs,
-                        sectionTitle: nil
+                        sectionTitle: nil, blessedRecordIDs: blessedRecordIDs
                     )
                 } else {
                     var pageIndex = 0
@@ -152,7 +188,8 @@ enum GiftBookPDF {
                                 context: context, ledger: ledger, bai: bai,
                                 pageRecords: chunk, pageIndex: pageIndex,
                                 firstOfDayIDs: firstOfDayIDs,
-                                sectionTitle: ci == 0 ? title : nil
+                                sectionTitle: ci == 0 ? title : nil,
+                                blessedRecordIDs: blessedRecordIDs
                             )
                         }
                     }
@@ -161,8 +198,24 @@ enum GiftBookPDF {
                     context: context, ledger: ledger, bai: bai,
                     counted: counted, pendingCount: pendingCount, hostName: host
                 )
+                // 簽名頁（v4.2）：内页之后、答谢之前；没有签名整段不出
+                if !orderedSignatures.isEmpty {
+                    drawSignaturePages(
+                        context: context, ledger: ledger, bai: bai,
+                        signatures: orderedSignatures
+                    )
+                }
                 drawThanksPage(context: context, ledger: ledger, bai: bai, hostName: host)
                 drawSupplementPage(context: context, ledger: ledger, bai: bai)
+                // 祝福索引（v4.2）：卷末最后；没有祝福整段不出
+                if !orderedBlessings.isEmpty {
+                    drawBlessingIndexPages(
+                        context: context, ledger: ledger, bai: bai,
+                        entries: orderedBlessings.map {
+                            (blessing: $0, person: personByRecordID[$0.recordID] ?? "")
+                        }
+                    )
+                }
             }
             return url
         } catch {
@@ -403,7 +456,8 @@ enum GiftBookPDF {
         ledger: Ledger, bai: Bool,
         pageRecords: [GiftRecord], pageIndex: Int,
         firstOfDayIDs: Set<UUID>,
-        sectionTitle: String?
+        sectionTitle: String?,
+        blessedRecordIDs: Set<UUID> = []
     ) {
         context.beginPage()
         drawPaperBase(bai: bai)
@@ -444,6 +498,28 @@ enum GiftBookPDF {
             // 右起：第 0 列在最右
             let centerX = contentRight - colW * (CGFloat(i) + 0.5)
             var y = recordsTop
+            // 「聲」小印记（v4.2）：此笔有语音祝福时，姓名列右上出主色
+            // 方框小字（白事走素蓝主色），卷末祝福索引页可扫码聆听
+            if blessedRecordIDs.contains(r.id) {
+                let markSize: CGFloat = 16
+                let markRect = CGRect(
+                    x: centerX + colW / 2 - markSize - 3, y: recordsTop + 1,
+                    width: markSize, height: markSize
+                )
+                main.setStroke()
+                let box = UIBezierPath(rect: markRect)
+                box.lineWidth = 0.9
+                box.stroke()
+                let mark = NSAttributedString(
+                    string: "聲",
+                    attributes: [.font: kaitiFont(10.5), .foregroundColor: main]
+                )
+                let ms = mark.size()
+                mark.draw(at: CGPoint(
+                    x: markRect.midX - ms.width / 2,
+                    y: markRect.midY - ms.height / 2
+                ))
+            }
             // 姓名：楷体大字，限 4 字高（用户数据原样）；按 3 字位归一排版
             y = drawNameColumn(
                 r.person,
@@ -806,6 +882,169 @@ enum GiftBookPDF {
             line.lineWidth = 0.75
             line.stroke()
         }
+    }
+
+    // MARK: - 簽名頁與祝福索引（v4.2 活禮譜）
+
+    /// 簽名頁：汇总后、答谢前插入。两列网格，签名图（等比居中）＋姓名
+    /// 小字＋格下细线；只排已签名的（无签名的笔不占位），分页标「簽名」。
+    /// 姓名是用户数据原样，严禁转换。
+    private static func drawSignaturePages(
+        context: UIGraphicsPDFRendererContext,
+        ledger: Ledger, bai: Bool,
+        signatures: [GuestSignature]
+    ) {
+        let main = bai ? baiPrimary : cinnabar
+        let ink = bai ? baiInk : cardInk
+        let cols = 2
+        let cellW = (contentRight - contentLeft) / CGFloat(cols)
+        let cellH: CGFloat = 96
+        let rowsPerPage = max(1, Int((contentBottom - (contentTop + 8)) / cellH))
+        let perPage = cols * rowsPerPage
+        for start in stride(from: 0, to: signatures.count, by: perPage) {
+            let chunk = Array(signatures[start..<min(start + perPage, signatures.count)])
+            context.beginPage()
+            drawPaperBase(bai: bai)
+            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "簽名")
+
+            let titleAttr = NSAttributedString(
+                string: "簽名",
+                attributes: [.font: kaitiFont(15), .foregroundColor: main]
+            )
+            let titleSize = titleAttr.size()
+            titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
+
+            for (i, sig) in chunk.enumerated() {
+                let cellX = contentLeft + CGFloat(i % cols) * cellW
+                let cellY = contentTop + 8 + CGFloat(i / cols) * cellH
+                if let image = UIImage(data: sig.imageData) {
+                    let area = CGRect(
+                        x: cellX + 16, y: cellY, width: cellW - 32, height: 58
+                    )
+                    let scale = min(
+                        area.width / image.size.width, area.height / image.size.height
+                    )
+                    let w = image.size.width * scale
+                    let h = image.size.height * scale
+                    image.draw(in: CGRect(
+                        x: area.midX - w / 2, y: area.midY - h / 2, width: w, height: h
+                    ))
+                }
+                let nameAttr = NSAttributedString(
+                    string: sig.person,
+                    attributes: [.font: kaitiFont(12.5), .foregroundColor: ink]
+                )
+                let nameSize = nameAttr.size()
+                nameAttr.draw(at: CGPoint(
+                    x: cellX + (cellW - nameSize.width) / 2, y: cellY + 64
+                ))
+                main.withAlphaComponent(0.35).setStroke()
+                let line = UIBezierPath()
+                line.move(to: CGPoint(x: cellX + 12, y: cellY + 88))
+                line.addLine(to: CGPoint(x: cellX + cellW - 12, y: cellY + 88))
+                line.lineWidth = 0.5
+                line.stroke()
+            }
+        }
+    }
+
+    /// 祝福索引：卷末（補記之后，全谱最后）。一段祝福一行：深链二维码
+    /// ＋姓名＋日期/时长＋转写节录。二维码指向 liqian://blessing/<id>，
+    /// 需装有『禮錢賬本』App 的设备扫码才能打开播放——页题下注记如实
+    /// 写明，不承诺外部可用。姓名/转写是用户数据原样，严禁转换。
+    private static func drawBlessingIndexPages(
+        context: UIGraphicsPDFRendererContext,
+        ledger: Ledger, bai: Bool,
+        entries: [(blessing: VoiceBlessing, person: String)]
+    ) {
+        let main = bai ? baiPrimary : cinnabar
+        let ink = bai ? baiInk : cardInk
+        let sub = bai ? baiPrimary : stone
+        let rowsTop = contentTop + 38
+        let rowH: CGFloat = 84
+        let rowsPerPage = max(1, Int((contentBottom - rowsTop) / rowH))
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "zh_CN")
+        dateFormatter.dateFormat = "yyyy年M月d日"
+
+        for start in stride(from: 0, to: entries.count, by: rowsPerPage) {
+            let chunk = Array(entries[start..<min(start + rowsPerPage, entries.count)])
+            context.beginPage()
+            drawPaperBase(bai: bai)
+            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "祝福索引")
+
+            let titleAttr = NSAttributedString(
+                string: "祝福索引",
+                attributes: [.font: kaitiFont(15), .foregroundColor: main]
+            )
+            let titleSize = titleAttr.size()
+            titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
+
+            // 诚实注记：二维码需装 App 才能扫开（固定串，繁体）
+            let noteAttr = NSAttributedString(
+                string: "掃碼聆聽來賓祝福（需安裝『禮錢賬本』App 方可打開）",
+                attributes: [.font: serifFont(9.5), .foregroundColor: sub]
+            )
+            let noteSize = noteAttr.size()
+            noteAttr.draw(at: CGPoint(x: (pageW - noteSize.width) / 2, y: 124))
+
+            for (i, entry) in chunk.enumerated() {
+                let rowY = rowsTop + CGFloat(i) * rowH
+                // 二维码（整倍率放大出图，关插值保锐利）
+                if let qr = qrImage(for: entry.blessing.deepLink, side: 60) {
+                    context.cgContext.interpolationQuality = .none
+                    qr.draw(in: CGRect(x: contentLeft, y: rowY + 2, width: 60, height: 60))
+                    context.cgContext.interpolationQuality = .default
+                }
+                let textX = contentLeft + 78
+                let nameAttr = NSAttributedString(
+                    string: entry.person,
+                    attributes: [.font: kaitiFont(14.5), .foregroundColor: ink]
+                )
+                nameAttr.draw(at: CGPoint(x: textX, y: rowY))
+                let meta = LibuText.traditionalGenerated(
+                    "\(dateFormatter.string(from: entry.blessing.createdAt)) · \(blessingDurationText(entry.blessing.duration))"
+                )
+                let metaAttr = NSAttributedString(
+                    string: meta,
+                    attributes: [.font: serifFont(9.5), .foregroundColor: sub]
+                )
+                metaAttr.draw(at: CGPoint(x: textX, y: rowY + 23))
+                if let transcript = entry.blessing.transcript, !transcript.isEmpty {
+                    let snippet = transcript.count > 24
+                        ? String(transcript.prefix(24)) + "…"
+                        : transcript
+                    let textAttr = NSAttributedString(
+                        string: snippet,
+                        attributes: [.font: serifFont(10), .foregroundColor: ink]
+                    )
+                    textAttr.draw(at: CGPoint(x: textX, y: rowY + 42))
+                }
+                if i < chunk.count - 1 {
+                    main.withAlphaComponent(0.3).setStroke()
+                    let line = UIBezierPath()
+                    line.move(to: CGPoint(x: contentLeft, y: rowY + rowH - 8))
+                    line.addLine(to: CGPoint(x: contentRight, y: rowY + rowH - 8))
+                    line.lineWidth = 0.5
+                    line.stroke()
+                }
+            }
+        }
+    }
+
+    /// 深链二维码：CoreImage 生成后按整倍率放大，避免缩放发虚
+    private static func qrImage(for string: String, side: Int) -> UIImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(string.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scale = max(1, side / max(1, Int(output.extent.width)))
+        let scaled = output.transformed(
+            by: CGAffineTransform(scaleX: CGFloat(scale), y: CGFloat(scale))
+        )
+        guard let cgImage = CIContext().createCGImage(scaled, from: scaled.extent)
+        else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 
     // MARK: - 纸面、版框、页眉地脚、线装
