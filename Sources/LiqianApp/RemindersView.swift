@@ -347,7 +347,9 @@ struct ReminderDayFormView: View {
                     }
                     Picker("关系", selection: $relation) {
                         Text("不选").tag("")
-                        ForEach(LiqianConstants.relations, id: \.self) { r in
+                        // 数据源＝关系目录（系统＋自定义）；已删的自定义关系
+                        // 临时并入，保证正在编辑的日子选中态不丢
+                        ForEach(RelationCatalog.pickerOptions(including: relation), id: \.self) { r in
                             Text(r).tag(r)
                         }
                     }

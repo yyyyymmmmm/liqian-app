@@ -307,13 +307,17 @@ public struct BackupFile: Codable, Sendable, Equatable {
     public var signatures: [BackupSignature]?
     /// v4.2 可选段：语音祝福元数据（无音频本体，含转写文字）
     public var voiceBlessings: [BackupVoiceBlessing]?
+    /// 自定义关系（RelationCatalog）可选段：nil 表示备份里没有（旧备份恒为 nil）；
+    /// 空列表在 makeBackup 时写 nil，不出空段
+    public var customRelations: [String]?
 
     public init(
         ledgers: [BackupLedger], records: [BackupRecord],
         reminders: [BackupReminderDay]? = nil,
         members: [BackupMember]? = nil,
         signatures: [BackupSignature]? = nil,
-        voiceBlessings: [BackupVoiceBlessing]? = nil
+        voiceBlessings: [BackupVoiceBlessing]? = nil,
+        customRelations: [String]? = nil
     ) {
         self.ledgers = ledgers
         self.records = records
@@ -321,6 +325,7 @@ public struct BackupFile: Codable, Sendable, Equatable {
         self.members = members
         self.signatures = signatures
         self.voiceBlessings = voiceBlessings
+        self.customRelations = customRelations
     }
 }
 
@@ -347,7 +352,8 @@ public enum LiqianBackup {
     public static func makeBackup(
         ledgers: [Ledger], records: [GiftRecord], reminders: [ReminderDay] = [],
         members: [LedgerMember] = [],
-        signatures: [GuestSignature] = [], blessings: [VoiceBlessing] = []
+        signatures: [GuestSignature] = [], blessings: [VoiceBlessing] = [],
+        customRelations: [String] = []
     ) -> Data {
         let file = BackupFile(
             ledgers: ledgers.map {
@@ -414,7 +420,8 @@ public enum LiqianBackup {
                     transcript: $0.transcript,
                     createdAt: LiqianISO8601.string(from: $0.createdAt)
                 )
-            }
+            },
+            customRelations: customRelations.isEmpty ? nil : customRelations
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
@@ -448,6 +455,16 @@ public enum LiqianBackup {
             return ([], [])
         }
         return (file.signatures ?? [], file.voiceBlessings ?? [])
+    }
+
+    /// 解析备份里的自定义关系段：旧备份无此键时返回空数组；
+    /// 整段解码失败也回退空数组（与 parseBackupLive 同口径，不拖垮主数据校验）。
+    /// 恢复时由调用方 RelationCatalog.setCustom 覆盖式写回（清洗在那边）。
+    public static func parseBackupRelations(_ data: Data) -> [String] {
+        guard let file = try? JSONDecoder().decode(BackupFile.self, from: data) else {
+            return []
+        }
+        return file.customRelations ?? []
     }
 
     /// 导入确认前预览规模（同 Dart countJson）

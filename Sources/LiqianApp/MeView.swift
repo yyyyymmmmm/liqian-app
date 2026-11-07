@@ -29,6 +29,8 @@ struct MeView: View {
     @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay], members: [BackupMember])?
     /// 活礼谱（v4.2）：待导入备份的签名/祝福元数据段（无二进制本体）
     @State private var pendingLive: (signatures: [BackupSignature], blessings: [BackupVoiceBlessing])?
+    /// 待恢复的自定义关系段（备份无此段时为空数组，覆盖恢复时一并写回目录）
+    @State private var pendingCustomRelations: [String] = []
     @State private var showImportConfirm = false
     @State private var infoTitle = ""
     @State private var infoMessage = ""
@@ -59,6 +61,14 @@ struct MeView: View {
     /// 待回礼总金额（「待回礼」入口行右侧值）
     private var pendingTotal: Int {
         pendingPeople.reduce(0) { $0 + $1.pendingCents }
+    }
+
+    /// 「关系管理」入口行副标题：显已自定义数（动态读目录，管理页改完返回即刷新）
+    private var relationsSubtitle: String {
+        let count = RelationCatalog.custom().count
+        return count == 0
+            ? "可添加系统之外的关系，如闺蜜、战友"
+            : "已添加 \(count) 个自定义关系"
     }
 
     /// 待送出件数（「备礼清单」入口行右侧值，口径与备礼清单页一致：全部记录）
@@ -136,6 +146,15 @@ struct MeView: View {
                                     .foregroundStyle(Palette.stone)
                             }
                         }
+                    }
+                    NavigationLink {
+                        RelationsManageView()
+                    } label: {
+                        entryLabel(
+                            icon: "person.2",
+                            title: "关系管理",
+                            subtitle: relationsSubtitle
+                        )
                     }
                     NavigationLink {
                         TrashView()
@@ -252,7 +271,8 @@ struct MeView: View {
                             data: LiqianBackup.makeBackup(
                                 ledgers: ledgers, records: records,
                                 reminders: reminderDays, members: members,
-                                signatures: guestSignatures, blessings: voiceBlessings
+                                signatures: guestSignatures, blessings: voiceBlessings,
+                                customRelations: RelationCatalog.custom()
                             )
                         )
                         showExporter = true
@@ -437,6 +457,7 @@ struct MeView: View {
             let data = try Data(contentsOf: url)
             pendingImport = try LiqianBackup.parseBackupFull(data)
             pendingLive = LiqianBackup.parseBackupLive(data)
+            pendingCustomRelations = LiqianBackup.parseBackupRelations(data)
             showImportConfirm = true
         } catch {
             showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
@@ -543,6 +564,10 @@ struct MeView: View {
             }
         }
         pendingLive = nil
+        // 自定义关系恢复（覆盖式，与其余段同口径）：写回关系目录；
+        // 备份无此段时 pendingCustomRelations 为空数组，即清空本机自定义
+        RelationCatalog.setCustom(pendingCustomRelations)
+        pendingCustomRelations = []
         try? modelContext.save()
         // 恢复后按新数据重排提醒（旧排期对应的是被覆盖掉的日子）
         ReminderScheduler.reschedule(

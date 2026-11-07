@@ -11,7 +11,7 @@ import Foundation
 public struct ReminderDayValue: Sendable, Equatable, Identifiable {
     public var id: UUID
     public var person: String
-    /// 关系（LiqianConstants.relations 之一），未选为 ""
+    /// 关系（RelationCatalog 目录内的值：系统词表或用户自定义），未选为 ""
     public var relation: String
     /// 生日 / 结婚纪念日 / 其他
     public var kind: String

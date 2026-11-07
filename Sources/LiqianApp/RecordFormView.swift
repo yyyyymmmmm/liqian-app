@@ -423,7 +423,7 @@ struct RecordFormView: View {
                         ForEach(suggestions) { p in
                             Button {
                                 person = p.name
-                                if LiqianConstants.relations.contains(p.relation) {
+                                if RelationCatalog.all().contains(p.relation) {
                                     relation = p.relation
                                 }
                             } label: {
@@ -501,7 +501,9 @@ struct RecordFormView: View {
                     }
                     labeledRow("关系") {
                         Picker("关系", selection: $relation) {
-                            ForEach(LiqianConstants.relations, id: \.self) { r in
+                            // 数据源＝关系目录（系统＋自定义）；编辑旧记录时现有关系
+                            // 若已被删除，临时并入保证选中态不丢
+                            ForEach(RelationCatalog.pickerOptions(including: relation), id: \.self) { r in
                                 Text(r).tag(r)
                             }
                         }

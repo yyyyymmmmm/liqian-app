@@ -11,7 +11,7 @@ public enum AIParse {
         public var name: String
         /// 金额（分），由 amountYuan（元）换算并四舍五入
         public var amountCents: Int
-        /// 只保留 LiqianConstants.relations 词表内的值，表外为 nil
+        /// 只保留 RelationCatalog.all()（系统＋自定义关系）内的值，表外为 nil
         public var relation: String?
         /// 只保留 LiqianConstants.methods 词表内的值，表外为 nil
         public var method: String?
@@ -104,7 +104,7 @@ public enum AIParse {
             return Record(
                 name: name,
                 amountCents: Int((rec.amountYuan * 100.0).rounded()),
-                relation: rec.relation.flatMap { LiqianConstants.relations.contains($0) ? $0 : nil },
+                relation: rec.relation.flatMap { RelationCatalog.all().contains($0) ? $0 : nil },
                 method: rec.method.flatMap { LiqianConstants.methods.contains($0) ? $0 : nil },
                 direction: rec.direction == "given" ? LiqianConstants.given : LiqianConstants.received,
                 eventHint: {

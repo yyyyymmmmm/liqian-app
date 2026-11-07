@@ -389,7 +389,9 @@ struct SceneModeView: View {
                 }
             }
             chipRow(title: "关系") {
-                ForEach(LiqianConstants.relations, id: \.self) { r in
+                // 数据源＝关系目录（系统＋自定义）；当前值若不在目录内
+                // （自定义关系被删）临时并入，选中态不丢
+                ForEach(RelationCatalog.pickerOptions(including: relation), id: \.self) { r in
                     chip(label: r, selected: relation == r) { relation = r }
                 }
             }
