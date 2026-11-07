@@ -3,10 +3,23 @@ import SwiftUI
 import LiqianCore
 import LiqianDesign
 
-/// 记一笔 / 编辑记录。
+/// 记一笔 / 编辑记录（v2.6 重做：一张纸上落笔）。
 /// 三种入口：从账本（账本固定）、从人物（账本 Picker 选、姓名预填）、编辑（全部预填）。
-/// 字段顺序按现场登记的自然顺序：方向 → 姓名 → 金额 → 关系/方式 → 日期 → 备注。
-/// 只问必需：姓名/金额必填，其余有默认值；错误就地红字提示，不只靠点了没反应。
+///
+/// 旧版被真机斥「没特色、乱七八糟」，三个根源：①每块一个形状（分段裹大胶囊、
+/// 姓名全宽胶囊、金额卡片、快捷金额圆形深红钮，四种语言）；②输姓名时系统键盘
+/// 弹起盖住自绘金额键盘，两种输入法打架；③通篇通用记账表单，没有礼簿身份。
+/// v2.6 定版结构：整个表单收进一张 surface 卡，页面 pageBG；卡内只有
+/// 金额（主角）→ 快捷金额（扁平 chips）→ 姓名（联想 chips 行）三件事，
+/// 关系/方式/日期/状态/备注收进可展开的「补充信息」；方向分段在卡外上方、
+/// 标准 segmented 不包容器。保存成功在卡上落印收尾（礼簿身份）。
+///
+/// 输入法互斥（FocusState 三态）：姓名/备注激活→系统键盘、自绘键盘收起；
+/// 金额激活→系统键盘收起（无文本框承接焦点）、自绘键盘作为卡下固定面板升起。
+/// 任何时刻只有一个输入面。
+///
+/// 保存语义与校验与旧版一致，未动：姓名必填、金额 > 0、
+/// 防重复提交 isSaving、落印等待 1.05s 后关闭（保存并继续则清字段续记）。
 struct RecordFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -41,9 +54,12 @@ struct RecordFormView: View {
     @State private var confirmDelete = false
     @State private var showQuickSentence = false
     @State private var showAIGuide = false
+    /// 补充信息默认收起（主屏只留方向/金额/姓名）；编辑既有记录时默认展开
+    @State private var showSupplements: Bool
     @FocusState private var focus: Field?
 
-    enum Field { case person, amount }
+    /// 输入面三态：person/note 走系统键盘，amount 走自绘键盘面板，三者互斥
+    enum Field { case person, amount, note }
 
     /// 从账本新建
     init(ledger: Ledger) {
@@ -57,6 +73,7 @@ struct RecordFormView: View {
         _date = State(initialValue: Date())
         _status = State(initialValue: LiqianConstants.sentStatus)
         _note = State(initialValue: "")
+        _showSupplements = State(initialValue: false)
     }
 
     /// 编辑既有记录
@@ -71,6 +88,7 @@ struct RecordFormView: View {
         _date = State(initialValue: LiqianDate.date(from: existing.date))
         _status = State(initialValue: existing.status)
         _note = State(initialValue: existing.note)
+        _showSupplements = State(initialValue: true)
     }
 
     /// 从人物新建：姓名预填、方向预设，账本用 Picker 选
@@ -85,6 +103,7 @@ struct RecordFormView: View {
         _date = State(initialValue: Date())
         _status = State(initialValue: LiqianConstants.sentStatus)
         _note = State(initialValue: "")
+        _showSupplements = State(initialValue: false)
     }
 
     private static func amountString(cents: Int) -> String {
@@ -128,164 +147,28 @@ struct RecordFormView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if existing == nil {
-                    Section {
-                        Button {
-                            if AIAccess.readiness() == .ready {
-                                showQuickSentence = true
-                            } else {
-                                showAIGuide = true
-                            }
-                        } label: {
-                            HStack {
-                                Label("一句话记账", systemImage: "text.bubble")
-                                    .foregroundStyle(Palette.primary)
-                                Spacer()
-                                Text("一句话填写姓名与金额")
-                                    .font(.footnote)
-                                    .foregroundStyle(Palette.stone)
-                            }
-                            .frame(minHeight: LiqianMetrics.minTapTarget)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+            ScrollView {
+                VStack(spacing: LiqianMetrics.spacingM) {
+                    directionSegmented
+                    formCard
+                    if existing == nil {
+                        saveAndContinueCard
+                    }
+                    if existing != nil {
+                        deleteCard
                     }
                 }
-
-                if needsLedgerPicker {
-                    Section {
-                        if allLedgers.isEmpty {
-                            Text("先建一本礼簿，再来记账。")
-                                .foregroundStyle(Palette.stone)
-                        } else {
-                            Picker("账本", selection: $selectedLedgerID) {
-                                ForEach(allLedgers) { l in
-                                    Text(l.title).tag(l.id as UUID?)
-                                }
-                            }
-                        }
-                    }
-                } else if let l = effectiveLedger {
-                    Section {
-                        LabeledContent("账本", value: l.title)
-                    }
-                }
-
-                Section {
-                    Picker("方向", selection: $direction) {
-                        Text("收礼").tag(LiqianConstants.received)
-                        Text("随礼").tag(LiqianConstants.given)
-                    }
-                    .pickerStyle(.segmented)
-                    if direction == LiqianConstants.given {
-                        Picker("状态", selection: $status) {
-                            Text("已送出").tag(LiqianConstants.sentStatus)
-                            Text("待送出").tag(LiqianConstants.pendingStatus)
-                        }
-                        .pickerStyle(.segmented)
-                        if status == LiqianConstants.pendingStatus {
-                            Text("待送出记录不计入往来差额，送出后请改记为「已送出」。")
-                                .font(.footnote)
-                                .foregroundStyle(Palette.stone)
-                        }
-                    }
-                }
-
-                Section {
-                    // 姓名行（v2.4 原生化）：行首标签＋输入框，与礼簿表单同形态
-                    HStack(spacing: LiqianMetrics.spacingSM) {
-                        Text("姓名")
-                            .foregroundStyle(Palette.ink)
-                        TextField("姓名", text: $person, prompt: Text("如：大舅、二姨、张三"))
-                            .focused($focus, equals: .person)
-                    }
-                    if let personError {
-                        Text(personError)
-                            .font(.footnote)
-                            .foregroundStyle(Palette.danger)
-                    }
-                    ForEach(suggestions) { p in
-                        Button {
-                            person = p.name
-                            if LiqianConstants.relations.contains(p.relation) {
-                                relation = p.relation
-                            }
-                        } label: {
-                            HStack {
-                                Text(p.name)
-                                    .foregroundStyle(Palette.ink)
-                                Spacer()
-                                Text("\(p.relation) · 共 \(p.count) 笔往来")
-                                    .font(.footnote)
-                                    .foregroundStyle(Palette.stone)
-                            }
-                            .frame(minHeight: LiqianMetrics.minTapTarget)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if sameLedgerCount > 0 {
-                        Text("此人在本礼簿已有 \(sameLedgerCount) 笔，再记一笔会并列保存。")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                    }
-                }
-
-                Section {
-                    amountDisplay
-                    amountChips
-                    amountKeypad
-                        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.spacingM))
-                    if let amountError {
-                        Text(amountError)
-                            .font(.footnote)
-                            .foregroundStyle(Palette.danger)
-                    }
-                } header: {
-                    Text("金额（元）")
-                }
-
-                Section {
-                    Picker("关系", selection: $relation) {
-                        ForEach(LiqianConstants.relations, id: \.self) { r in
-                            Text(r).tag(r)
-                        }
-                    }
-                    Picker("方式", selection: $method) {
-                        ForEach(LiqianConstants.methods, id: \.self) { m in
-                            Text(m).tag(m)
-                        }
-                    }
-                    DatePicker("日期", selection: $date, displayedComponents: .date)
-                    HStack(spacing: LiqianMetrics.spacingSM) {
-                        Text("备注")
-                            .foregroundStyle(Palette.ink)
-                        TextField("备注", text: $note, prompt: Text("选填，实物礼写这里，如：两瓶酒"))
-                    }
-                }
-
-                if existing == nil {
-                    Section {
-                        Toggle("保存并继续记", isOn: $saveAndContinue)
-                        if let savedMessage {
-                            Text(savedMessage)
-                                .font(.footnote)
-                                .foregroundStyle(Palette.stone)
-                        }
-                    }
-                }
-
-                if existing != nil {
-                    Section {
-                        Button("删除这笔", role: .destructive) {
-                            confirmDelete = true
-                        }
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
-                    }
+                .padding(LiqianMetrics.spacingM)
+            }
+            .background(Palette.pageBG.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // 金额输入面：自绘键盘作为卡下固定面板升起，与系统键盘互斥
+                if focus == .amount {
+                    amountKeypadPanel
+                        .transition(.move(edge: .bottom))
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Palette.pageBG.ignoresSafeArea())
+            .animation(.snappy(duration: 0.25), value: focus)
             .navigationTitle(existing == nil ? "记一笔" : "编辑记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -299,13 +182,6 @@ struct RecordFormView: View {
                 }
             }
             .interactiveDismissDisabled(isSaving)
-            .overlay {
-                SealStampOverlay(
-                    char: sealText,
-                    bai: effectiveLedger?.isBai ?? false,
-                    presented: showSeal
-                )
-            }
             .sensoryFeedback(.impact(weight: .light, intensity: 0.5), trigger: amountText)
             .sensoryFeedback(.impact(weight: .medium), trigger: sealTrigger)
             .sensoryFeedback(.success, trigger: saveTrigger)
@@ -343,24 +219,106 @@ struct RecordFormView: View {
         }
     }
 
-    // MARK: - 金额区：大号显示 + 常用金额 + 自定义大字键盘（三秒记账，不用系统键盘）
+    // MARK: - 方向：标准 segmented，卡外上方，不包任何额外胶囊容器
 
-    private var amountDisplay: some View {
-        HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
-            Text("¥")
-                .font(.system(.title2, weight: .semibold))
-                .foregroundStyle(Palette.stone)
-            Text(amountText.isEmpty ? "0" : amountText)
-                .font(.liqianMoney(.largeTitle))
-                .foregroundStyle(amountText.isEmpty ? Palette.stone : Palette.ink)
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Spacer()
+    private var directionSegmented: some View {
+        Picker("方向", selection: $direction) {
+            Text("收礼").tag(LiqianConstants.received)
+            Text("随礼").tag(LiqianConstants.given)
         }
-        .padding(.vertical, LiqianMetrics.spacingXS)
+        .pickerStyle(.segmented)
     }
 
+    // MARK: - 主卡：一张纸（surface 底 + 令牌圆角），落印盖在卡上
+
+    private var formCard: some View {
+        VStack(spacing: LiqianMetrics.spacingM) {
+            if needsLedgerPicker {
+                ledgerPickerRow
+            }
+            amountBlock
+            amountChips
+            nameBlock
+            supplementsBlock
+        }
+        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false)
+        .overlay {
+            // 落印收尾：印盖在卡片中央偏右（全屏居中是旧版位置，纸在哪印落哪）
+            SealStampOverlay(
+                char: sealText,
+                bai: effectiveLedger?.isBai ?? false,
+                presented: showSeal
+            )
+            .offset(x: 44)
+        }
+    }
+
+    /// 选账本行（仅人物/全局入口）：卡内第一行，原生标签行＋菜单 Picker
+    @ViewBuilder
+    private var ledgerPickerRow: some View {
+        if allLedgers.isEmpty {
+            Text("先建一本礼簿，再来记账。")
+                .font(.footnote)
+                .foregroundStyle(Palette.sub)
+        } else {
+            labeledRow("账本") {
+                Picker("账本", selection: $selectedLedgerID) {
+                    ForEach(allLedgers) { l in
+                        Text(l.title).tag(l.id as UUID?)
+                    }
+                }
+                .labelsHidden()
+            }
+        }
+    }
+
+    /// 原生标签行：标签左、控件右（补充信息与账本行共用）
+    private func labeledRow<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: LiqianMetrics.spacingSM) {
+            Text(label)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+            control()
+        }
+        .frame(minHeight: LiqianMetrics.minTapTarget)
+    }
+
+    // MARK: - 金额主角：卡内第一行，点按激活自绘键盘
+
+    private var amountBlock: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            HStack(alignment: .center, spacing: LiqianMetrics.spacingS) {
+                Text("¥")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(Palette.sub)
+                Text(amountText.isEmpty ? "0" : amountText)
+                    .font(.system(size: 44, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(amountText.isEmpty ? Palette.sub : Palette.ink)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                if focus == .amount {
+                    AmountCaret()
+                }
+                Spacer()
+            }
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .contentShape(Rectangle())
+            .onTapGesture { focus = .amount }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("金额")
+            .accessibilityValue(amountText.isEmpty ? "未输入，点按输入金额" : "\(amountText) 元")
+            .accessibilityAddTraits(.isButton)
+            if let amountError {
+                Text(amountError)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+            }
+        }
+    }
+
+    /// 快捷金额：圆角矩形扁平 chips（primaryTint 底＋primary 字），
+    /// 禁止圆形、禁止深红棕——夜晚主题下也不出浑浊色（走令牌即达标）
     private var amountChips: some View {
         HStack(spacing: LiqianMetrics.spacingS) {
             ForEach([100, 200, 300, 500, 800, 1000], id: \.self) { v in
@@ -371,12 +329,215 @@ struct RecordFormView: View {
                     Text("\(v)")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.primary)
-                        .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
-                        .background(Palette.primaryTint, in: Capsule())
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .background(
+                            Palette.primaryTint,
+                            in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
+                        )
                 }
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    // MARK: - 姓名行：标签＋输入＋麦克风（一句话记账入口）；联想改横向 chips 行
+
+    private var nameBlock: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            HStack(spacing: LiqianMetrics.spacingSM) {
+                Text("姓名")
+                    .foregroundStyle(Palette.ink)
+                TextField("姓名", text: $person, prompt: Text("如：大舅、二姨、张三"))
+                    .focused($focus, equals: .person)
+                if existing == nil {
+                    // 一句话记账（含语音）入口收敛到姓名行右侧麦克风钮：
+                    // 点开仍走既有 QuickSentenceView 与 applyAIResult 回填，通道未动
+                    Button {
+                        openQuickSentence()
+                    } label: {
+                        Image(systemName: "mic")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Palette.primary)
+                            .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("一句话记账")
+                }
+            }
+            if let personError {
+                Text(personError)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+            }
+            if !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: LiqianMetrics.spacingS) {
+                        ForEach(suggestions) { p in
+                            Button {
+                                person = p.name
+                                if LiqianConstants.relations.contains(p.relation) {
+                                    relation = p.relation
+                                }
+                            } label: {
+                                HStack(spacing: LiqianMetrics.spacingXS) {
+                                    Text(p.name)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Palette.ink)
+                                    Text(p.relation)
+                                        .font(.footnote)
+                                        .foregroundStyle(Palette.sub)
+                                }
+                                .padding(.horizontal, LiqianMetrics.spacingSM)
+                                .frame(minHeight: 36)
+                                .background(
+                                    Palette.primaryTint,
+                                    in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("选\(p.name)，\(p.relation)，共 \(p.count) 笔往来")
+                        }
+                    }
+                }
+            }
+            if sameLedgerCount > 0 {
+                Text("此人在本礼簿已有 \(sameLedgerCount) 笔，再记一笔会并列保存。")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.sub)
+            }
+        }
+    }
+
+    private func openQuickSentence() {
+        if AIAccess.readiness() == .ready {
+            showQuickSentence = true
+        } else {
+            showAIGuide = true
+        }
+    }
+
+    // MARK: - 补充信息：默认收起，展开为卡内原生行
+
+    private var supplementsBlock: some View {
+        VStack(spacing: LiqianMetrics.spacingSM) {
+            Button {
+                withAnimation(.snappy) { showSupplements.toggle() }
+            } label: {
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    Text("补充信息")
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    if !showSupplements {
+                        Text("\(relation) · \(method)")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.sub)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Palette.sub)
+                        .rotationEffect(.degrees(showSupplements ? 180 : 0))
+                }
+                .frame(minHeight: LiqianMetrics.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showSupplements ? "收起补充信息" : "展开补充信息")
+
+            if showSupplements {
+                VStack(spacing: LiqianMetrics.spacingSM) {
+                    if !needsLedgerPicker, let l = effectiveLedger {
+                        labeledRow("账本") {
+                            Text(l.title)
+                                .foregroundStyle(Palette.sub)
+                        }
+                    }
+                    labeledRow("关系") {
+                        Picker("关系", selection: $relation) {
+                            ForEach(LiqianConstants.relations, id: \.self) { r in
+                                Text(r).tag(r)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                    labeledRow("方式") {
+                        Picker("方式", selection: $method) {
+                            ForEach(LiqianConstants.methods, id: \.self) { m in
+                                Text(m).tag(m)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                    if direction == LiqianConstants.given {
+                        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                            Text("状态")
+                                .foregroundStyle(Palette.ink)
+                            Picker("状态", selection: $status) {
+                                Text("已送出").tag(LiqianConstants.sentStatus)
+                                Text("待送出").tag(LiqianConstants.pendingStatus)
+                            }
+                            .pickerStyle(.segmented)
+                            if status == LiqianConstants.pendingStatus {
+                                Text("待送出记录不计入往来差额，送出后请改记为「已送出」。")
+                                    .font(.footnote)
+                                    .foregroundStyle(Palette.sub)
+                            }
+                        }
+                    }
+                    labeledRow("日期") {
+                        DatePicker("日期", selection: $date, displayedComponents: .date)
+                            .labelsHidden()
+                    }
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("备注")
+                            .foregroundStyle(Palette.ink)
+                        TextField("备注", text: $note, prompt: Text("选填，实物礼写这里，如：两瓶酒"))
+                            .focused($focus, equals: .note)
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                }
+            }
+        }
+    }
+
+    // MARK: - 卡外附属行：保存并继续（新建）／删除（编辑），与主卡同语言的次级纸面
+
+    private var saveAndContinueCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            Toggle("保存并继续记", isOn: $saveAndContinue)
+                .foregroundStyle(Palette.ink)
+            if let savedMessage {
+                Text(savedMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.sub)
+            }
+        }
+        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false, padding: LiqianMetrics.spacingSM)
+    }
+
+    private var deleteCard: some View {
+        Button("删除这笔", role: .destructive) {
+            confirmDelete = true
+        }
+        .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
+        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false, padding: LiqianMetrics.spacingSM)
+    }
+
+    // MARK: - 自绘金额键盘：卡下固定面板，与卡同语言
+    // 面板 surface 底、键面 pageBG＋line 描边、数字 ink、删除 sub；
+    // 全表单仅此一处用 line 细线——面板顶边这条，隔开金额区（卡）与键盘。
+
+    private var amountKeypadPanel: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Palette.line)
+                .frame(height: 1)
+            amountKeypad
+                .padding(.horizontal, LiqianMetrics.spacingM)
+                .padding(.top, LiqianMetrics.spacingSM)
+                .padding(.bottom, LiqianMetrics.spacingS)
+        }
+        .background(Palette.surface.ignoresSafeArea(edges: .bottom))
     }
 
     private var amountKeypad: some View {
@@ -401,10 +562,10 @@ struct RecordFormView: View {
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(Palette.ink)
                 .frame(maxWidth: .infinity, minHeight: 56)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
+                .background(Palette.pageBG, in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
                 .overlay(
                     RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                        .stroke(Palette.hairline, lineWidth: 1)
+                        .stroke(Palette.line, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -414,12 +575,12 @@ struct RecordFormView: View {
     private var keypadDeleteKey: some View {
         ZStack {
             RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                .fill(Palette.card)
+                .fill(Palette.pageBG)
             RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                .stroke(Palette.hairline, lineWidth: 1)
+                .stroke(Palette.line, lineWidth: 1)
             Image(systemName: "delete.left")
                 .font(.system(size: 22))
-                .foregroundStyle(Palette.ink)
+                .foregroundStyle(Palette.sub)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 56)
@@ -501,7 +662,11 @@ struct RecordFormView: View {
             )
             try? modelContext.save()
             // 落印：盖印动画约 1 秒，不阻断输入；普通保存等印落完再关闭
-            sealText = effectiveLedger.map { String($0.title.prefix(1)) } ?? "礼"
+            // 印文（v2.6 口径）：收礼「礼」；随礼用既有印资源——礼簿名首字印，
+            // 无礼簿名可用时同印「礼」
+            sealText = direction == LiqianConstants.received
+                ? "礼"
+                : (effectiveLedger.map { String($0.title.prefix(1)) } ?? "礼")
             showSeal = true
             sealTrigger += 1
             if saveAndContinue {
@@ -550,5 +715,25 @@ struct RecordFormView: View {
         try? modelContext.save()
         deleteTrigger += 1
         dismiss()
+    }
+}
+
+/// 金额输入光标：金额面激活时在数字后闪烁的细竖线（品牌色），
+/// 提示「现在敲的是金额」——系统键盘收起后唯一的输入焦点信号
+private struct AmountCaret: View {
+    @State private var visible = true
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Palette.primary)
+            .frame(width: 3, height: 40)
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                visible = true
+                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                    visible = false
+                }
+            }
+            .accessibilityHidden(true)
     }
 }
