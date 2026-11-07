@@ -128,7 +128,7 @@ struct LibuExportView: View {
             var preface: String? = nil
             if chosenStyle != .none {
                 let resolved = await LibuPreface.resolve(
-                    ledger: ledger, style: chosenStyle,
+                    type: ledger.type, date: ledger.date, style: chosenStyle,
                     hostName: name, guestCount: guests
                 )
                 preface = resolved.text
@@ -180,14 +180,14 @@ enum LibuPreface {
     }
 
     static func resolve(
-        ledger: Ledger, style: LibuPrefaceStyle,
+        type: String, date: String, style: LibuPrefaceStyle,
         hostName: String, guestCount: Int
     ) async -> Resolved {
         if AIAccess.readiness() == .ready, let client = try? DeepSeekClient() {
             do {
                 let raw = try await client.chatText(
                     system: aiSystemPrompt(
-                        ledger: ledger, style: style,
+                        type: type, date: date, style: style,
                         hostName: hostName, guestCount: guestCount
                     ),
                     user: "请按要求撰写这篇礼谱序。"
@@ -200,13 +200,13 @@ enum LibuPreface {
                 // 落到模板回退
             }
             return Resolved(
-                text: template(ledger: ledger, hostName: hostName, guestCount: guestCount),
+                text: template(type: type, date: date, hostName: hostName, guestCount: guestCount),
                 usedTemplate: true,
                 note: "AI 这次没写成，谱序用了内置模板，礼谱本身不受影响。"
             )
         }
         return Resolved(
-            text: template(ledger: ledger, hostName: hostName, guestCount: guestCount),
+            text: template(type: type, date: date, hostName: hostName, guestCount: guestCount),
             usedTemplate: true,
             note: nil
         )
@@ -214,25 +214,25 @@ enum LibuPreface {
 
     /// AI 撰序提示（规范原文口径）：只写正文、不要标题不要落款，不编造人名事件，不提金额
     static func aiSystemPrompt(
-        ledger: Ledger, style: LibuPrefaceStyle,
+        type: String, date: String, style: LibuPrefaceStyle,
         hostName: String, guestCount: Int
     ) -> String {
         let styleText = style == .wenyan
             ? "用浅近文言、典雅凝练"
             : "用庄重白话、真挚不煽情"
         let host = hostName.isEmpty ? "主家" : hostName
-        return "你是家族礼谱的撰序人。为一场\(ledger.type)撰写礼谱序，\(styleText)，"
+        return "你是家族礼谱的撰序人。为一场\(type)撰写礼谱序，\(styleText)，"
             + "150–250 字，只写正文不要标题不要落款（落款由程序加），"
-            + "素材：主家\(host)，日期\(LiqianDate.ganzhiFullDate(for: ledger.date))，"
+            + "素材：主家\(host)，日期\(LiqianDate.ganzhiFullDate(for: date))，"
             + "到场亲友共 \(guestCount) 人。"
             + "不得编造具体人名与事件细节，不得提及金额。"
     }
 
     /// 内置模板谱序（文言体，按事由六篇；白事克制）。变量：主家名、干支全日期、到场人数。
-    static func template(ledger: Ledger, hostName: String, guestCount: Int) -> String {
+    static func template(type: String, date: String, hostName: String, guestCount: Int) -> String {
         let host = hostName.isEmpty ? "主家" : hostName
-        let gz = LiqianDate.ganzhiFullDate(for: ledger.date)
-        switch ledger.type {
+        let gz = LiqianDate.ganzhiFullDate(for: date)
+        switch type {
         case "婚礼":
             return "岁在\(gz)，\(host)之府，佳儿淑女，结缡于斯。是日高朋满座，亲眷云集，"
                 + "到场者凡\(guestCount)人，笙歌起于堂前，笑语闻于巷陌。远者千里而至，近者比邻而来，"
