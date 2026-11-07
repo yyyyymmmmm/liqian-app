@@ -23,6 +23,7 @@ struct LedgerDetailView: View {
     @State private var showExport = false
     @State private var showGreeting = false
     @State private var showPhotoOCR = false
+    @State private var showSceneMode = false
     @State private var ocrResultText = ""
     @State private var showOCRResult = false
 
@@ -94,6 +95,7 @@ struct LedgerDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 // 「更多」是本页唯一管理入口（v2.5 包 1/2 定版）：顺序固定为
                 // 批量补录／拍照识别礼单（v2.9 紧随批量补录，同为成批录入）／
+                // 现场模式（v4.1，收礼台成批录入的现场形态，紧随两个录入入口）／
                 // 导出礼谱 PDF／生成贺词／编辑礼簿／删除礼簿，
                 // 删除垫底并标 destructive；原页内行动区与页尾删除区已删，
                 // 编辑礼簿的工具栏铅笔按钮一并收进本菜单，全页只剩这一个入口。
@@ -108,6 +110,13 @@ struct LedgerDetailView: View {
                         showPhotoOCR = true
                     } label: {
                         Label("拍照识别礼单", systemImage: "camera.viewfinder")
+                    }
+                    // 现场模式（v4.1）：礼房收礼台全屏页——连续登记＋语音播报＋
+                    // 投屏脱敏＋事后复核，fullScreenCover 沉浸呈现（无 Tab 栏干扰）
+                    Button {
+                        showSceneMode = true
+                    } label: {
+                        Label("现场模式", systemImage: "person.wave.2")
                     }
                     // 礼谱 v3：导出走 sheet（确认落款姓名、选谱序文体后现生成）
                     Button {
@@ -169,6 +178,9 @@ struct LedgerDetailView: View {
                 ocrResultText = "共导入 \(n) 笔收礼"
                 showOCRResult = true
             }
+        }
+        .fullScreenCover(isPresented: $showSceneMode) {
+            SceneModeView(ledger: ledger)
         }
         .alert("批量补录完成", isPresented: $showBatchResult) {
             Button("好") {}
