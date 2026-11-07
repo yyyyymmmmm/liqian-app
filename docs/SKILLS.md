@@ -30,3 +30,14 @@
 （iPhone 各尺寸、深色外观不破相） / 跨页一致性（卡片、字阶、签样式统一） /
 空状态与错误状态 / 加载体验（本地应用以即时性为准） / 信息架构（人物页先给结论） /
 微交互（系统原生动效为准，不自造） / 大视口（iPad 不强求，TARGETED_DEVICE_FAMILY=1）。
+
+## 2026-11-07 追加：专业设计审校栈（用户点名「看看 GitHub、不要自己想象」后安装）
+
+| Skill | 来源 | 用途 |
+|---|---|---|
+| hallmark | Nutlope/hallmark（★约 5 万） | 反 AI 味设计：令牌化一切颜色/字体、AI 默认毛病清单、audit 模式 |
+| huashu-design | alchaincyf/huashu-design（★约 2.9 万） | 中文设计 skill：设计体检（critique）流程、风格库 |
+| unslop | heydamir/unslop（★约 1.1 万） | 把「AI 生成感」界面改回设计过的样子：richness 只进 moment、chrome 保持安静 |
+| claude-design-skills | Gustavosilveira23/claude-design-skills | ui-designer（8pt 网格/字阶/60-30-10）、design-system（令牌审计）、CLEAR 审校表（Copy 第一维） |
+
+本地副本：~/workspace/custom-skills/local-{hallmark,huashu-design,unslop,claude-ui-designer,claude-design-system,claude-ux-designer}/。首战成果：docs/PRO-AUDIT.md（CLEAR 基线 2.4/5、术语表定版、52 条文案审校、整改 15 项已全量落码）。
