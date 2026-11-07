@@ -107,9 +107,11 @@ public enum AIParse {
                 relation: rec.relation.flatMap { LiqianConstants.relations.contains($0) ? $0 : nil },
                 method: rec.method.flatMap { LiqianConstants.methods.contains($0) ? $0 : nil },
                 direction: rec.direction == "given" ? LiqianConstants.given : LiqianConstants.received,
-                eventHint: rec.eventHint?
-                    .trimmingCharacters(in: .whitespaces)
-                    .flatMap { $0.isEmpty ? nil : $0 },
+                eventHint: {
+                    guard let hint = rec.eventHint?.trimmingCharacters(in: .whitespaces),
+                          !hint.isEmpty else { return nil }
+                    return hint
+                }(),
                 isValid: !name.isEmpty && rec.amountYuan > 0
             )
         }
