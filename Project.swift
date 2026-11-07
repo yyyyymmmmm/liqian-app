@@ -89,7 +89,38 @@ let project = Project(
                 .target(name: "LiqianCore"),
                 .target(name: "LiqianDesign"),
                 .target(name: "LiqianWidget"),
+                .target(name: "LiqianShare"),
             ]
+        ),
+        .target(
+            name: "LiqianShare",
+            destinations: .iOS,
+            product: .appExtension,
+            bundleId: "site.didichou.liqian.share",
+            deploymentTargets: iOS26,
+            infoPlist: .extendingDefault(with: [
+                // 版本字面量直写（v4.4 实证口径，同 App/Widget）；本组先行 4.5.0
+                "CFBundleShortVersionString": "4.5.0",
+                "CFBundleVersion": "45",
+                "NSExtension": [
+                    "NSExtensionPointIdentifier": "com.apple.share-services",
+                    "NSExtensionPrincipalClass": "$(PRODUCT_MODULE_NAME).ShareViewController",
+                    // 只激活纯文本：微信接龙等场景分享进来的就是一段文字，
+                    // 图片/文件/链接一律不接（批量解析只吃文本）
+                    "NSExtensionAttributes": [
+                        "NSExtensionActivationRule": [
+                            "NSExtensionActivationSupportsText": true,
+                        ],
+                    ],
+                ],
+            ]),
+            sources: ["Sources/LiqianShare/**"],
+            entitlements: .dictionary([
+                "com.apple.security.application-groups": .array([
+                    .string("group.site.didichou.liqian"),
+                ]),
+            ]),
+            dependencies: [.target(name: "LiqianCore")]
         ),
         .target(
             name: "LiqianWidget",
