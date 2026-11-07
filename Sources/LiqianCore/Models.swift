@@ -160,15 +160,22 @@ public enum LiqianDate {
 }
 
 // MARK: - SwiftData 模型
+//
+// CloudKit 兼容口径（feat/icloud）：CloudKit 镜像要求 ① 不支持 @Attribute(.unique)
+// 唯一约束；② 每个存储属性必须可选或带声明默认值。据此三模型统一：
+// id 去掉 .unique（唯一性仍由 UUID 生成保证，本地行为不变，去约束属轻量迁移）；
+// 非可选属性一律补声明默认值（init 仍显式赋值，默认值只作 CloudKit schema 兜底）；
+// 模型间无 @Relationship（靠 UUID 外键关联），天然满足 CloudKit 关系全可选的要求。
+// 逐模型审计结论见 docs/V40-ICLOUD-NOTES.md。
 
 @Model
 public final class Ledger {
-    @Attribute(.unique) public var id: UUID
-    public var title: String
-    public var type: String
+    public var id: UUID = UUID()
+    public var title: String = ""
+    public var type: String = ""
     /// yyyy-MM-dd（即婚期/办事日子口径，礼谱封面、谱序、纪年都用它）
-    public var date: String
-    public var note: String
+    public var date: String = ""
+    public var note: String = ""
     // v2.10 礼谱属性（用户拍板：这些是礼簿自身的属性，在建簿/编辑时设置，
     // 不是导出时临时填）：主家、书记（记账人）、核实人、举办地点。
     // 全部可选，nil/空表示未设；SwiftData 可选新增属性走轻量迁移，老库自动兼容。
@@ -198,22 +205,22 @@ public final class Ledger {
 
 @Model
 public final class GiftRecord {
-    @Attribute(.unique) public var id: UUID
-    public var ledgerID: UUID
-    public var person: String
-    public var relation: String
+    public var id: UUID = UUID()
+    public var ledgerID: UUID = UUID()
+    public var person: String = ""
+    public var relation: String = "朋友"
     /// 金额（分）
-    public var amountCents: Int
+    public var amountCents: Int = 0
     /// 收礼 / 随礼
-    public var direction: String
-    public var method: String
-    public var note: String
+    public var direction: String = ""
+    public var method: String = "现金"
+    public var note: String = ""
     /// yyyy-MM-dd
-    public var date: String
+    public var date: String = ""
     /// 仅随礼有意义：已送出 / 待送出；收礼忽略。待送出不计入差额与统计。
-    public var status: String
+    public var status: String = LiqianConstants.sentStatus
     /// v0.1 旧字段兼容位：原生版不再使用（未回按自动规则算），仅为备份格式兼容保留
-    public var returned: Bool
+    public var returned: Bool = false
 
     public init(
         id: UUID = UUID(),
@@ -252,20 +259,20 @@ public final class GiftRecord {
 /// 每年重复；农历按年换算公历触发（换算口径见 ReminderMath.lunarNext）。
 @Model
 public final class ReminderDay {
-    @Attribute(.unique) public var id: UUID
-    public var person: String
+    public var id: UUID = UUID()
+    public var person: String = ""
     /// 关系（LiqianConstants.relations 之一），未选为 ""
-    public var relation: String
+    public var relation: String = ""
     /// 生日 / 结婚纪念日 / 其他
-    public var kind: String
+    public var kind: String = LiqianConstants.reminderBirthday
     /// 公历 / 农历
-    public var calendarKind: String
-    public var month: Int
-    public var day: Int
+    public var calendarKind: String = LiqianConstants.calendarGregorian
+    public var month: Int = 1
+    public var day: Int = 1
     /// 提前天数：0 / 1 / 3 / 7
-    public var leadDays: Int
-    public var enabled: Bool
-    public var note: String
+    public var leadDays: Int = 3
+    public var enabled: Bool = true
+    public var note: String = ""
 
     public init(
         id: UUID = UUID(),
