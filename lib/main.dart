@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'store.dart';
+import 'theme.dart';
 import 'screens/ledgers_page.dart';
 import 'screens/people_page.dart';
 import 'screens/me_page.dart';
@@ -18,11 +19,7 @@ class LiqianApp extends StatelessWidget {
     return MaterialApp(
       title: '礼钱账本',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFB03A2E)),
-        scaffoldBackgroundColor: const Color(0xFFF7F5F2),
-      ),
+      theme: buildAppTheme(),
       home: const HomeShell(),
     );
   }

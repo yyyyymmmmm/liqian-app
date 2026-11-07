@@ -2,7 +2,7 @@
 class Ledger {
   final String id;
   String title; // 账本名，如「我的婚礼」
-  String type; // 事由：婚礼/满月/乔迁/生日/升学/白事/其他
+  String type; // 事由：见 kLedgerTypes
   String date; // yyyy-MM-dd
   String note;
   Ledger({required this.id, required this.title, required this.type, required this.date, this.note = ''});
@@ -27,7 +27,8 @@ class GiftRecord {
   String method; // 现金/微信/支付宝/银行转账/实物
   String note;
   String date; // yyyy-MM-dd
-  bool returned; // 仅收礼有意义：是否已回礼
+  bool returned; // v0.1 旧字段：保留兼容旧数据，v0.2 起不再使用（未回改自动规则）
+  String status; // 仅随礼有意义：已送出 / 待送出；收礼忽略。待送出不计入差额与统计。
   GiftRecord({
     required this.id,
     required this.ledgerId,
@@ -39,12 +40,16 @@ class GiftRecord {
     this.note = '',
     required this.date,
     this.returned = false,
+    this.status = '已送出',
   });
+
+  // 待送出的随礼：钱还没真送出去，不算数
+  bool get isPendingSend => direction == '随礼' && status == '待送出';
 
   Map<String, dynamic> toJson() => {
         'id': id, 'ledgerId': ledgerId, 'person': person, 'relation': relation,
         'amountCents': amountCents, 'direction': direction, 'method': method,
-        'note': note, 'date': date, 'returned': returned,
+        'note': note, 'date': date, 'returned': returned, 'status': status,
       };
   factory GiftRecord.fromJson(Map<String, dynamic> j) => GiftRecord(
         id: j['id'] as String,
@@ -57,10 +62,11 @@ class GiftRecord {
         note: (j['note'] ?? '') as String,
         date: j['date'] as String,
         returned: (j['returned'] ?? false) as bool,
+        status: (j['status'] ?? '已送出') as String, // 旧数据无此字段，兜底为已送出
       );
 }
 
-const kLedgerTypes = ['婚礼', '满月', '乔迁', '生日', '升学', '白事', '其他'];
+const kLedgerTypes = ['婚礼', '满月', '周岁', '乔迁', '寿宴', '升学', '开业', '白事', '其他'];
 const kRelations = ['亲戚', '朋友', '同事', '同学', '邻居', '其他'];
 const kMethods = ['现金', '微信', '支付宝', '银行转账', '实物'];
 

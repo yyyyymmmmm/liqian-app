@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
 import '../models.dart';
+import '../theme.dart';
 import 'ledger_form.dart';
 import 'ledger_detail.dart';
 
@@ -14,7 +15,7 @@ class LedgersPage extends StatelessWidget {
       builder: (context, _) {
         final all = store.records;
         final recv = store.sumCents(all.where((r) => r.direction == '收礼'));
-        final given = store.sumCents(all.where((r) => r.direction == '随礼'));
+        final given = store.sumCents(all.where((r) => r.direction == '随礼' && !r.isPendingSend));
         return Scaffold(
           appBar: AppBar(title: const Text('礼钱账本')),
           floatingActionButton: FloatingActionButton.extended(
@@ -25,44 +26,35 @@ class LedgersPage extends StatelessWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Card(
-                color: const Color(0xFFB03A2E),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _stat('累计收礼', fmtMoney(recv), Colors.white),
-                      _stat('累计随礼', fmtMoney(given), Colors.white),
-                      _stat('礼簿', '${store.ledgers.length} 本', Colors.white),
-                    ],
-                  ),
+              Container(
+                decoration: flatCard(),
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _stat('累计收礼', fmtMoney(recv), kCinnabar),
+                    _stat('累计随礼', fmtMoney(given), kInk),
+                    _stat('礼簿', '${store.ledgers.length} 本', kInk),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
               if (store.ledgers.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 48),
-                  child: Center(child: Text('还没有礼簿\n点右下角「新建礼簿」，从最近一场事开始记', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, height: 1.6))),
-                ),
-              ...store.ledgers.map((l) {
-                final rs = store.recordsOfLedger(l.id);
-                final r1 = store.sumCents(rs.where((r) => r.direction == '收礼'));
-                final r2 = store.sumCents(rs.where((r) => r.direction == '随礼'));
-                final isBai = l.type == '白事';
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: isBai ? Colors.grey.shade300 : const Color(0xFFF6E3DF),
-                      child: Text(l.type.characters.first, style: TextStyle(color: isBai ? Colors.black54 : const Color(0xFFB03A2E))),
+                Padding(
+                  padding: const EdgeInsets.only(top: 48),
+                  child: Column(children: [
+                    const Text('还没有礼簿，从最近一场事开始记。', style: TextStyle(color: kStone, fontSize: 15)),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LedgerForm())),
+                      child: const Text('新建第一本礼簿', style: TextStyle(color: kCinnabar)),
                     ),
-                    title: Text(l.title),
-                    subtitle: Text('${l.date} · ${rs.length} 笔 · 收 ${fmtMoney(r1)} · 随 ${fmtMoney(r2)}'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LedgerDetail(ledgerId: l.id))),
-                  ),
-                );
-              }),
+                  ]),
+                ),
+              ...store.ledgers.map((l) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _coverCard(context, l),
+                  )),
             ],
           ),
         );
@@ -72,9 +64,83 @@ class LedgersPage extends StatelessWidget {
 
   Widget _stat(String label, String value, Color c) => Column(
         children: [
-          Text(value, style: TextStyle(color: c, fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(value, style: serifStyle(fontSize: 22, color: c)),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: c.withOpacity(0.85), fontSize: 12)),
+          Text(label, style: const TextStyle(color: kStone, fontSize: 12)),
         ],
       );
+
+  // 「礼簿封面」卡：朱砂封面块（白事素灰蓝）+ 竖排事由 + 描金细边，右侧是账目信息
+  Widget _coverCard(BuildContext context, Ledger l) {
+    final rs = store.recordsOfLedger(l.id);
+    final r1 = store.sumCents(rs.where((r) => r.direction == '收礼'));
+    final r2 = store.sumCents(rs.where((r) => r.direction == '随礼' && !r.isPendingSend));
+    final isBai = l.type == '白事';
+    return Container(
+      decoration: flatCard(bai: isBai),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LedgerDetail(ledgerId: l.id))),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            // 封面块
+            Container(
+              width: 56,
+              height: 92,
+              decoration: BoxDecoration(
+                color: isBai ? kBaiPrimary : kCinnabar,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: isBai ? kBaiLine : kGold, width: 1),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    l.type.split('').join('\n'),
+                    textAlign: TextAlign.center,
+                    style: serifStyle(fontSize: 20, color: Colors.white, height: 1.15),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: 7, height: 7,
+                    decoration: BoxDecoration(
+                      color: isBai ? kBaiLine : const Color(0xFFF6F1E7),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: kInk)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${l.date}${l.note.isEmpty ? '' : ' · ${l.note}'}',
+                    style: const TextStyle(fontSize: 12.5, color: kStone),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    const Text('收 ', style: TextStyle(fontSize: 12.5, color: kStone)),
+                    Text(fmtMoney(r1), style: moneyStyle(fontSize: 15, color: isBai ? kBaiInk : kCinnabar)),
+                    const SizedBox(width: 14),
+                    const Text('随 ', style: TextStyle(fontSize: 12.5, color: kStone)),
+                    Text(fmtMoney(r2), style: moneyStyle(fontSize: 15, color: kInk)),
+                    const Spacer(),
+                    Text('${rs.length} 笔', style: const TextStyle(fontSize: 12.5, color: kStone)),
+                  ]),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: kStone, size: 20),
+          ]),
+        ),
+      ),
+    );
+  }
 }
