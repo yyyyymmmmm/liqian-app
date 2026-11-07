@@ -24,6 +24,12 @@ struct ContentView: View {
     /// 小组件人物深链（v4.5）：liqian://person/<姓名> 的待达姓名，
     /// 交给 PeopleView 消费（切到往来页后由它置人物路由并清空）
     @State private var personDeepLinkName: String?
+    /// 分享导入（v4.5）：liqian://share-import 承接——目标礼簿（sheet 目标）、
+    /// 暂存文本（喂给 BatchEntryView 粘贴流）、导入完成提示
+    @State private var shareImportTarget: Ledger?
+    @State private var shareImportText = ""
+    @State private var showShareImportResult = false
+    @State private var shareImportResultText = ""
     /// 存储健康（v4.2）：应急内存模式绝不沉默，顶部挂红条警示
     @EnvironmentObject private var cloudSync: CloudSyncManager
 
@@ -98,7 +104,13 @@ struct ContentView: View {
             TrashStore.purgeExpired()
             refreshWidgetSummary()
             checkQuickRecord()
+            checkShareImport()
             calibrateReminders()
+        }
+        .onChange(of: isLocked) { _, locked in
+            // 分享导入（v4.5）：锁定状态下暂存不承接，解锁一刻补检，
+            // 免得用户解完锁还要退后台再回来才弹导入
+            if !locked { checkShareImport() }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -116,6 +128,9 @@ struct ContentView: View {
                 backgroundedAt = nil
                 refreshWidgetSummary()
                 checkQuickRecord()
+                // 分享导入（v4.5）：扩展没能自动打开 App、用户手动点开时，
+                // 靠回前台这一检把暂存接上（深链直达时走 onOpenURL 那条）
+                checkShareImport()
             default:
                 break
             }
@@ -128,6 +143,13 @@ struct ContentView: View {
             // 小组件深链：liqian://quick-record
             if url.scheme == "liqian", url.host == "quick-record" {
                 presentQuickRecord()
+                return
+            }
+            // 分享导入（v4.5）：liqian://share-import——扩展已把文本与
+            // 目标礼簿暂存进 App Group，这里统一走 checkShareImport 承接
+            // （读暂存→弹批量解析待确认流）；锁着时它内部会直接返回不承接
+            if url.scheme == "liqian", url.host == "share-import" {
+                checkShareImport()
                 return
             }
             // 小组件人物深链（v4.5）：liqian://person/<姓名>——切到往来页，
@@ -149,6 +171,17 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showQuickRecord) {
             RecordFormView(personName: "", presetDirection: LiqianConstants.received)
+        }
+        .sheet(item: $shareImportTarget) { ledger in
+            BatchEntryView(ledger: ledger, initialPasteText: shareImportText) { n in
+                shareImportResultText = "共记 \(n) 笔"
+                showShareImportResult = true
+            }
+        }
+        .alert("分享导入", isPresented: $showShareImportResult) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(shareImportResultText)
         }
         .sheet(item: $deepLinkBlessing) { blessing in
             BlessingPlayerView(blessing: blessing)
@@ -189,6 +222,32 @@ struct ContentView: View {
             monthGivenCents: monthGiven,
             nextReminder: WidgetSummaryWriter.nextReminder(from: allReminderDays.map(\.value))
         )
+        // 礼簿清单快照（v4.5）：Share Extension 选目标礼簿用，
+        // allLedgers 已按日期倒序，第一本即最近一本
+        WidgetSummaryWriter.writeLedgerList(ledgers: allLedgers)
+    }
+
+    /// 分享导入承接（v4.5）：读 App Group 暂存 → 定目标礼簿（暂存 id 优先，
+    /// 已删/缺失时落最近一本）→ 弹 BatchEntryView 粘贴待确认流（预填文本）。
+    /// 暂存只在确定能弹时才清：没有礼簿时保留，等建好礼簿下次再承接；
+    /// 暂存为空静默作罢；隐私锁锁着时不读不弹（与既有深链守卫一致，
+    /// 解锁后由 isLocked 的 onChange 补检）；已在导入中不重复弹。
+    private func checkShareImport() {
+        if privacyLockEnabled && isLocked { return }
+        guard shareImportTarget == nil,
+              let defaults = UserDefaults(suiteName: WidgetSummaryWriter.suiteName),
+              let text = defaults.string(forKey: WidgetSummaryWriter.shareTextKey),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        let wantedID = defaults.string(forKey: WidgetSummaryWriter.shareLedgerIDKey)
+            .flatMap(UUID.init(uuidString:))
+        guard let ledger = allLedgers.first(where: { $0.id == wantedID }) ?? allLedgers.first
+        else { return }
+        defaults.removeObject(forKey: WidgetSummaryWriter.shareTextKey)
+        defaults.removeObject(forKey: WidgetSummaryWriter.shareLedgerIDKey)
+        tabSelection = 0
+        shareImportText = text
+        shareImportTarget = ledger
     }
 
     /// 快捷指令落下的标记：读到就清掉并弹记一笔表单

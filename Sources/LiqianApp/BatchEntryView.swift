@@ -9,6 +9,11 @@ import LiqianDesign
 /// 行校验按 form-design 口径：空行跳过、半截行定位到行号就地报错。
 struct BatchEntryView: View {
     let ledger: Ledger
+    /// 分享导入预填（v4.5）：非 nil 时进页即切到「粘贴导入」并带入文本，
+    /// 后续解析预览/确认导入仍走既有通道，一字不改；详情页入口不传（nil）。
+    /// 声明在 onSaved 之前：让 onSaved 保持成员初始化器的最后一个参数，
+    /// 既有尾随闭包调用点（详情页/分享承接）绑定零歧义。
+    var initialPasteText: String? = nil
     /// 保存成功回调（笔数），由详情页弹提示
     var onSaved: (Int) -> Void
 
@@ -205,6 +210,13 @@ struct BatchEntryView: View {
             .sheet(isPresented: $showPhotoOCR) {
                 PhotoOCRView(ledger: ledger) { n in
                     ocrMessage = "已通过拍照识别导入 \(n) 笔收礼。"
+                }
+            }
+            .onAppear {
+                // 分享导入（v4.5）：带文本进来就直达粘贴导入待确认流
+                if let initialPasteText, pasteText.isEmpty {
+                    pasteText = initialPasteText
+                    mode = .paste
                 }
             }
         }

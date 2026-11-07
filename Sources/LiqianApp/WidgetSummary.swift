@@ -8,6 +8,29 @@ enum WidgetSummaryWriter {
     static let suiteName = "group.site.didichou.liqian"
     static let summaryKey = "pendingSummary"
     static let quickRecordKey = "openQuickRecord"
+    // —— 分享导入（v4.5）：键与 LiqianShare 扩展的 ShareChannel 对齐，改键两边同步 ——
+    /// 礼簿清单快照（扩展选目标礼簿用）
+    static let ledgerListKey = "ledgerList"
+    /// 分享暂存：扩展写、ContentView.checkShareImport 读后即清
+    static let shareTextKey = "shareImportText"
+    static let shareLedgerIDKey = "shareImportLedgerID"
+
+    /// 礼簿清单快照项：只放 id/title/date，不带任何金额与记录
+    struct LedgerListItem: Codable {
+        var id: UUID
+        var title: String
+        var date: String
+    }
+
+    /// 写礼簿清单快照：顺序与入参一致（ContentView 传日期倒序，
+    /// 第一本即最近一本，扩展默认选中它）
+    static func writeLedgerList(ledgers: [Ledger]) {
+        guard let defaults = UserDefaults(suiteName: suiteName),
+              let data = try? JSONEncoder().encode(
+                ledgers.map { LedgerListItem(id: $0.id, title: $0.title, date: $0.date) }
+              ) else { return }
+        defaults.set(data, forKey: ledgerListKey)
+    }
 
     /// 待回礼前列一位（中/大尺寸列表行与锁屏组件用）
     struct PendingPerson: Codable {
