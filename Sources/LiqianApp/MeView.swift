@@ -15,12 +15,13 @@ struct MeView: View {
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
+    @Query private var members: [LedgerMember]
 
     @State private var csvURL: URL?
     @State private var exportDocument = JSONBackupDocument(data: Data())
     @State private var showExporter = false
     @State private var showImporter = false
-    @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay])?
+    @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay], members: [BackupMember])?
     @State private var showImportConfirm = false
     @State private var infoTitle = ""
     @State private var infoMessage = ""
@@ -203,7 +204,8 @@ struct MeView: View {
                     Button {
                         exportDocument = JSONBackupDocument(
                             data: LiqianBackup.makeBackup(
-                                ledgers: ledgers, records: records, reminders: reminderDays
+                                ledgers: ledgers, records: records,
+                                reminders: reminderDays, members: members
                             )
                         )
                         showExporter = true
@@ -211,7 +213,7 @@ struct MeView: View {
                         entryLabel(
                             icon: "tray.and.arrow.up",
                             title: "导出备份（JSON）",
-                            subtitle: "包含全部礼簿、记录与提醒日子，可用于换机恢复"
+                            subtitle: "包含全部礼簿、记录、提醒日子与礼簿班子，可用于换机恢复"
                         )
                     }
                     Button {
@@ -287,7 +289,7 @@ struct MeView: View {
                 Button("取消", role: .cancel) {}
             } message: {
                 if let p = pendingImport {
-                    Text("备份里有 \(p.ledgers.count) 本礼簿、\(p.records.count) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")。现在手机里有 \(ledgers.count) 本礼簿、\(records.count) 笔记录，恢复后会被全部覆盖，覆盖了就回不来了。")
+                    Text("备份里有 \(p.ledgers.count) 本礼簿、\(p.records.count) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")\(p.members.isEmpty ? "" : "、\(p.members.count) 位班子成员")。现在手机里有 \(ledgers.count) 本礼簿、\(records.count) 笔记录，恢复后会被全部覆盖，覆盖了就回不来了。")
                 }
             }
             .alert(infoTitle, isPresented: $showInfo) {
@@ -396,6 +398,7 @@ struct MeView: View {
         for r in records { modelContext.delete(r) }
         for l in ledgers { modelContext.delete(l) }
         for d in reminderDays { modelContext.delete(d) }
+        for m in members { modelContext.delete(m) }
         // 备份里的 id 是字符串：原生备份是 UUID 串可直转；
         // Flutter 旧备份是时间戳串，转不成 UUID 就新发一个，并按账本逐个建映射保证记录挂得上
         var idMap: [String: UUID] = [:]
@@ -446,6 +449,21 @@ struct MeView: View {
                 )
             )
         }
+        // 班子成员（v4.5）：按备份里的 ledgerId 映射到恢复后的礼簿 id
+        var importedMembers = 0
+        for bm in p.members {
+            guard let lid = idMap[bm.ledgerId] else { continue }
+            modelContext.insert(
+                LedgerMember(
+                    id: bm.idUUID ?? UUID(),
+                    ledgerID: lid,
+                    name: bm.name,
+                    role: bm.role,
+                    createdAt: LiqianBackup.memberDate(from: bm.createdAt)
+                )
+            )
+            importedMembers += 1
+        }
         try? modelContext.save()
         // 恢复后按新数据重排提醒（旧排期对应的是被覆盖掉的日子）
         ReminderScheduler.reschedule(
@@ -472,7 +490,7 @@ struct MeView: View {
         pendingImport = nil
         showInfo(
             title: "恢复完成",
-            message: "已导入 \(p.ledgers.count) 本礼簿、\(importedRecords) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")。"
+            message: "已导入 \(p.ledgers.count) 本礼簿、\(importedRecords) 笔记录\(p.reminders.isEmpty ? "" : "、\(p.reminders.count) 个提醒日子")\(importedMembers == 0 ? "" : "、\(importedMembers) 位班子成员")。"
         )
     }
 
