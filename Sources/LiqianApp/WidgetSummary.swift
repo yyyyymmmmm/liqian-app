@@ -5,7 +5,9 @@ import LiqianCore
 /// 小组件数据通道：把待回礼速览写进 App Group 的 UserDefaults，
 /// Widget 扩展读同一份数据。结构定义在 Widget 文件里有一份镜像，改字段要两边同步。
 enum WidgetSummaryWriter {
-    static let suiteName = "group.site.didichou.liqian"
+    /// suite 名走 AppGroupResolver（v4.6）：SideStore/AltSign 重签后真实组名
+    /// 带 TeamID 后缀、写在 Info.plist 的 ALTAppGroups 里，硬编码原组名对不上
+    static var suiteName: String { AppGroupResolver.groupID }
     static let summaryKey = "pendingSummary"
     static let quickRecordKey = "openQuickRecord"
     // —— 分享导入（v4.5）：键与 LiqianShare 扩展的 ShareChannel 对齐，改键两边同步 ——

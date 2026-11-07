@@ -101,7 +101,8 @@ struct SummaryEntry: TimelineEntry {
 
 /// 快照读取：App Group 不通（重签剥组）或 App 还没写过时返回 nil → 空态引导。
 enum SummaryStore {
-    static let suiteName = "group.site.didichou.liqian"
+    /// suite 名走 AppGroupResolver（v4.6，与 App 侧 WidgetSummaryWriter 同口径）
+    static var suiteName: String { AppGroupResolver.groupID }
     static let summaryKey = "pendingSummary"
 
     static func load() -> WPendingSummary? {

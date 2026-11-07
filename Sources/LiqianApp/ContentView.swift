@@ -46,13 +46,18 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             TabView(selection: $tabSelection) {
-                Tab("礼簿", systemImage: "book.closed", value: 0) {
+                // 四栏（v4.6）：首页 0 / 往来 1 / 图表 2 / 我的 3——
+                // 全 App 的 tabSelection 赋值点都按这张表，改索引必全局核对
+                Tab("首页", systemImage: "house.fill", value: 0) {
                     LedgersView()
                 }
                 Tab("往来", systemImage: "person.2", value: 1) {
                     PeopleView(deepLinkPerson: $personDeepLinkName)
                 }
-                Tab("我的", systemImage: "person.crop.circle", value: 2) {
+                Tab("图表", systemImage: "chart.bar.fill", value: 2) {
+                    ChartsView()
+                }
+                Tab("我的", systemImage: "person.crop.circle", value: 3) {
                     MeView()
                 }
             }
@@ -144,8 +149,9 @@ struct ContentView: View {
             checkShortcutPending()
         }
         .onReceive(NotificationCenter.default.publisher(for: .liqianOpenAISettings)) { _ in
-            // AI 引导 alert 的「去设置」落点：切到「我的」Tab（AI 设置行在该页）
-            tabSelection = 2
+            // AI 引导 alert 的「去设置」落点：切到「我的」Tab（AI 设置行在该页）；
+            // v4.6 四栏后「我的」是 3（原三栏时为 2，2 现为图表，勿回退）
+            tabSelection = 3
         }
         .onOpenURL { url in
             // 小组件深链：liqian://quick-record

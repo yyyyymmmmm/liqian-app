@@ -55,6 +55,70 @@ jobs:
             | tee test-full.log
           grep -E "error:|Test Case|Executed|TEST" test-full.log | head -60 || true
 
+      # 预签（v4.6）：裸包（CODE_SIGNING_ALLOWED=NO）没有任何 entitlements blob，
+      # SideStore 的 AltSign 读不到能力声明——不建 App Group、新扩展的 App ID
+      # 注册/profile 也容易缺失（v4.5 真机实证：Share 扩展缺有效 profile 导致
+      # 整个 App 被系统拒启，官方 issue #1394 同症状）。
+      # 这里按 Project.swift 三个 target 的声明做 ad-hoc 预签（无身份、SideStore
+      # 仍会重签），让 AltSign 能从签名 blob 读到 entitlements 并正确建组/配发。
+      # 签完立即断言三个二进制都带 application-groups，缺失即失败，防假绿。
+      - name: Ad-hoc presign with entitlements (for AltSign)
+        run: |
+          set -euo pipefail
+          APP=$(find build/dd/Build/Products -name "LiqianApp.app" -type d | head -1)
+          test -n "$APP" && test -x "$APP/LiqianApp"
+          SIGN_DIR="$RUNNER_TEMP/presign"
+          mkdir -p "$SIGN_DIR"
+          cat > "$SIGN_DIR/app.entitlements" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.application-groups</key>
+              <array>
+                  <string>group.site.didichou.liqian</string>
+              </array>
+              <key>aps-environment</key>
+              <string>development</string>
+              <key>com.apple.developer.icloud-container-identifiers</key>
+              <array>
+                  <string>iCloud.site.didichou.liqian</string>
+              </array>
+              <key>com.apple.developer.icloud-services</key>
+              <array>
+                  <string>CloudKit</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+          cat > "$SIGN_DIR/ext.entitlements" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.application-groups</key>
+              <array>
+                  <string>group.site.didichou.liqian</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+          # 由内向外签：Frameworks → 两个 appex → 主 App
+          for fw in "$APP"/Frameworks/*.framework; do
+            codesign --force --sign - "$fw"
+          done
+          codesign --force --sign - --entitlements "$SIGN_DIR/ext.entitlements" "$APP/PlugIns/LiqianWidget.appex"
+          codesign --force --sign - --entitlements "$SIGN_DIR/ext.entitlements" "$APP/PlugIns/LiqianShare.appex"
+          codesign --force --sign - --entitlements "$SIGN_DIR/app.entitlements" "$APP"
+          # 断言：blob 存在且含组声明（App 另须含 iCloud 服务声明）
+          for bin in "$APP/LiqianApp" "$APP/PlugIns/LiqianWidget.appex/LiqianWidget" "$APP/PlugIns/LiqianShare.appex/LiqianShare"; do
+            OUT=$(codesign -d --entitlements :- "$bin" 2>/dev/null)
+            echo "$OUT" | grep -q "com.apple.security.application-groups" || { echo "ASSERT FAIL: no application-groups in $bin"; exit 1; }
+            echo "$OUT" | grep -q "group.site.didichou.liqian" || { echo "ASSERT FAIL: no group id in $bin"; exit 1; }
+          done
+          codesign -d --entitlements :- "$APP/LiqianApp" 2>/dev/null | grep -q "com.apple.developer.icloud-services" || { echo "ASSERT FAIL: no icloud-services in app"; exit 1; }
+          echo "presign assertions passed"
+
       - name: Package unsigned IPA
         run: |
           APP=$(find build/dd/Build/Products -name "LiqianApp.app" -type d | head -1)

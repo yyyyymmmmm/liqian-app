@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import LiqianCore
 
 /// 组件内「记一笔」真按钮（iOS 17+ Button(intent:)）：
 /// 与快捷指令的 QuickRecordIntent 同机制——perform 在 App 进程外先跑，
@@ -13,7 +14,7 @@ struct OpenQuickRecordIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        UserDefaults(suiteName: "group.site.didichou.liqian")?
+        UserDefaults(suiteName: AppGroupResolver.groupID)?
             .set(true, forKey: "openQuickRecord")
         return .result()
     }

@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import LiqianCore
 
 // MARK: - 分享导入通道（键与主 App WidgetSummaryWriter 对齐，改键两边同步）
 // - 礼簿清单快照：主 App 维护，key "ledgerList"，JSON [{id,title,date}]
@@ -9,7 +10,9 @@ import UniformTypeIdentifiers
 // 批量解析待确认流里做，扩展绝不直接写 SwiftData。
 
 enum ShareChannel {
-    static let suiteName = "group.site.didichou.liqian"
+    /// suite 名走 AppGroupResolver（v4.6，与主 App WidgetSummaryWriter 同口径）：
+    /// AltSign 重签后真实组名带 TeamID 后缀，硬编码原组名会让 containerURL 判据失效
+    static var suiteName: String { AppGroupResolver.groupID }
     static let ledgerListKey = "ledgerList"
     static let textKey = "shareImportText"
     static let ledgerIDKey = "shareImportLedgerID"
