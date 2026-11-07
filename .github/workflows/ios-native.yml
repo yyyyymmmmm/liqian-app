@@ -32,27 +32,30 @@ jobs:
 
       - name: Build (no codesign)
         run: |
+          set -o pipefail
           xcodebuild build \
             -project Liqian.xcodeproj \
             -scheme LiqianApp \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            | tail -5
+            | tee build-full.log | grep -E "error:|warning: .*deprecated|BUILD" | head -60
 
       - name: Unit tests (LiqianCore)
         run: |
+          set -o pipefail
           xcodebuild test \
             -project Liqian.xcodeproj \
             -scheme LiqianApp \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             -only-testing:LiqianCoreTests \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -5
+            | tee test-full.log | grep -E "error:|Test Case|Executed|TEST" | head -60
 
       - name: Package unsigned IPA
         run: |
           APP=$(find build/dd/Build/Products -name "LiqianApp.app" -type d | head -1)
+          test -n "$APP" && test -x "$APP/LiqianApp"
           echo "APP=$APP"
           rm -rf Payload && mkdir Payload
           cp -R "$APP" Payload/
