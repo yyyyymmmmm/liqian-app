@@ -151,6 +151,9 @@ struct LedgerDetailView: View {
                                 .foregroundStyle(Palette.stone)
                                 .lineLimit(1)
                         }
+                    }
+                }
+            }
 
             // 电子礼谱入口（v4.2 活礼谱）：护城河入口要可见（v2.3 教训），
             // 放头部正下方独立一行，不藏进「更多」菜单
