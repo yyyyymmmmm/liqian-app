@@ -399,16 +399,16 @@ struct ChartsView: View {
             Chart(monthBuckets) { bucket in
                 BarMark(
                     x: .value("月份", bucket.label),
-                    y: .value("收礼", Double(bucket.received) * entrance / 100.0),
-                    position: .by(.value("方向", "收礼"))
+                    y: .value("收礼", Double(bucket.received) * entrance / 100.0)
                 )
+                .position(by: .value("方向", "收礼"))
                 .foregroundStyle(by: .value("方向", "收礼"))
                 .cornerRadius(2)
                 BarMark(
                     x: .value("月份", bucket.label),
-                    y: .value("随礼", Double(bucket.given) * entrance / 100.0),
-                    position: .by(.value("方向", "随礼"))
+                    y: .value("随礼", Double(bucket.given) * entrance / 100.0)
                 )
+                .position(by: .value("方向", "随礼"))
                 .foregroundStyle(by: .value("方向", "随礼"))
                 .cornerRadius(2)
                 if bucket.total > 0 {
