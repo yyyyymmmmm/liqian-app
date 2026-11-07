@@ -10,24 +10,24 @@ enum AppLockAuthenticator {
     /// 正在验证中标记，避免冷启动 onAppear 与回前台逻辑叠加弹两次窗
     private static var inFlight = false
 
-    static func authenticate(completion: @escaping (Bool) -> Void) {
-        guard !inFlight else { return }
+    static func authenticate() async -> Bool {
+        // 已有一次验证在弹系统窗时，第二次调用直接返回未解锁，
+        // 调用方保持锁定态即可（第一次的结果会负责解锁）
+        guard !inFlight else { return false }
         inFlight = true
+        defer { inFlight = false }
         let context = LAContext()
         var nsError: NSError?
-        let policy: LAPolicy = .deviceOwnerAuthentication
-        guard context.canEvaluatePolicy(policy, error: &nsError) else {
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &nsError) else {
             // 设备连锁屏密码都没设：没有任何凭据可校验，
             // 直接放行避免把用户锁死在自己数据外面
-            inFlight = false
-            completion(true)
-            return
+            return true
         }
-        context.evaluatePolicy(policy, localizedReason: "解锁礼钱账本") { success, _ in
-            Task { @MainActor in
-                inFlight = false
-                completion(success)
-            }
+        do {
+            return try await context.evaluatePolicy(
+                .deviceOwnerAuthentication, localizedReason: "解锁礼钱账本")
+        } catch {
+            return false
         }
     }
 }

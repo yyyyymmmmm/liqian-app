@@ -77,8 +77,8 @@ struct ContentView: View {
     }
 
     private func authenticate() {
-        AppLockAuthenticator.authenticate { ok in
-            if ok { isLocked = false }
+        Task {
+            if await AppLockAuthenticator.authenticate() { isLocked = false }
         }
     }
 }
