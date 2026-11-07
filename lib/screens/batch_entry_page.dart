@@ -38,12 +38,14 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
       final amtText = _rows[i].amount.text.trim();
       if (name.isEmpty && amtText.isEmpty) continue; // 空行跳过
       if (name.isEmpty || amtText.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('第 ${i + 1} 行没填完整，姓名和金额都要有')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('第 ${i + 1} 行没填完整，姓名和金额都要有')));
         return;
       }
       final v = double.tryParse(amtText);
       if (v == null || v <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('第 ${i + 1} 行金额不对')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('第 ${i + 1} 行金额不对')));
         return;
       }
       out.add(GiftRecord(
@@ -56,7 +58,8 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
       ));
     }
     if (out.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('一行都没填，先填几笔再保存')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('一行都没填，先填几笔再保存')));
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
@@ -71,9 +74,10 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
     final isBai = store.ledgerById(widget.ledgerId)?.type == '白事';
     return Scaffold(
       backgroundColor: isBai ? kBaiPaper : null,
-      appBar: AppBar(backgroundColor: isBai ? kBaiPaper : null, title: const Text('批量补录')),
+      extendBodyBehindAppBar: true,
+      appBar: glassAppBar(title: '批量补录', bai: isBai),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, glassTopPad(context), 16, 32),
         children: [
           SegmentedButton<String>(
             segments: const [
@@ -84,20 +88,23 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
             onSelectionChanged: (s) => setState(() => _direction = s.first),
           ),
           const SizedBox(height: 8),
-          const Text('照着旧礼簿一行行填就行。关系先按「朋友」、方式先按「现金」记，日期是今天，记完点开单笔可以再改。', style: TextStyle(fontSize: 12.5, color: kStone, height: 1.5)),
+          const Text('照着旧礼簿一行行填就行。关系先按「朋友」、方式先按「现金」记，日期是今天，记完点开单笔可以再改。',
+              style: TextStyle(fontSize: 12.5, color: kStone, height: 1.5)),
           const SizedBox(height: 16),
           ..._rows.asMap().entries.map((e) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(children: [
                   SizedBox(
                     width: 28,
-                    child: Text('${e.key + 1}', style: const TextStyle(color: kStone)),
+                    child: Text('${e.key + 1}',
+                        style: const TextStyle(color: kStone)),
                   ),
                   Expanded(
                     flex: 3,
                     child: TextField(
                       controller: e.value.person,
-                      decoration: const InputDecoration(hintText: '姓名 / 称呼', isDense: true),
+                      decoration: const InputDecoration(
+                          hintText: '姓名 / 称呼', isDense: true),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -105,8 +112,10 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
                     flex: 2,
                     child: TextField(
                       controller: e.value.amount,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(hintText: '金额（元）', isDense: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                          hintText: '金额（元）', isDense: true),
                     ),
                   ),
                   IconButton(
@@ -129,7 +138,9 @@ class _BatchEntryPageState extends State<BatchEntryPage> {
           ),
           const SizedBox(height: 24),
           FilledButton(
-            style: isBai ? FilledButton.styleFrom(backgroundColor: kBaiPrimary) : null,
+            style: isBai
+                ? FilledButton.styleFrom(backgroundColor: kBaiPrimary)
+                : null,
             onPressed: _save,
             child: const Text('保存全部'),
           ),

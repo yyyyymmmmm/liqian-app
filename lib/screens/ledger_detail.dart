@@ -16,54 +16,85 @@ class LedgerDetail extends StatelessWidget {
       animation: store,
       builder: (context, _) {
         final ledger = store.ledgerById(ledgerId);
-        if (ledger == null) return const Scaffold(body: Center(child: Text('礼簿不存在')));
+        if (ledger == null)
+          return const Scaffold(body: Center(child: Text('礼簿不存在')));
         final rs = store.recordsOfLedger(ledgerId);
         final recv = store.sumCents(rs.where((r) => r.direction == '收礼'));
-        final given = store.sumCents(rs.where((r) => r.direction == '随礼' && !r.isPendingSend));
+        final given = store
+            .sumCents(rs.where((r) => r.direction == '随礼' && !r.isPendingSend));
         final isBai = ledger.type == '白事';
         final ink = isBai ? kBaiInk : kInk;
         final accent = isBai ? kBaiPrimary : kCinnabar;
         return Scaffold(
           backgroundColor: isBai ? kBaiPaper : null,
-          appBar: AppBar(
-            backgroundColor: isBai ? kBaiPaper : null,
-            title: Text(ledger.title),
+          extendBodyBehindAppBar: true,
+          appBar: glassAppBar(
+            title: ledger.title,
+            bai: isBai,
             actions: [
               IconButton(
                 icon: const Icon(Icons.playlist_add),
                 tooltip: '批量补录',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BatchEntryPage(ledgerId: ledgerId))),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => BatchEntryPage(ledgerId: ledgerId))),
               ),
-              IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LedgerForm(existing: ledger)))),
+              IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => LedgerForm(existing: ledger)))),
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
             backgroundColor: isBai ? kBaiPrimary : null,
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordForm(ledgerId: ledgerId))),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => RecordForm(ledgerId: ledgerId))),
             icon: const Icon(Icons.add),
             label: const Text('记一笔'),
           ),
           body: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(16, glassTopPad(context), 16, 96),
             children: [
               Container(
                 decoration: flatCard(bai: isBai),
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                  _s('收礼', fmtMoney(recv), rs.where((r) => r.direction == '收礼').length, accent),
-                  _s('随礼', fmtMoney(given), rs.where((r) => r.direction == '随礼' && !r.isPendingSend).length, ink),
-                  _s('人数', '${rs.map((r) => r.person).toSet().length}', null, ink),
-                ]),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _s('收礼', fmtMoney(recv),
+                          rs.where((r) => r.direction == '收礼').length, accent),
+                      _s(
+                          '随礼',
+                          fmtMoney(given),
+                          rs
+                              .where((r) =>
+                                  r.direction == '随礼' && !r.isPendingSend)
+                              .length,
+                          ink),
+                      _s('人数', '${rs.map((r) => r.person).toSet().length}',
+                          null, ink),
+                    ]),
               ),
               const SizedBox(height: 12),
               if (rs.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 40),
                   child: Column(children: [
-                    Text('这本礼簿还空着，记第一笔吧。', style: TextStyle(color: isBai ? kBaiPrimary : kStone, fontSize: 15)),
+                    Text('这本礼簿还空着，记第一笔吧。',
+                        style: TextStyle(
+                            color: isBai ? kBaiPrimary : kStone, fontSize: 15)),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordForm(ledgerId: ledgerId))),
+                      onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => RecordForm(ledgerId: ledgerId))),
                       child: Text('记一笔', style: TextStyle(color: accent)),
                     ),
                   ]),
@@ -73,6 +104,8 @@ class LedgerDetail extends StatelessWidget {
                     child: Container(
                       decoration: flatCard(bai: isBai),
                       child: ListTile(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(kRadiusCard)),
                         title: Row(children: [
                           Text(r.person, style: TextStyle(color: ink)),
                           const SizedBox(width: 8),
@@ -88,9 +121,15 @@ class LedgerDetail extends StatelessWidget {
                         ),
                         trailing: Text(
                           fmtMoney(r.amountCents),
-                          style: moneyStyle(fontSize: 16, color: r.direction == '收礼' ? accent : ink),
+                          style: moneyStyle(
+                              fontSize: 16,
+                              color: r.direction == '收礼' ? accent : ink),
                         ),
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordForm(ledgerId: ledgerId, existing: r))),
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => RecordForm(
+                                    ledgerId: ledgerId, existing: r))),
                       ),
                     ),
                   )),
@@ -101,9 +140,11 @@ class LedgerDetail extends StatelessWidget {
     );
   }
 
-  Widget _s(String label, String value, int? count, Color c) => Column(children: [
+  Widget _s(String label, String value, int? count, Color c) =>
+      Column(children: [
         Text(value, style: serifStyle(fontSize: 18, color: c)),
         const SizedBox(height: 2),
-        Text(count == null ? label : '$label · $count 笔', style: const TextStyle(fontSize: 12, color: kStone)),
+        Text(count == null ? label : '$label · $count 笔',
+            style: const TextStyle(fontSize: 12, color: kStone)),
       ]);
 }
