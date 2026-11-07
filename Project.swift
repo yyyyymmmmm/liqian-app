@@ -45,6 +45,8 @@ let project = Project(
                 "ITSAppUsesNonExemptEncryption": false,
                 "UILaunchScreen": ["UIColorName": "LaunchBackground"],
                 "NSFaceIDUsageDescription": "用 Face ID 保护你的人情账本不被旁人看到",
+                "NSSpeechRecognitionUsageDescription": "一句话记账需要把你说的话转成文字",
+                "NSMicrophoneUsageDescription": "一句话记账需要用麦克风听你说话",
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],
