@@ -64,6 +64,11 @@ enum AIReadiness {
     }
 }
 
+extension Notification.Name {
+    /// AI 引导 alert 的「去设置」动作：ContentView 收到后切到「我的」Tab
+    static let liqianOpenAISettings = Notification.Name("liqianOpenAISettings")
+}
+
 enum AIAccess {
     /// aiEnabled 与 RecordForm/AISettings 里的 @AppStorage 用同一个键
     static let enabledKey = "aiEnabled"

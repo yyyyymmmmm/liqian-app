@@ -9,6 +9,21 @@ struct AISettingsView: View {
     @State private var keyInput = ""
     @State private var savedLast4: String?
     @State private var message: String?
+    /// Key 验证三态（F6 定版）：保存不等于可用，探活过了才算数
+    @State private var verifyState: VerifyState = .unverified
+
+    enum VerifyState {
+        case unverified, verifying, verified, failed
+
+        var text: String {
+            switch self {
+            case .unverified: return "未验证"
+            case .verifying: return "验证中…"
+            case .verified: return "已验证"
+            case .failed: return "验证未通过"
+            }
+        }
+    }
 
     var body: some View {
         Form {
@@ -18,6 +33,7 @@ struct AISettingsView: View {
                         Text("已保存（尾号 \(savedLast4)）")
                             .foregroundStyle(Palette.stone)
                     }
+                    LabeledContent("验证状态", value: verifyState.text)
                 }
                 SecureField("DeepSeek API Key", text: $keyInput, prompt: Text("sk-…"))
                     .textInputAutocapitalization(.never)
@@ -34,6 +50,9 @@ struct AISettingsView: View {
                         KeychainStore.delete()
                         savedLast4 = nil
                         keyInput = ""
+                        // 开关与真实状态对齐：没 Key 时开关必须同步关（F6①）
+                        aiEnabled = false
+                        verifyState = .unverified
                         message = "API Key 已从钥匙串删除，AI 功能停用。"
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
@@ -46,7 +65,7 @@ struct AISettingsView: View {
             } header: {
                 Text("API Key")
             } footer: {
-                Text("在 platform.deepseek.com 申请 API Key，费用计入你的 DeepSeek 账户。")
+                Text("在 platform.deepseek.com 申请 API Key，费用计入你的 DeepSeek 账户。保存时会自动验证一次 Key（一次极小的接口调用）。")
             }
 
             Section {
@@ -54,7 +73,7 @@ struct AISettingsView: View {
                     .tint(Palette.primary)
                     .frame(minHeight: LiqianMetrics.minTapTarget)
             } footer: {
-                Text("关闭后，AI 功能将不可用。")
+                Text("开关打开且 Key 验证通过，AI 功能才可用。")
             }
 
             Section {
@@ -66,8 +85,6 @@ struct AISettingsView: View {
                 Text("说明")
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.paper.ignoresSafeArea())
         .navigationTitle("AI 智能助手")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refreshSavedHint() }
@@ -84,6 +101,24 @@ struct AISettingsView: View {
         keyInput = ""
         aiEnabled = true // 填了 key 保存时自动打开开关，少一步操作
         refreshSavedHint()
-        message = "已保存，AI 功能一并打开了。"
+        // 保存后自动探活一次：最小请求，只确认 Key 真的可用（F6②）
+        verifyState = .verifying
+        message = "已保存，正在验证…"
+        Task {
+            do {
+                _ = try await DeepSeekClient().chatJSON(
+                    system: "仅回复 OK",
+                    user: "OK"
+                )
+                verifyState = .verified
+                message = "Key 已保存并验证通过，AI 功能一并打开了。"
+            } catch let error as DeepSeekError {
+                verifyState = .failed
+                message = (error.errorDescription ?? "验证未通过。") + " Key 已保存，但验证未通过。"
+            } catch {
+                verifyState = .failed
+                message = "网络连接失败，请检查网络后重试。Key 已保存，但验证未通过。"
+            }
+        }
     }
 }

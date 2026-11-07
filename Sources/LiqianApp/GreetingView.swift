@@ -110,8 +110,7 @@ struct GreetingView: View {
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
+
             .navigationTitle("生成贺词")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -120,7 +119,10 @@ struct GreetingView: View {
                 }
             }
             .alert("AI 还没准备好", isPresented: $showGuide) {
-                Button("好") {}
+                Button("去设置") {
+                    NotificationCenter.default.post(name: .liqianOpenAISettings, object: nil)
+                }
+                Button("好", role: .cancel) {}
             } message: {
                 Text(AIAccess.readiness().guideMessage)
             }

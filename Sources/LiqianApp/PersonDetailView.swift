@@ -67,21 +67,30 @@ struct PersonDetailView: View {
                     suggestionCard(suggestion)
                 }
                 if personRecords.isEmpty {
-                    Text("还没有往来记录")
-                        .font(.body)
-                        .foregroundStyle(Palette.stone)
-                        .padding(.top, LiqianMetrics.spacingXL)
+                    ContentUnavailableView {
+                        Label("还没有往来记录", systemImage: "person.crop.circle")
+                    } description: {
+                        Text("与这位亲友的往来会记在这里。")
+                    }
+                    .padding(.top, LiqianMetrics.spacingXL)
                 } else {
-                    LazyVStack(spacing: LiqianMetrics.spacingS) {
-                        ForEach(personRecords) { r in
+                    // 时间线＝单张分组容器：一张卡内 hairline 分隔的行列，不再每笔一张浮卡
+                    VStack(spacing: 0) {
+                        ForEach(Array(personRecords.enumerated()), id: \.element.id) { idx, r in
+                            if idx > 0 {
+                                Divider()
+                                    .overlay(Palette.hairline)
+                                    .padding(.leading, LiqianMetrics.spacingM)
+                            }
                             timelineRow(r)
                         }
                     }
+                    .liqianCardSurface(padding: 0)
                 }
             }
             .padding(LiqianMetrics.spacingM)
         }
-        .background(Palette.paper.ignoresSafeArea())
+        .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -138,18 +147,13 @@ struct PersonDetailView: View {
                     .padding(.top, LiqianMetrics.spacingXS)
             }
         }
-        .padding(LiqianMetrics.cardPadding)
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                .stroke(Palette.hairline, lineWidth: 1)
-        )
+        .liqianCardSurface()
     }
 
     private func suggestionCard(_ s: ReturnGiftSuggestion) -> some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("回礼参考")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             Text(suggestionText(s))
                 .font(.subheadline)
@@ -157,13 +161,7 @@ struct PersonDetailView: View {
                 .lineSpacing(5)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(LiqianMetrics.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                .stroke(Palette.hairline, lineWidth: 1)
-        )
+        .liqianCardSurface()
     }
 
     private func suggestionText(_ s: ReturnGiftSuggestion) -> String {
@@ -179,7 +177,7 @@ struct PersonDetailView: View {
     private func headerStat(label: String, value: Int) -> some View {
         VStack(spacing: LiqianMetrics.spacingXS) {
             Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianSerif(.title3))
+                .font(.liqianMoney(.title3))
                 .foregroundStyle(Palette.ink)
             Text(label)
                 .font(.footnote)
@@ -221,18 +219,11 @@ struct PersonDetailView: View {
                     .font(.liqianMoney(.title3))
                     .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
             }
-            .padding(LiqianMetrics.spacingSM)
-            .background(
-                isBai ? Palette.baiCard : Palette.card,
-                in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+            .padding(.horizontal, LiqianMetrics.spacingM)
+            .padding(.vertical, LiqianMetrics.spacingSM)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(ScaleOnPressButtonStyle())
+        .buttonStyle(.plain)
     }
 
     private func subtitle(of r: GiftRecord) -> String {

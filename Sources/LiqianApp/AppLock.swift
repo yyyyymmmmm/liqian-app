@@ -38,7 +38,7 @@ struct LockScreenView: View {
 
     var body: some View {
         ZStack {
-            Palette.paper.ignoresSafeArea()
+            Palette.groupedBackground.ignoresSafeArea()
             VStack(spacing: LiqianMetrics.spacingL) {
                 coverMark
                 Text("礼钱账本已锁定")
@@ -60,15 +60,7 @@ struct LockScreenView: View {
     private var coverMark: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
-                .fill(Palette.primary)
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [.white.opacity(0.28), .white.opacity(0)],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                )
+                .fill(Palette.primaryFill)
             Text("礼\n簿")
                 .font(.liqianSerifFixed(size: 24))
                 .foregroundStyle(.white)

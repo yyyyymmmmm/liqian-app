@@ -14,7 +14,8 @@ public struct DirectionTag: View {
 
     public var body: some View {
         let isReceived = direction == LiqianConstants.received
-        let bg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.baiPrimary
+        // 填充一律走 Fill 令牌（白字对比达 AA）；primary/baiPrimary 本体只作文字/图标强调
+        let bg = isReceived ? (bai ? Palette.baiPrimaryFill : Palette.primaryFill) : Palette.baiPrimaryFill
         Text(direction)
             .font(.caption2.weight(.medium))
             .foregroundStyle(.white)
@@ -134,7 +135,7 @@ public struct LedgerCoverCard: View {
     /// 事由小签（PRO-AUDIT #6）：30×64 朱砂窄签、竖排事由、无高光拟物；
     /// 满块封面移交礼簿详情页头部（LedgerDetailView 自有封面块）
     private var coverBlock: some View {
-        let base = isBai ? Palette.baiPrimary : Palette.primary
+        let base = isBai ? Palette.baiPrimaryFill : Palette.primaryFill
         return ZStack {
             RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
                 .fill(base)
@@ -145,7 +146,7 @@ public struct LedgerCoverCard: View {
                     .multilineTextAlignment(.center)
                     .lineSpacing(1)
                 Circle()
-                    .fill(isBai ? Palette.baiLine : Palette.paper)
+                    .fill(.white)
                     .frame(width: 5, height: 5)
             }
         }
@@ -187,7 +188,7 @@ public struct SealStampView: View {
     }
 
     public var body: some View {
-        let bg = bai ? Palette.baiPrimary : Palette.primary
+        let bg = bai ? Palette.baiPrimaryFill : Palette.primaryFill
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.16)
                 .fill(bg)

@@ -7,15 +7,40 @@ import LiqianCore
 /// - 同名并列：王建国在婚礼簿里有两笔（同人同簿不合并，与正式口径一致）；
 /// - 跨簿差额：赵国强、马小东在两本簿都有往来，往来页能看到汇总与差额；
 /// - 待送出：王建国一笔待送出，演示备礼清单与「未回」自动规则。
+///
+/// 身份口径（PRO-AUDIT-2 诊断三定版）：示例身份＝生成时记录的账本 ID 集合
+/// （UserDefaults 键 sampleLedgerIDs，不进备份），hasSamples/清除/防重/统计隔离
+/// 全部按「ID 集合 ∩ 现存账本」判定——改名不再脱钩。旧版按标题前缀生成的示例
+/// 没有 ID 记录，sampleIDs(ledgers:) 一并认领其 ID，保证旧示例同样可清、可隔离。
 enum SampleData {
-    static func hasSamples(ledgers: [Ledger]) -> Bool {
-        ledgers.contains { $0.title.hasPrefix("示例") }
+    private static let idsKey = "sampleLedgerIDs"
+
+    /// UserDefaults 里存的示例账本 ID 集合（账本删掉后残留 ID 无害，求交时自然失效）
+    private static var storedIDs: Set<UUID> {
+        let raw = UserDefaults.standard.stringArray(forKey: idsKey) ?? []
+        return Set(raw.compactMap { UUID(uuidString: $0) })
     }
 
-    /// 已生成过就不再重复生成
-    static func generate(into context: ModelContext) {
+    private static func storeIDs(_ ids: Set<UUID>) {
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: idsKey)
+    }
+
+    /// 当前实际存在的示例账本 ID：存储集合 ∩ 现存账本 ∪ 旧版标题前缀认领
+    static func sampleIDs(ledgers: [Ledger]) -> Set<UUID> {
+        var ids = storedIDs.intersection(Set(ledgers.map(\.id)))
+        ids.formUnion(ledgers.filter { $0.title.hasPrefix("示例") }.map(\.id))
+        return ids
+    }
+
+    static func hasSamples(ledgers: [Ledger]) -> Bool {
+        !sampleIDs(ledgers: ledgers).isEmpty
+    }
+
+    /// 已生成过就不再重复生成。返回 true 表示这次真的生成了（调用方据此给回执）
+    @discardableResult
+    static func generate(into context: ModelContext) -> Bool {
         let existing = (try? context.fetch(FetchDescriptor<Ledger>())) ?? []
-        guard !hasSamples(ledgers: existing) else { return }
+        guard !hasSamples(ledgers: existing) else { return false }
 
         let weddingDate = dateString(daysFromToday: -12)
         let wedding = Ledger(
@@ -114,19 +139,22 @@ enum SampleData {
         )
 
         try? context.save()
+        storeIDs(storedIDs.union([wedding.id, moving.id]))
+        return true
     }
 
-    /// 清掉所有「示例」开头的礼簿及其记录（真实数据不受影响）
+    /// 按 ID 清掉示例礼簿及其记录（改过名的也照清；真实数据不受影响）
     static func clearSamples(ledgers: [Ledger], records: [GiftRecord], in context: ModelContext) {
-        let sampleIDs = Set(ledgers.filter { $0.title.hasPrefix("示例") }.map(\.id))
-        guard !sampleIDs.isEmpty else { return }
-        for r in records where sampleIDs.contains(r.ledgerID) {
+        let ids = sampleIDs(ledgers: ledgers)
+        guard !ids.isEmpty else { return }
+        for r in records where ids.contains(r.ledgerID) {
             context.delete(r)
         }
-        for l in ledgers where sampleIDs.contains(l.id) {
+        for l in ledgers where ids.contains(l.id) {
             context.delete(l)
         }
         try? context.save()
+        storeIDs(storedIDs.subtracting(ids))
     }
 
     private static func dateString(daysFromToday offset: Int) -> String {

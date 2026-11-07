@@ -3,9 +3,12 @@ import SwiftUI
 import LiqianCore
 import LiqianDesign
 
-/// 最近删除：删掉的礼簿/记录在这里保留 30 天，左滑可恢复或彻底删除。
+/// 最近删除：删掉的礼簿/记录在这里保留 30 天。
+/// 恢复入口可见化（PRO-AUDIT-2 F8）：左滑「恢复」＋长按菜单＋页脚说明三路，
+/// 不再只靠右滑手势记忆；列表形态与其余页归一为 insetGrouped 原生行。
 struct TrashView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @State private var items: [TrashItem] = []
     @State private var confirmClearAll = false
     @State private var restoreTrigger = 0
@@ -20,32 +23,50 @@ struct TrashView: View {
                 )
             } else {
                 List {
-                    ForEach(items) { item in
-                        row(item)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    TrashStore.purge(id: item.id)
-                                    reload()
-                                } label: {
-                                    Label("彻底删除", systemImage: "trash.slash")
-                                }
-                                Button {
-                                    if TrashStore.restore(id: item.id, into: modelContext) {
-                                        restoreTrigger += 1
+                    Section {
+                        ForEach(items) { item in
+                            row(item)
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        restore(item)
+                                    } label: {
+                                        Label("恢复", systemImage: "arrow.uturn.backward")
                                     }
-                                    reload()
-                                } label: {
-                                    Label("恢复", systemImage: "arrow.uturn.backward")
+                                    .tint(Palette.primaryFill)
                                 }
-                                .tint(Palette.primary)
-                            }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        purge(item)
+                                    } label: {
+                                        Label("彻底删除", systemImage: "trash.slash")
+                                    }
+                                    Button {
+                                        restore(item)
+                                    } label: {
+                                        Label("恢复", systemImage: "arrow.uturn.backward")
+                                    }
+                                    .tint(Palette.primary)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        restore(item)
+                                    } label: {
+                                        Label("恢复", systemImage: "arrow.uturn.backward")
+                                    }
+                                    Button(role: .destructive) {
+                                        purge(item)
+                                    } label: {
+                                        Label("彻底删除", systemImage: "trash.slash")
+                                    }
+                                }
+                        }
+                    } footer: {
+                        Text("左滑或长按一行可恢复或彻底删除。")
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
         }
-        .background(Palette.paper.ignoresSafeArea())
         .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -74,6 +95,24 @@ struct TrashView: View {
         items = TrashStore.list()
     }
 
+    private func restore(_ item: TrashItem) {
+        if TrashStore.restore(id: item.id, into: modelContext) {
+            restoreTrigger += 1
+        }
+        reload()
+    }
+
+    private func purge(_ item: TrashItem) {
+        TrashStore.purge(id: item.id)
+        reload()
+    }
+
+    /// 记录所属礼簿是否白事（方向签用色，F9）：按快照的 ledgerID 反查现存礼簿
+    private func isBai(item: TrashItem) -> Bool {
+        guard let lid = item.ledgerID else { return false }
+        return ledgers.first { $0.id.uuidString == lid }?.isBai ?? false
+    }
+
     private func row(_ item: TrashItem) -> some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             switch item.kind {
@@ -82,7 +121,7 @@ struct TrashView: View {
                     HStack(spacing: LiqianMetrics.spacingS) {
                         Text(r.person)
                             .foregroundStyle(Palette.ink)
-                        DirectionTag(direction: r.direction, bai: false)
+                        DirectionTag(direction: r.direction, bai: isBai(item: item))
                         Spacer()
                         Text(LedgerMath.fmtMoney(cents: r.amountCents))
                             .font(.liqianMoney(.title3))
@@ -112,8 +151,7 @@ struct TrashView: View {
                 .foregroundStyle(Palette.stone)
         }
         .padding(.vertical, LiqianMetrics.spacingXS)
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
+        .contentShape(Rectangle())
     }
 
     private static func dateText(_ date: Date) -> String {

@@ -11,15 +11,24 @@ struct LedgersView: View {
     @State private var showNewLedger = false
     @State private var personRoute: PeopleView.NameRoute?
     @State private var ledgerRoute: Ledger?
+    @State private var showSampleDone = false
     @Namespace private var zoomSpace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// 统计隔离（PRO-AUDIT-2 第 2 项）：示例账本的记录不计入首页任何汇总/速览
+    private var sampleIDs: Set<UUID> { SampleData.sampleIDs(ledgers: ledgers) }
+
+    private var statRecords: [GiftRecord] {
+        let ids = sampleIDs
+        return records.filter { !ids.contains($0.ledgerID) }
+    }
+
     private var totalReceived: Int {
-        records.filter { $0.direction == LiqianConstants.received }.reduce(0) { $0 + $1.amountCents }
+        statRecords.filter { $0.direction == LiqianConstants.received }.reduce(0) { $0 + $1.amountCents }
     }
 
     private var totalGiven: Int {
-        records
+        statRecords
             .filter { $0.direction == LiqianConstants.given && !$0.isPendingSend }
             .reduce(0) { $0 + $1.amountCents }
     }
@@ -27,7 +36,7 @@ struct LedgersView: View {
     // MARK: 首页即报表（v1.1）
 
     private var snapshots: [EntrySnapshot] {
-        AppSupport.snapshots(records: records, ledgers: ledgers)
+        AppSupport.snapshots(records: statRecords, ledgers: ledgers)
     }
 
     private var pendingPeople: [PersonSummary] {
@@ -42,9 +51,9 @@ struct LedgersView: View {
         LedgerMath.yearSummary(from: snapshots, year: LiqianDate.currentYearString())
     }
 
-    /// 最近往来：按日期倒序 5 条（同日保持 @Query 原序的相对顺序）
+    /// 最近往来：按日期倒序 5 条（同日保持 @Query 原序的相对顺序；示例记录不入速览）
     private var recentRecords: [GiftRecord] {
-        Array(records.sorted { $0.date > $1.date }.prefix(5))
+        Array(statRecords.sorted { $0.date > $1.date }.prefix(5))
     }
 
     private func ledger(of r: GiftRecord) -> Ledger? {
@@ -55,7 +64,10 @@ struct LedgersView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
-                    summaryCard
+                    // 0 数据时隐藏汇总卡：只留空状态，不重复宣告「什么都没有」（S7）
+                    if !statRecords.isEmpty {
+                        summaryCard
+                    }
                     if !pendingPeople.isEmpty {
                         pendingCard
                     }
@@ -90,7 +102,7 @@ struct LedgersView: View {
                 }
                 .padding(LiqianMetrics.spacingM)
             }
-            .background(Palette.paper.ignoresSafeArea())
+            .background(Palette.groupedBackground.ignoresSafeArea())
             .navigationTitle("礼簿")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -110,6 +122,11 @@ struct LedgersView: View {
             }
             .sheet(isPresented: $showNewLedger) {
                 LedgerFormView()
+            }
+            .alert("示例数据已生成", isPresented: $showSampleDone) {
+                Button("好") {}
+            } message: {
+                Text("「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
             }
         }
     }
@@ -221,6 +238,7 @@ struct LedgersView: View {
             }
             .chartYAxis(.hidden)
             .frame(height: 120)
+            .accessibilityLabel("\(LiqianDate.currentYearString()) 年往来：收礼 \(LedgerMath.fmtMoney(cents: thisYearSummary.recv))，随礼 \(LedgerMath.fmtMoney(cents: thisYearSummary.given))")
         }
         .liqianCardSurface()
     }
@@ -268,13 +286,17 @@ struct LedgersView: View {
         } description: {
             Text("从最近一场事开始记。")
         } actions: {
+            // 空状态主行动用 prominent 样式（HIG/ContentUnavailableView 惯例，S6）
             Button("新建第一本礼簿") {
                 showNewLedger = true
             }
-            .foregroundStyle(Palette.primary)
+            .buttonStyle(.borderedProminent)
+            .tint(Palette.primaryFill)
             .frame(minHeight: LiqianMetrics.minTapTarget)
             Button("生成示例数据") {
-                SampleData.generate(into: modelContext)
+                if SampleData.generate(into: modelContext) {
+                    showSampleDone = true
+                }
             }
             .foregroundStyle(Palette.stone)
             .frame(minHeight: LiqianMetrics.minTapTarget)

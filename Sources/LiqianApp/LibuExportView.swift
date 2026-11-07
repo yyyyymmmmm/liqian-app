@@ -88,8 +88,6 @@ struct LibuExportView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
             .navigationTitle("导出礼谱")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -147,7 +145,7 @@ struct LibuExportView: View {
             if let url {
                 pdfURL = url
             } else {
-                errorText = "礼谱没能生成出来，再试一次。"
+                errorText = "礼谱生成失败，请重试。"
             }
         }
     }

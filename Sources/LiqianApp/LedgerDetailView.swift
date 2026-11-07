@@ -56,16 +56,8 @@ struct LedgerDetailView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-                    Text("\(LiqianDate.displayString(for: ledger.date)) · \(LiqianDate.lunarString(for: ledger.date))")
-                        .font(.footnote)
-                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
-                    statsCard
-                }
+                headerRow
             }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
 
             Section {
                 if records.isEmpty {
@@ -73,9 +65,6 @@ struct LedgerDetailView: View {
                 } else {
                     ForEach(records) { record in
                         recordRow(record)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     recordToDelete = record
@@ -101,9 +90,7 @@ struct LedgerDetailView: View {
                 }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
+        .listStyle(.insetGrouped)
         .navigationTitle(ledger.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -206,60 +193,85 @@ struct LedgerDetailView: View {
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
 
-    private var statsCard: some View {
-        HStack {
-            stat(label: "收礼", value: LedgerMath.fmtMoney(cents: received), count: receivedCount, color: isBai ? Palette.baiInk : Palette.ink, numericValue: received)
-            Spacer()
-            stat(label: "随礼", value: LedgerMath.fmtMoney(cents: given), count: givenCount, color: isBai ? Palette.baiInk : Palette.ink, numericValue: given)
-            Spacer()
-            VStack(spacing: LiqianMetrics.spacingXS) {
-                Text("\(peopleCount)")
-                    .font(.liqianSerif(.title3))
-                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
-                    .contentTransition(.numericText())
-                Text("人数")
-                    .font(.footnote)
-                    .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+    /// 头部行（PRO-AUDIT-2 第 6 项）：左＝封面满块、右＝标题/日期/三列统计，
+    /// 置于首个 Section 内。与列表小签构成「小签在列表、满块在详情」的单一 moment 规则。
+    private var headerRow: some View {
+        HStack(spacing: LiqianMetrics.spacingSM) {
+            coverFullBlock
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                Text(ledger.title)
+                    .font(.headline)
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                HStack(spacing: LiqianMetrics.spacingXS) {
+                    Text(LiqianDate.displayString(for: ledger.date))
+                    Text(LiqianDate.lunarString(for: ledger.date))
+                }
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                HStack(spacing: LiqianMetrics.spacingM) {
+                    headerStat(label: "收礼", value: received, count: receivedCount)
+                    headerStat(label: "随礼", value: given, count: givenCount)
+                    VStack(spacing: LiqianMetrics.spacingXS) {
+                        Text("\(peopleCount)")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
+                        Text("人数")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
             }
         }
-        .padding(.vertical, LiqianMetrics.spacingSM)
-        .padding(.horizontal, LiqianMetrics.spacingSM)
-        .background(
-            isBai ? Palette.baiCard : Palette.card,
-            in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                .stroke(isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-        )
     }
 
-    private func stat(label: String, value: String, count: Int, color: Color, numericValue: Int) -> some View {
+    private func headerStat(label: String, value: Int, count: Int) -> some View {
         VStack(spacing: LiqianMetrics.spacingXS) {
-            Text(value)
-                .font(.liqianSerif(.title3))
-                .foregroundStyle(color)
+            Text(LedgerMath.fmtMoney(cents: value))
+                .font(.liqianMoney(.title3))
+                .foregroundStyle(Palette.ink)
                 .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .snappy, value: numericValue)
+                .animation(reduceMotion ? nil : .snappy, value: value)
             Text("\(label) · \(count) 笔")
                 .font(.footnote)
-                .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                .foregroundStyle(Palette.stone)
         }
+    }
+
+    /// 封面满块 56×92（全 App 唯一满块）：朱砂 Fill 满底、竖排事由衬线（白名单
+    /// moment）、印点、无高光。圆角 8 按同心公式：封面语境圆角 20 − 内边距 12 ＝ 8。
+    private var coverFullBlock: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isBai ? Palette.baiPrimaryFill : Palette.primaryFill)
+            VStack(spacing: LiqianMetrics.spacingS) {
+                Text(ledger.type.map { String($0) }.joined(separator: "\n"))
+                    .font(.liqianSerifFixed(size: 20))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+                Circle()
+                    .fill(.white)
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .frame(width: 56, height: 92)
     }
 
     private var emptyState: some View {
-        VStack(spacing: LiqianMetrics.spacingS) {
-            Text("还没有记录，记第一笔。")
-                .font(.body)
-                .foregroundStyle(isBai ? Palette.baiPrimary : Palette.stone)
+        ContentUnavailableView {
+            Label("还没有记录", systemImage: "list.bullet")
+        } description: {
+            Text("从第一笔开始记。")
+        } actions: {
             Button("记一笔") {
                 showRecordForm = true
             }
-            .foregroundStyle(isBai ? Palette.baiPrimary : Palette.primary)
-            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .buttonStyle(.borderedProminent)
+            .tint(isBai ? Palette.baiPrimaryFill : Palette.primaryFill)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 40)
+        .padding(.vertical, LiqianMetrics.spacingL)
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
     }
@@ -268,43 +280,39 @@ struct LedgerDetailView: View {
         Button {
             editingRecord = r
         } label: {
-            HStack(spacing: LiqianMetrics.spacingSM) {
+            HStack(alignment: .top, spacing: LiqianMetrics.spacingSM) {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     HStack(spacing: LiqianMetrics.spacingS) {
                         Text(r.person)
-                            .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                            .foregroundStyle(Palette.ink)
                         DirectionTag(direction: r.direction, bai: isBai)
                         if r.isPendingSend {
                             PendingTag(bai: isBai)
                         }
                     }
-                    Text(subtitle(of: r))
-                        .font(.footnote)
-                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    // 副行分列（PRO-AUDIT-2 §3.3）：关系·方式在左、日期在右，不再四段一串
+                    HStack(spacing: LiqianMetrics.spacingS) {
+                        Text("\(r.relation) · \(r.method)")
+                        Spacer()
+                        Text(LiqianDate.displayString(for: r.date))
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+                    if !r.note.isEmpty {
+                        Text(r.note)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 Text(LedgerMath.fmtMoney(cents: r.amountCents))
                     .font(.liqianMoney(.title3))
-                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                    .foregroundStyle(Palette.ink)
             }
-            .padding(LiqianMetrics.spacingSM)
-            .background(
-                isBai ? Palette.baiCard : Palette.card,
-                in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func subtitle(of r: GiftRecord) -> String {
-        var s = "\(r.relation) · \(r.method) · \(LiqianDate.displayString(for: r.date))"
-        if !r.note.isEmpty { s += " · \(r.note)" }
-        return s
     }
 
     private func deleteRecord(_ r: GiftRecord) {

@@ -4,10 +4,11 @@ import UniformTypeIdentifiers
 import LiqianCore
 import LiqianDesign
 
-/// 「我的」（v3 整合归档）：iOS 设置式结构——
-/// 顶部总览卡（全时段总收/总送/往来人数，墨色数字）+ 待回礼卡，
-/// 其余按「统计与报告 / 数据 / 隐私与安全 / 关于」分组收纳；
-/// 统计明细（年度/事由/排行/关系图）移入 StatsView，本页只留入口。
+/// 「我的」（PRO-AUDIT-2 §3.3 整页重写）：List(.insetGrouped) 原生 Section 与行——
+/// 总览＝首个 Section 的三列统计行；待回礼＝独立 Section（空时整组不渲染，
+/// 计算说明入 Section footer）；五组入口＝原生 NavigationLink/Button 行，
+/// 披露箭头由系统唯一提供（手绘 chevron 已全删，双箭头与 274pt 空白同根同除）。
+/// 统计明细在 StatsView，本页只留入口。全部汇总口径排除示例账本（第 2 项统计隔离）。
 struct MeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var records: [GiftRecord]
@@ -27,8 +28,23 @@ struct MeView: View {
     @AppStorage("privacyLock") private var privacyLock = false
     @AppStorage("hostName") private var hostName = ""
 
+    /// 当前存在的示例账本 ID（统计隔离与示例状态都按它判定）
+    private var sampleIDs: Set<UUID> { SampleData.sampleIDs(ledgers: ledgers) }
+
+    /// 汇总口径快照：示例账本的记录不计入（示例是演示数据，不是用户的账）
     private var snapshots: [EntrySnapshot] {
-        AppSupport.snapshots(records: records, ledgers: ledgers)
+        let ids = sampleIDs
+        return AppSupport.snapshots(
+            records: records.filter { !ids.contains($0.ledgerID) },
+            ledgers: ledgers
+        )
+    }
+
+    private var realLedgerCount: Int { ledgers.count - sampleIDs.count }
+
+    private var realRecordCount: Int {
+        let ids = sampleIDs
+        return records.filter { !ids.contains($0.ledgerID) }.count
     }
 
     /// 全时段总收（待送出不计，口径同 LedgerMath.yearSummary）
@@ -65,27 +81,168 @@ struct MeView: View {
     var body: some View {
         NavigationStack {
             List {
-                asCardRow(overviewCard)
-                asCardRow(pendingCard)
+                Section {
+                    HStack {
+                        overviewStat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived))
+                        Spacer()
+                        overviewStat(label: "累计随礼", value: LedgerMath.fmtMoney(cents: totalGiven))
+                        Spacer()
+                        overviewStat(label: "往来亲友", value: "\(peopleCount) 位")
+                    }
+                } footer: {
+                    Text("\(realLedgerCount) 本礼簿 · \(realRecordCount) 笔记录（待送出不计入收支）")
+                }
 
-                groupHeader("统计与报告")
-                asCardRow(statsGroupCard)
+                if !pendingPeople.isEmpty {
+                    Section {
+                        ForEach(pendingPeople) { p in
+                            Button {
+                                personRoute = PeopleView.NameRoute(name: p.name)
+                            } label: {
+                                HStack {
+                                    Text(p.name)
+                                        .foregroundStyle(Palette.ink)
+                                    Spacer()
+                                    // 待回礼是行动提示，保留朱砂（v3 纪律的明示例外）
+                                    Text(LedgerMath.fmtMoney(cents: p.pendingCents))
+                                        .font(.liqianMoney(.title3))
+                                        .foregroundStyle(Palette.primary)
+                                }
+                                .frame(minHeight: LiqianMetrics.minTapTarget)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } header: {
+                        Text("待回礼")
+                    } footer: {
+                        Text("按最近一笔收礼之后是否已送出自动计算，无需手动标记。")
+                    }
+                }
 
-                groupHeader("数据")
-                asCardRow(dataGroupCard)
+                Section {
+                    NavigationLink {
+                        StatsView()
+                    } label: {
+                        entryLabel(
+                            icon: "chart.bar.xaxis",
+                            title: "统计",
+                            subtitle: "年度、事由、往来排行与关系分布"
+                        )
+                    }
+                    NavigationLink {
+                        AnnualReportView()
+                    } label: {
+                        entryLabel(
+                            icon: "chart.bar.doc.horizontal",
+                            title: "人情年度报告",
+                            subtitle: "含往来第一位亲友的姓名与汇总，其余为年度汇总数据"
+                        )
+                    }
+                } header: {
+                    Text("统计与报告")
+                }
 
-                groupHeader("AI 智能助手")
-                asCardRow(aiGroupCard)
+                Section {
+                    csvEntryRow
+                    Button {
+                        exportDocument = JSONBackupDocument(
+                            data: LiqianBackup.makeBackup(ledgers: ledgers, records: records)
+                        )
+                        showExporter = true
+                    } label: {
+                        entryLabel(
+                            icon: "tray.and.arrow.up",
+                            title: "导出备份（JSON）",
+                            subtitle: "包含全部礼簿与记录，可用于换机恢复"
+                        )
+                    }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        entryLabel(
+                            icon: "tray.and.arrow.down",
+                            title: "从备份恢复",
+                            subtitle: "选一个备份文件，覆盖现在的数据"
+                        )
+                    }
+                    NavigationLink {
+                        TrashView()
+                    } label: {
+                        entryLabel(
+                            icon: "trash",
+                            title: "最近删除",
+                            subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
+                        )
+                    }
+                    Button {
+                        toggleSamples()
+                    } label: {
+                        entryLabel(
+                            icon: "sparkles",
+                            title: "示例数据",
+                            subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿"
+                        )
+                    }
+                    NavigationLink {
+                        HostNameEditView()
+                    } label: {
+                        entryLabel(
+                            icon: "signature",
+                            title: "礼谱落款姓名",
+                            subtitle: hostName.isEmpty
+                                ? "还没设置，礼谱落款先用「主家谨识」"
+                                : "礼谱封面、谱序落款与主家印用「\(hostName)」"
+                        )
+                    }
+                } header: {
+                    Text("数据")
+                }
 
-                groupHeader("隐私与安全")
-                asCardRow(privacyCard)
+                Section {
+                    NavigationLink {
+                        AISettingsView()
+                    } label: {
+                        entryLabel(
+                            icon: "wand.and.stars",
+                            title: "AI 智能助手",
+                            subtitle: aiStatusText
+                        )
+                    }
+                } header: {
+                    Text("AI 智能助手")
+                }
 
-                groupHeader("关于")
-                asCardRow(aboutCard)
+                Section {
+                    Toggle(isOn: $privacyLock) {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            Image(systemName: "faceid")
+                                .foregroundStyle(Palette.ink)
+                                .frame(width: 24)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                                Text("隐私锁")
+                                    .foregroundStyle(Palette.ink)
+                                Text("从后台返回超过 30 秒需重新解锁；App 在后台时界面自动模糊。")
+                                    .font(.footnote)
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                    .tint(Palette.primary)
+                } header: {
+                    Text("隐私与安全")
+                }
+
+                Section {
+                    LabeledContent("版本", value: Self.appVersion)
+                } header: {
+                    Text("关于")
+                } footer: {
+                    Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
+                }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Palette.paper.ignoresSafeArea())
+            .listStyle(.insetGrouped)
             .navigationTitle("我的")
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $personRoute) { route in
@@ -127,24 +284,7 @@ struct MeView: View {
         }
     }
 
-    // MARK: - 总览与待回礼
-
-    /// 总览卡：全时段总收/总送/往来人数，大数字一律墨色（v3 纪律）
-    private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
-            HStack {
-                overviewStat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived))
-                Spacer()
-                overviewStat(label: "累计随礼", value: LedgerMath.fmtMoney(cents: totalGiven))
-                Spacer()
-                overviewStat(label: "往来亲友", value: "\(peopleCount) 位")
-            }
-            Text("\(ledgers.count) 本礼簿 · \(records.count) 笔记录（待送出不计入收支）")
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
-        .cardSurface()
-    }
+    // MARK: - 行零件
 
     private func overviewStat(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
@@ -158,165 +298,43 @@ struct MeView: View {
         }
     }
 
-    private var pendingCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            Text("待回礼")
-                .font(.headline.weight(.bold))
+    /// 设置式入口行内容：图标（统一 ink 色、frame 24）+ 标题/副标题。
+    /// 披露箭头不在这里画——NavigationLink 行由系统提供，Button/ShareLink 行本就没有。
+    private func entryLabel(icon: String, title: String, subtitle: String? = nil) -> some View {
+        HStack(spacing: LiqianMetrics.spacingSM) {
+            Image(systemName: icon)
                 .foregroundStyle(Palette.ink)
-            if pendingPeople.isEmpty {
-                Text("暂无待回礼记录")
-                    .foregroundStyle(Palette.stone)
-            } else {
-                ForEach(pendingPeople) { p in
-                    Button {
-                        personRoute = PeopleView.NameRoute(name: p.name)
-                    } label: {
-                        HStack {
-                            Text(p.name)
-                                .foregroundStyle(Palette.ink)
-                            Spacer()
-                            // 待回礼是行动提示，保留朱砂（v3 纪律的明示例外）
-                            Text(LedgerMath.fmtMoney(cents: p.pendingCents))
-                                .font(.liqianMoney(.title3))
-                                .foregroundStyle(Palette.primary)
-                            Image(systemName: "chevron.right")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Palette.stone)
-                                .accessibilityHidden(true)
-                        }
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                Text(title)
+                    .foregroundStyle(Palette.ink)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
                 }
-                Text("按最近一笔收礼之后是否已送出自动计算，无需手动标记。")
-                    .font(.footnote)
-                    .foregroundStyle(Palette.stone)
             }
         }
-        .cardSurface()
-    }
-
-    // MARK: - 分组：统计与报告
-
-    private var statsGroupCard: some View {
-        VStack(spacing: 0) {
-            NavigationLink {
-                StatsView()
-            } label: {
-                entryRow(
-                    icon: "chart.bar.xaxis",
-                    title: "统计",
-                    subtitle: "年度、事由、往来排行与关系分布"
-                )
-            }
-            .buttonStyle(.plain)
-            groupDivider
-            NavigationLink {
-                AnnualReportView()
-            } label: {
-                entryRow(
-                    icon: "chart.bar.doc.horizontal",
-                    title: "人情年度报告",
-                    subtitle: "生成年度报告图卡，仅含汇总数据，不含个人明细。",
-                    iconColor: Palette.primary
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .cardSurface(padding: 0)
-    }
-
-    // MARK: - 分组：数据
-
-    private var dataGroupCard: some View {
-        VStack(spacing: 0) {
-            csvEntryRow
-            groupDivider
-            Button {
-                exportDocument = JSONBackupDocument(
-                    data: LiqianBackup.makeBackup(ledgers: ledgers, records: records)
-                )
-                showExporter = true
-            } label: {
-                entryRow(
-                    icon: "tray.and.arrow.up",
-                    title: "导出备份（JSON）",
-                    subtitle: "包含全部礼簿与记录，可用于换机恢复",
-                    chevron: false
-                )
-            }
-            .buttonStyle(.plain)
-            groupDivider
-            Button {
-                showImporter = true
-            } label: {
-                entryRow(
-                    icon: "tray.and.arrow.down",
-                    title: "从备份恢复",
-                    subtitle: "选一个备份文件，覆盖现在的数据",
-                    chevron: false
-                )
-            }
-            .buttonStyle(.plain)
-            groupDivider
-            NavigationLink {
-                TrashView()
-            } label: {
-                entryRow(
-                    icon: "trash",
-                    title: "最近删除",
-                    subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
-                )
-            }
-            .buttonStyle(.plain)
-            groupDivider
-            Button {
-                toggleSamples()
-            } label: {
-                entryRow(
-                    icon: "sparkles",
-                    title: "示例数据",
-                    subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿",
-                    chevron: false
-                )
-            }
-            .buttonStyle(.plain)
-            groupDivider
-            NavigationLink {
-                HostNameEditView()
-            } label: {
-                entryRow(
-                    icon: "signature",
-                    title: "礼谱落款姓名",
-                    subtitle: hostName.isEmpty
-                        ? "还没设置，礼谱落款先用「主家谨识」"
-                        : "礼谱封面、谱序落款与主家印用「\(hostName)」"
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .cardSurface(padding: 0)
+        .frame(minHeight: LiqianMetrics.minTapTarget)
+        .contentShape(Rectangle())
     }
 
     private var csvEntryRow: some View {
         Group {
             if let csvURL {
                 ShareLink(item: csvURL) {
-                    entryRow(
+                    entryLabel(
                         icon: "tablecells",
                         title: "导出 CSV",
-                        subtitle: "导出为 CSV 表格，可用 Excel 打开",
-                        chevron: false
+                        subtitle: "导出为 CSV 表格，可用 Excel 打开"
                     )
                 }
-                .buttonStyle(.plain)
             } else {
-                entryRow(
+                entryLabel(
                     icon: "tablecells",
                     title: "导出 CSV",
-                    subtitle: "导出为 CSV 表格，可用 Excel 打开",
-                    chevron: false
+                    subtitle: "导出为 CSV 表格，可用 Excel 打开"
                 )
                 .opacity(0.5)
             }
@@ -336,23 +354,6 @@ struct MeView: View {
         }
     }
 
-    // MARK: - 分组：AI 智能助手
-
-    private var aiGroupCard: some View {
-        NavigationLink {
-            AISettingsView()
-        } label: {
-            entryRow(
-                icon: "wand.and.stars",
-                title: "AI 智能助手",
-                subtitle: aiStatusText,
-                iconColor: Palette.primary
-            )
-        }
-        .buttonStyle(.plain)
-        .cardSurface(padding: 0)
-    }
-
     /// AI 状态小字：没 Key / 已停用 / 已启用，三态说清
     private var aiStatusText: String {
         switch AIAccess.readiness() {
@@ -363,107 +364,6 @@ struct MeView: View {
         case .ready:
             return "已启用：智能解析、一句话记账、贺词生成"
         }
-    }
-
-    // MARK: - 分组：隐私与安全
-
-    /// 隐私锁：开启后冷启动与回前台（>30 秒）要先解锁，后台预览模糊（逻辑在 ContentView）
-    private var privacyCard: some View {
-        Toggle(isOn: $privacyLock) {
-            HStack(spacing: LiqianMetrics.spacingSM) {
-                Image(systemName: "faceid")
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                    Text("隐私锁")
-                        .foregroundStyle(Palette.ink)
-                    Text("从后台返回超过 30 秒需重新解锁；App 在后台时界面自动模糊。")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.stone)
-                }
-            }
-        }
-        .tint(Palette.primary)
-        .frame(minHeight: LiqianMetrics.minTapTarget)
-        .cardSurface()
-    }
-
-    // MARK: - 分组：关于
-
-    private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
-            HStack {
-                Text("版本")
-                    .foregroundStyle(Palette.ink)
-                Spacer()
-                Text("版本 \(Self.appVersion)")
-                    .foregroundStyle(Palette.stone)
-            }
-            Divider().overlay(Palette.hairline)
-            Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。")
-                .font(.subheadline)
-                .foregroundStyle(Palette.stone)
-                .lineSpacing(5)
-            Text("备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
-                .font(.subheadline)
-                .foregroundStyle(Palette.stone)
-                .lineSpacing(5)
-        }
-        .cardSurface()
-    }
-
-    // MARK: - 分组零件
-
-    private func groupHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(Palette.stone)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingSM, leading: LiqianMetrics.spacingL, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
-    }
-
-    private var groupDivider: some View {
-        Divider()
-            .overlay(Palette.hairline)
-            .padding(.leading, 52)
-    }
-
-    /// 设置式入口行：图标 + 标题/副标题 + 右侧值或箭头
-    private func entryRow(
-        icon: String,
-        title: String,
-        subtitle: String? = nil,
-        iconColor: Color = Palette.ink,
-        chevron: Bool = true
-    ) -> some View {
-        HStack(spacing: LiqianMetrics.spacingSM) {
-            Image(systemName: icon)
-                .foregroundStyle(iconColor)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                Text(title)
-                    .foregroundStyle(Palette.ink)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(Palette.stone)
-                }
-            }
-            Spacer()
-            if chevron {
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Palette.stone)
-                    .accessibilityHidden(true)
-            }
-        }
-        .padding(.horizontal, LiqianMetrics.cardPadding)
-        .padding(.vertical, LiqianMetrics.spacingSM)
-        .frame(minHeight: LiqianMetrics.minTapTarget)
-        .contentShape(Rectangle())
     }
 
     // MARK: - 导入
@@ -536,13 +436,6 @@ struct MeView: View {
         infoMessage = message
         showInfo = true
     }
-
-    private func asCardRow<V: View>(_ view: V) -> some View {
-        view
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.spacingM))
-    }
 }
 
 /// 礼谱落款姓名编辑页：与导出 sheet 共用 @AppStorage("hostName")，
@@ -570,8 +463,6 @@ struct HostNameEditView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Palette.paper.ignoresSafeArea())
         .navigationTitle("礼谱落款姓名")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -585,19 +476,5 @@ struct HostNameEditView: View {
         .onAppear {
             if text.isEmpty { text = hostName }
         }
-    }
-}
-
-/// 「我的」页卡片表面：卡面色 + 发丝线 + 统一圆角/内边距
-private extension View {
-    func cardSurface(padding: CGFloat = LiqianMetrics.cardPadding) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(Palette.hairline, lineWidth: 1)
-            )
     }
 }

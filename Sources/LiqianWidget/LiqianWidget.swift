@@ -13,8 +13,9 @@ private enum WPalette {
         }))
     }
 
-    // 与 Palette v3 同步：paper/primary 为品牌值；ink/stone 与 App 同口径走系统语义色
-    static let paper = dyn(0xFAF9F6, 0x171716)
+    // 与 App 同步（PRO-AUDIT-2 §3.1/§3.2）：背景走系统分组底；primary 为品牌值；
+    // ink/stone 与 App 同口径走系统语义色；金额/计数一律 sans（衬线只留 App 内 moment）
+    static let paper = Color(uiColor: .systemGroupedBackground)
     static let ink = Color.primary
     static let stone = Color.secondary
     static let primary = dyn(0xA62B1F, 0xD96A5C)
@@ -114,14 +115,14 @@ struct PendingWidgetView: View {
             if entry.hasData {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(entry.count)")
-                        .font(.system(.largeTitle, design: .serif, weight: .bold))
+                        .font(.system(.largeTitle, weight: .bold))
                         .foregroundStyle(WPalette.ink)
                     Text("人待回礼")
                         .font(.footnote)
                         .foregroundStyle(WPalette.stone)
                 }
                 Text("共 \(fmtMoney(cents: entry.amountCents))")
-                    .font(.system(.callout, design: .serif, weight: .semibold))
+                    .font(.system(.callout, weight: .semibold).monospacedDigit())
                     .foregroundStyle(WPalette.ink)
                 if !entry.topName.isEmpty {
                     Text("最多的是 \(entry.topName)")

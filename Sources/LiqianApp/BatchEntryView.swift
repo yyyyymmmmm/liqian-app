@@ -114,7 +114,7 @@ struct BatchEntryView: View {
                                     .font(bigMode ? .system(size: 20) : nil)
                                 TextField("金额（元）", text: $rows[i].amount, prompt: Text("金额"))
                                     .keyboardType(.decimalPad)
-                                    .font(bigMode ? .liqianMoneyFixed(size: 34) : nil)
+                                    .font(bigMode ? .system(size: 34, weight: .semibold).monospacedDigit() : nil)
                                     .frame(width: bigMode ? 150 : 96)
                                 Button(role: .destructive) {
                                     if rows.count > 1 {
@@ -146,7 +146,7 @@ struct BatchEntryView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
+            .background(Palette.groupedBackground.ignoresSafeArea())
             .safeAreaInset(edge: .top, spacing: 0) {
                 liveSummaryBar
             }
@@ -167,7 +167,10 @@ struct BatchEntryView: View {
             .sensoryFeedback(.warning, trigger: errorTrigger)
             .sensoryFeedback(.selection, trigger: direction)
             .alert("AI 还没准备好", isPresented: $showAIGuide) {
-                Button("好") {}
+                Button("去设置") {
+                    NotificationCenter.default.post(name: .liqianOpenAISettings, object: nil)
+                }
+                Button("好", role: .cancel) {}
             } message: {
                 Text(AIAccess.readiness().guideMessage)
             }
@@ -178,11 +181,17 @@ struct BatchEntryView: View {
     /// 数据走 @Query，刚录进去的立刻算进来
     private var liveSummaryBar: some View {
         let mine = allRecords.filter { $0.ledgerID == ledger.id }
-        let total = mine.reduce(0) { $0 + $1.amountCents }
+        // 分方向合计：待送出不计入随礼（与全 App 口径一致，F7）
+        let receivedTotal = mine
+            .filter { $0.direction == LiqianConstants.received }
+            .reduce(0) { $0 + $1.amountCents }
+        let givenTotal = mine
+            .filter { $0.direction == LiqianConstants.given && !$0.isPendingSend }
+            .reduce(0) { $0 + $1.amountCents }
         return HStack(spacing: LiqianMetrics.spacingS) {
-            Text("本礼簿已记 \(mine.count) 笔 · 合计 \(LedgerMath.fmtMoney(cents: total))")
-            if let latest = mine.last {
-                Text("· 最近：\(latest.person) \(LedgerMath.fmtMoney(cents: latest.amountCents))")
+            Text("已记 \(mine.count) 笔 · 收礼 \(LedgerMath.fmtMoney(cents: receivedTotal)) · 随礼 \(LedgerMath.fmtMoney(cents: givenTotal))")
+            if let latest = mine.max(by: { $0.date < $1.date }) {
+                Text("· 最近一笔（按日期）：\(latest.person) \(LedgerMath.fmtMoney(cents: latest.amountCents))")
                     .lineLimit(1)
             }
             Spacer()
@@ -192,7 +201,7 @@ struct BatchEntryView: View {
         .padding(.horizontal, LiqianMetrics.spacingM)
         .padding(.vertical, LiqianMetrics.spacingS)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isBai ? Palette.baiPaper : Palette.paper)
+        .background(Palette.groupedBackground)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(isBai ? Palette.baiLine : Palette.hairline)
@@ -253,6 +262,7 @@ struct BatchEntryView: View {
                 .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $pasteText)
+                .font(bigMode ? .system(size: 20) : nil)
                 .frame(minHeight: 140)
             Button {
                 parsedLines = LedgerTextParser.parse(pasteText)
@@ -292,6 +302,12 @@ struct BatchEntryView: View {
 
     @ViewBuilder
     private func parsedRow(_ line: ParsedLine) -> some View {
+        parsedRowContent(line)
+            .font(bigMode ? .system(size: 17) : nil)
+    }
+
+    @ViewBuilder
+    private func parsedRowContent(_ line: ParsedLine) -> some View {
         switch line.result {
         case .success(let name, let cents, let relation):
             HStack(spacing: LiqianMetrics.spacingS) {
@@ -376,6 +392,7 @@ struct BatchEntryView: View {
                 .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $aiText)
+                .font(bigMode ? .system(size: 20) : nil)
                 .frame(minHeight: 140)
             Button {
                 Task { await runAIParse() }
@@ -433,7 +450,7 @@ struct BatchEntryView: View {
                     }
                 }
                 if !aiUncertain.isEmpty {
-                    Text("第 \(aiUncertain.map(String.init).joined(separator: "、")) 行 AI 拿不准，没有列进来，请用逐个录入补上。")
+                    Text("第 \(aiUncertain.map(String.init).joined(separator: "、")) 行未能确定，没有列进来，请用逐个录入补上。")
                         .font(.footnote)
                         .foregroundStyle(Palette.warning)
                 }
@@ -445,6 +462,12 @@ struct BatchEntryView: View {
 
     @ViewBuilder
     private func aiParsedRow(_ line: AIPreviewLine) -> some View {
+        aiParsedRowContent(line)
+            .font(bigMode ? .system(size: 17) : nil)
+    }
+
+    @ViewBuilder
+    private func aiParsedRowContent(_ line: AIPreviewLine) -> some View {
         switch line.status {
         case .ok(let name, let cents, let relation, let method):
             HStack(spacing: LiqianMetrics.spacingS) {

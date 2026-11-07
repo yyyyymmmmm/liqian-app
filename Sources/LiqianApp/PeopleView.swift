@@ -10,6 +10,7 @@ struct PeopleView: View {
     @State private var query = ""
     @State private var personRoute: NameRoute?
     @State private var ledgerRoute: Ledger?
+    @State private var showSampleDone = false
 
     /// 人物详情路由（按姓名）
     struct NameRoute: Identifiable, Hashable {
@@ -42,10 +43,13 @@ struct PeopleView: View {
         NavigationStack {
             List {
                 if !searching && !pendingSends.isEmpty {
-                    prepListCard
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
+                    Section {
+                        ForEach(pendingSends) { r in prepRow(r) }
+                    } header: {
+                        Text("备礼清单")
+                    } footer: {
+                        Text("记下了还没送出去的礼，送出后把那笔改成「已送出」。")
+                    }
                 }
 
                 if searching {
@@ -65,28 +69,32 @@ struct PeopleView: View {
                     }
                 } else {
                     if summaries.isEmpty {
-                        VStack(spacing: LiqianMetrics.spacingS) {
-                            Text("还没有往来记录，先去礼簿里记一笔。")
-                                .font(.body)
-                                .foregroundStyle(Palette.stone)
-                            Button("生成示例数据") {
-                                SampleData.generate(into: modelContext)
+                        Section {
+                            ContentUnavailableView {
+                                Label("还没有往来记录", systemImage: "person.2")
+                            } description: {
+                                Text("先去礼簿里记一笔。")
+                            } actions: {
+                                Button("生成示例数据") {
+                                    if SampleData.generate(into: modelContext) {
+                                        showSampleDone = true
+                                    }
+                                }
+                                .foregroundStyle(Palette.primary)
+                                .frame(minHeight: LiqianMetrics.minTapTarget)
                             }
-                            .foregroundStyle(Palette.primary)
-                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .padding(.vertical, LiqianMetrics.spacingL)
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
-                        .frame(maxWidth: .infinity)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                        .padding(.top, LiqianMetrics.spacingXL)
                     } else {
-                        ForEach(summaries) { p in personRow(p) }
+                        Section {
+                            ForEach(summaries) { p in personRow(p) }
+                        }
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Palette.paper.ignoresSafeArea())
+            .listStyle(.insetGrouped)
             .navigationTitle("往来")
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "姓名、礼簿或事由")
@@ -96,61 +104,40 @@ struct PeopleView: View {
             .navigationDestination(item: $ledgerRoute) { ledger in
                 LedgerDetailView(ledger: ledger)
             }
+            .alert("示例数据已生成", isPresented: $showSampleDone) {
+                Button("好") {}
+            } message: {
+                Text("「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
+            }
         }
     }
 
-    /// 备礼清单卡：待送出的礼集中展示，点行进人物详情去处理
-    private var prepListCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text("备礼清单")
-                .font(.headline.weight(.bold))
-                .foregroundStyle(Palette.ink)
-            Text("记下了还没送出去的礼，送出后把那笔改成「已送出」。")
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-                .padding(.bottom, LiqianMetrics.spacingXS)
-            ForEach(pendingSends) { r in
-                Button {
-                    personRoute = NameRoute(name: r.person)
-                } label: {
-                    HStack(spacing: LiqianMetrics.spacingS) {
-                        Text(r.person)
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                        Spacer()
-                        Text(LiqianDate.displayString(for: r.date))
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                        Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                            .font(.liqianMoney(.title3))
-                            .foregroundStyle(Palette.ink)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Palette.stone)
-                            .accessibilityHidden(true)
-                    }
-                    .frame(minHeight: LiqianMetrics.minTapTarget)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+    /// 备礼清单行：待送出的礼，点行进人物详情去处理
+    private func prepRow(_ r: GiftRecord) -> some View {
+        Button {
+            personRoute = NameRoute(name: r.person)
+        } label: {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                Text(r.person)
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Spacer()
+                Text(LiqianDate.displayString(for: r.date))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+                Text(LedgerMath.fmtMoney(cents: r.amountCents))
+                    .font(.liqianMoney(.title3))
+                    .foregroundStyle(Palette.ink)
             }
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .contentShape(Rectangle())
         }
-        .padding(LiqianMetrics.cardPadding)
-        .background(
-            Palette.card,
-            in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                .stroke(Palette.hairline, lineWidth: 1)
-        )
+        .buttonStyle(.plain)
     }
 
     private func emptyRow(_ text: String) -> some View {
         Text(text)
             .foregroundStyle(Palette.stone)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
     }
 
     private func personRow(_ p: PersonSummary) -> some View {
@@ -177,21 +164,9 @@ struct PeopleView: View {
                     }
                 }
             }
-            .padding(LiqianMetrics.spacingSM)
-            .background(
-                Palette.card,
-                in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(Palette.hairline, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(ScaleOnPressButtonStyle())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
+        .buttonStyle(.plain)
     }
 
     private func balanceText(_ p: PersonSummary) -> String {
@@ -208,7 +183,7 @@ struct PeopleView: View {
             HStack(spacing: LiqianMetrics.spacingSM) {
                 ZStack {
                     RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
-                        .fill(l.isBai ? Palette.baiPrimary : Palette.primary)
+                        .fill(l.isBai ? Palette.baiPrimaryFill : Palette.primaryFill)
                     Text(l.type.map { String($0) }.joined(separator: "\n"))
                         .font(.liqianSerifFixed(size: 12))
                         .foregroundStyle(.white)
@@ -229,20 +204,9 @@ struct PeopleView: View {
                     .foregroundStyle(Palette.stone)
                     .accessibilityHidden(true)
             }
-            .padding(LiqianMetrics.spacingSM)
-            .background(
-                l.isBai ? Palette.baiCard : Palette.card,
-                in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
-                    .stroke(l.isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(ScaleOnPressButtonStyle())
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: LiqianMetrics.spacingXS, leading: LiqianMetrics.spacingM, bottom: LiqianMetrics.spacingXS, trailing: LiqianMetrics.spacingM))
+        .buttonStyle(.plain)
     }
+
 }

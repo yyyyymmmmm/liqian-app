@@ -12,9 +12,15 @@ struct AnnualReportView: View {
 
     @State private var selectedYear: String = ""
     @State private var shareImage: Image?
+    @State private var shareError: String?
 
+    /// 统计隔离（PRO-AUDIT-2 第 2 项）：示例账本的记录不计入年度报告
     private var snapshots: [EntrySnapshot] {
-        AppSupport.snapshots(records: records, ledgers: ledgers)
+        let ids = SampleData.sampleIDs(ledgers: ledgers)
+        return AppSupport.snapshots(
+            records: records.filter { !ids.contains($0.ledgerID) },
+            ledgers: ledgers
+        )
     }
 
     private var years: [String] {
@@ -67,10 +73,12 @@ struct AnnualReportView: View {
         ScrollView {
             VStack(spacing: LiqianMetrics.spacingSM) {
                 if years.isEmpty {
-                    Text("还没有记录，先记几笔再来看年度报告。")
-                        .font(.body)
-                        .foregroundStyle(Palette.stone)
-                        .padding(.top, 40)
+                    ContentUnavailableView {
+                        Label("还没有记录", systemImage: "chart.bar.doc.horizontal")
+                    } description: {
+                        Text("先记几笔再来看年度报告。")
+                    }
+                    .padding(.top, 40)
                 } else {
                     yearPickerCard
                     headlineCard
@@ -82,7 +90,7 @@ struct AnnualReportView: View {
             }
             .padding(LiqianMetrics.spacingM)
         }
-        .background(Palette.paper.ignoresSafeArea())
+        .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle("人情年度报告")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -107,7 +115,7 @@ struct AnnualReportView: View {
     private var headlineCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             Text("\(year) 年人情报告")
-                .font(.liqianSerif(.title3))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             HStack(spacing: LiqianMetrics.spacingL) {
                 headlineStat(label: "收礼", value: summary.recv, color: Palette.ink)
@@ -160,7 +168,7 @@ struct AnnualReportView: View {
                 ForEach(Array(topPeople.prefix(3).enumerated()), id: \.element.id) { idx, p in
                     HStack(spacing: LiqianMetrics.spacingSM) {
                         Text("\(idx + 1)")
-                            .font(.liqianSerif(.subheadline))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(Palette.stone)
                             .frame(width: 18, alignment: .leading)
                         Text(p.name)
@@ -233,7 +241,7 @@ struct AnnualReportView: View {
             Text("分享图卡")
                 .font(.headline.weight(.bold))
                 .foregroundStyle(Palette.ink)
-            Text("生成年度报告图卡，仅含汇总数据，不含个人明细。")
+            Text("含往来第一位亲友的姓名与汇总，其余为年度汇总数据。")
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)
             Button {
@@ -244,6 +252,11 @@ struct AnnualReportView: View {
             }
             .buttonStyle(.glassProminent)
             .tint(Palette.primary)
+            if let shareError {
+                Text(shareError)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+            }
             if let shareImage {
                 ShareLink(
                     item: shareImage,
@@ -273,6 +286,10 @@ struct AnnualReportView: View {
         renderer.scale = 3
         if let ui = renderer.uiImage {
             shareImage = Image(uiImage: ui)
+            shareError = nil
+        } else {
+            // 生成失败必须有反馈，不许静默（F5）
+            shareError = "图卡生成失败，请重试"
         }
     }
 }

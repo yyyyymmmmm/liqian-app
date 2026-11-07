@@ -92,8 +92,7 @@ struct QuickSentenceView: View {
                     .disabled(isParsing || text.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Palette.paper.ignoresSafeArea())
+
             .navigationTitle("一句话记账")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,7 +101,10 @@ struct QuickSentenceView: View {
                 }
             }
             .alert("AI 还没准备好", isPresented: $showGuide) {
-                Button("好") {}
+                Button("去设置") {
+                    NotificationCenter.default.post(name: .liqianOpenAISettings, object: nil)
+                }
+                Button("好", role: .cancel) {}
             } message: {
                 Text(AIAccess.readiness().guideMessage)
             }

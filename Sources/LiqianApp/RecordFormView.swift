@@ -26,6 +26,9 @@ struct RecordFormView: View {
     @State private var note: String
     @State private var selectedLedgerID: UUID?
     @State private var saveAndContinue = false
+    /// 防重复提交（PRO-AUDIT-2 F3）：落印 1.05s 等待期内锁住保存与退出，
+    /// 连点「保存」只落一笔
+    @State private var isSaving = false
     @State private var personError: String?
     @State private var amountError: String?
     @State private var savedMessage: String?
@@ -277,11 +280,14 @@ struct RecordFormView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { save() }
+                        .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .overlay {
                 SealStampOverlay(
                     char: sealText,
@@ -302,7 +308,10 @@ struct RecordFormView: View {
                 }
             }
             .alert("AI 还没准备好", isPresented: $showAIGuide) {
-                Button("好") {}
+                Button("去设置") {
+                    NotificationCenter.default.post(name: .liqianOpenAISettings, object: nil)
+                }
+                Button("好", role: .cancel) {}
             } message: {
                 Text(AIAccess.readiness().guideMessage)
             }
@@ -328,7 +337,7 @@ struct RecordFormView: View {
     private var amountDisplay: some View {
         HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
             Text("¥")
-                .font(.liqianSerif(.title2))
+                .font(.system(.title2, weight: .semibold))
                 .foregroundStyle(Palette.stone)
             Text(amountText.isEmpty ? "0" : amountText)
                 .font(.liqianMoney(.largeTitle))
@@ -440,8 +449,9 @@ struct RecordFormView: View {
     }
 
     private func save() {
+        guard !isSaving else { return }
         let name = person.trimmingCharacters(in: .whitespaces)
-        personError = name.isEmpty ? "姓名还没填" : nil
+        personError = name.isEmpty ? "请填写姓名" : nil
         let amountValue = Double(amountText.trimmingCharacters(in: .whitespaces))
         let cents: Int? = amountValue.flatMap { $0 > 0 ? Int(($0 * 100.0).rounded()) : nil }
         amountError = cents == nil ? "请输入正确的金额" : nil
@@ -449,6 +459,7 @@ struct RecordFormView: View {
             errorTrigger += 1
             return
         }
+        isSaving = true
         let finalStatus = direction == LiqianConstants.given ? status : LiqianConstants.sentStatus
         let trimmedNote = note.trimmingCharacters(in: .whitespaces)
         if let existing {
@@ -493,6 +504,7 @@ struct RecordFormView: View {
                 Task {
                     try? await Task.sleep(for: .milliseconds(1050))
                     showSeal = false
+                    isSaving = false
                 }
             } else {
                 Task {

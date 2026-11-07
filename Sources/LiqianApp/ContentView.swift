@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var isLocked = true
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
+    @State private var tabSelection = 0
 
     /// 切到后台/多任务预览时是否要盖模糊遮罩
     private var shieldVisible: Bool {
@@ -23,14 +24,14 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            TabView {
-                Tab("礼簿", systemImage: "book.closed") {
+            TabView(selection: $tabSelection) {
+                Tab("礼簿", systemImage: "book.closed", value: 0) {
                     LedgersView()
                 }
-                Tab("往来", systemImage: "person.2") {
+                Tab("往来", systemImage: "person.2", value: 1) {
                     PeopleView()
                 }
-                Tab("我的", systemImage: "person.crop.circle") {
+                Tab("我的", systemImage: "person.crop.circle", value: 2) {
                     MeView()
                 }
             }
@@ -87,6 +88,10 @@ struct ContentView: View {
             default:
                 break
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .liqianOpenAISettings)) { _ in
+            // AI 引导 alert 的「去设置」落点：切到「我的」Tab（AI 设置行在该页）
+            tabSelection = 2
         }
         .onOpenURL { url in
             // 小组件深链：liqian://quick-record

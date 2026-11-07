@@ -52,9 +52,18 @@ public enum Palette {
     // 品牌令牌只保留 paper（纸白是本产品的「世界」）、primary/primaryTint（朱砂签名）、
     // 白事六件套与 gold（限静态成品）。primaryPressed/primaryDisabled 曾是零引用
     // 死令牌，已删除（按下/禁用态由系统按钮外观处理）。
-    /// 纸：全局背景。v3 近乎纸白、只留一丝暖意（品牌令牌，刻意保留，不用系统色）
-    /// （旧值 F6F1E7 米黄饱和过高，与朱砂、描金堆叠出「AI 中式风」，已废）
+    /// 纸：**已退役出界面背景**（PRO-AUDIT-2 §3.1 定版）——真机证明暖底与白卡
+    /// 并置即是一层黄，底色是 chrome、必须用系统色。本令牌仅保留给静态成品
+    /// （年度报告分享图卡的纸面），App 界面背景一律用 groupedBackground，禁止再引用。
     public static let paper = dyn(0xFAF9F6, 0x171716)
+    /// 界面背景定版：系统分组背景（浅 #F2F2F7 / 深 #000000），全 App 页面统一引用
+    public static let groupedBackground: Color = {
+        #if canImport(UIKit)
+        return Color(uiColor: .systemGroupedBackground)
+        #else
+        return Color(hex: 0xF2F2F7)
+        #endif
+    }()
     /// 卡面：系统分组背景的次级面（浅色纯白、深色近黑中性，与旧值等效）
     public static let card: Color = {
         #if canImport(UIKit)
@@ -71,6 +80,10 @@ public enum Palette {
     public static let primary = dyn(0xA62B1F, 0xD96A5C)
     /// 朱砂 tint 底（选中态衬底、快捷金额钮底等）
     public static let primaryTint = dyn(0xF3E2DC, 0x38251F)
+    /// 朱砂填充定版（PRO-AUDIT-2 §3.1）：一切「朱砂底＋白字」的填充（主按钮、
+    /// 方向签、封面签、印章）双模式共用浅色值，白字对比 7.03:1 ✓。
+    /// primary 本体只作文字/图标强调，不再直接当填充（深色值作填充仅 3.41:1 不达 AA）。
+    public static let primaryFill = dyn(0xA62B1F, 0xA62B1F)
     /// 描金：**仅礼谱 PDF 与印章等静态成品专用**，App 视图禁止引用（v3 起退出 UI）
     public static let gold = dyn(0xB98A2F, 0xC9A24D)
     /// 描边线：系统 separator（发丝线本就是它的职责）
@@ -91,15 +104,22 @@ public enum Palette {
     /// 危险/错误（失败行、表单错误等）
     public static let danger = Color.red
 
-    // —— 白事语义令牌（白事账本内整页切换：无红、无金） ——
-    public static let baiPaper = dyn(0xECEEF0, 0x14171A)
-    public static let baiCard = dyn(0xF7F8F9, 0x1E2226)
-    public static let baiInk = dyn(0x33383B, 0xD8DCE0)
-    /// 白事次文字：浅色借 baiPrimary（对 baiPaper 对比约 5.4，≥4.5），深色单独提亮
-    public static let baiStone = dyn(0x5B6770, 0xA7B2BC)
-    /// 素灰蓝：白事主色
+    // —— 白事语义令牌（PRO-AUDIT-2 §3.1 定版）：底/卡/墨/次/线全部退役为系统
+    // 语义色映射（与红事同法），白事身份只由 baiPrimary 一个令牌承载 ——
+    /// 白事底：同系统分组背景（旧手搓 #ECEEF0 已退役）
+    public static let baiPaper = groupedBackground
+    /// 白事卡面：同系统次级分组面
+    public static let baiCard = card
+    /// 白事墨：同系统 label
+    public static let baiInk = Color.primary
+    /// 白事次文字：同系统 secondaryLabel
+    public static let baiStone = Color.secondary
+    /// 素灰蓝：白事身份色，只作文字/图标强调（深色 #93A1AD 对纯黑底 7.94:1 ✓）
     public static let baiPrimary = dyn(0x5B6770, 0x93A1AD)
-    public static let baiLine = dyn(0xD5D9DC, 0x2E343A)
+    /// 白事填充定版：「素灰蓝底＋白字」填充专用，白字对比 浅 5.80:1 / 深 5.45:1 ✓
+    public static let baiPrimaryFill = dyn(0x5B6770, 0x5F6B76)
+    /// 白事线：同系统 separator
+    public static let baiLine = hairline
     // 注：随礼方向签底色原有独立的 givenTag（全仓唯一非动态令牌），
     // 已按 PRO-AUDIT §3.3 并入 baiPrimary，DirectionTag 直接引用 baiPrimary。
 }
@@ -130,8 +150,9 @@ public enum LiqianMetrics {
 }
 
 public extension Font {
-    /// 衬线（礼簿气）：语义字阶版——随 Dynamic Type 缩放（PRO-AUDIT §4.2 定版映射）。
-    /// 标题与金额一律走此 API（或 liqianMoney），禁止再写死 pt 值。
+    /// 衬线语义字阶版。PRO-AUDIT-2 §3.2 定版：衬线只许活在五个 moment
+    /// （封面签题字/印章/锁定页品牌块/分享图卡/礼谱 PDF 与详情页封面满块），
+    /// 界面标题与金额一律禁用；保留此 API 仅为白名单场景备用，新增调用先查 DESIGN 白名单。
     static func liqianSerif(_ style: Font.TextStyle, weight: Font.Weight = .bold) -> Font {
         .system(style, design: .serif, weight: weight)
     }
@@ -146,13 +167,15 @@ public extension Font {
     /// 页面大标题：largeTitle 衬线加粗
     static var liqianBigTitle: Font { liqianSerif(.largeTitle) }
 
-    /// 金额：衬线语义档 + 等宽数字（变化时配合 numericText 过渡）。
-    /// 定版三档（PRO-AUDIT §4.2）：列表 .title3 / 汇总 .title2 / 记账大字显示 .largeTitle。
+    /// 金额（PRO-AUDIT-2 §3.2 定版）：系统 sans semibold + 等宽数字——衬线金额
+    /// 是「AI 中式风」在数字上的直接来源，大厂记账产品金额无一用衬线。
+    /// 定版三档：列表 .title3 / 汇总 .title2 / 记账大字显示 .largeTitle（调用点不变）。
     static func liqianMoney(_ style: Font.TextStyle = .title3) -> Font {
-        liqianSerif(style).monospacedDigit()
+        .system(style, weight: .semibold).monospacedDigit()
     }
 
-    /// 固定字号金额：仅限大字模式等功能位（同 liqianSerifFixed 的使用边界）
+    /// 固定字号衬线金额：**仅限静态成品**（年度报告分享图卡，衬线白名单 moment），
+    /// 界面内金额禁止使用（界面大字金额走 .system(size:weight:).monospacedDigit()）
     static func liqianMoneyFixed(size: CGFloat) -> Font {
         liqianSerifFixed(size: size).monospacedDigit()
     }

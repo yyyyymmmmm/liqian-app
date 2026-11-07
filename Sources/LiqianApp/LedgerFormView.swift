@@ -86,7 +86,7 @@ struct LedgerFormView: View {
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            titleError = "先给礼簿起个名，如「我的婚礼」"
+            titleError = "请填写礼簿名称，如「我的婚礼」"
             errorTrigger += 1
             return
         }
