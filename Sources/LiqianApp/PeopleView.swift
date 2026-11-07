@@ -12,6 +12,7 @@ struct PeopleView: View {
     @State private var ledgerRoute: Ledger?
     @State private var prepToDelete: GiftRecord?
     @State private var showSampleDone = false
+    @State private var showAdvisor = false
 
     /// 人物详情路由（按姓名）
     struct NameRoute: Identifiable, Hashable {
@@ -43,6 +44,32 @@ struct PeopleView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !searching {
+                    Section {
+                        Button {
+                            showAdvisor = true
+                        } label: {
+                            HStack(spacing: LiqianMetrics.spacingS) {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle(Palette.primary)
+                                Text("问账")
+                                    .foregroundStyle(Palette.ink)
+                                Spacer()
+                                Text("问一句，查全账")
+                                    .font(.footnote)
+                                    .foregroundStyle(Palette.stone)
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Palette.stone)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 if !searching && !pendingSends.isEmpty {
                     Section {
                         ForEach(pendingSends) { r in prepRow(r) }
@@ -121,6 +148,9 @@ struct PeopleView: View {
             }
             .navigationDestination(item: $ledgerRoute) { ledger in
                 LedgerDetailView(ledger: ledger)
+            }
+            .navigationDestination(isPresented: $showAdvisor) {
+                AdvisorView()
             }
             .alert("示例数据已生成", isPresented: $showSampleDone) {
                 Button("好") {}
