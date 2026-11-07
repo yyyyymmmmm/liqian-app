@@ -86,7 +86,9 @@ final class CloudSyncManager: ObservableObject {
 
     private var accountState: AccountState = .unknown
     private var syncBusy = false
-    private var observers: [NSObjectProtocol] = []
+    // 观察者 token 只在主线程增删、deinit 里统一移除；NSObjectProtocol 非 Sendable，
+    // Swift 6 下用 nonisolated(unsafe) 承接这一既定用法（deinit 无法访问隔离属性）。
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     init() {
         let enabled = UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true
@@ -200,18 +202,22 @@ final class CloudSyncManager: ObservableObject {
             guard let event = note.userInfo?[
                 NSPersistentCloudKitContainer.eventNotificationUserInfoKey
             ] as? NSPersistentCloudKitContainer.Event else { return }
-            Task { @MainActor in self?.handleSyncEvent(event) }
+            // Event 非 Sendable：先在当前线程摘出需要的事实（是否导入/导出、是否结束），
+            // 只把 Sendable 的 Bool 带进 MainActor 任务，避免数据竞争告警。
+            let isSyncType = event.type == .import || event.type == .export
+            let finished = event.endDate != nil
+            Task { @MainActor in self?.handleSyncEvent(isSyncType: isSyncType, finished: finished) }
         }
         observers.append(syncObserver)
     }
 
-    private func handleSyncEvent(_ event: NSPersistentCloudKitContainer.Event) {
-        guard event.type == .import || event.type == .export else { return }
-        if event.endDate == nil {
-            syncBusy = true
-        } else {
+    private func handleSyncEvent(isSyncType: Bool, finished: Bool) {
+        guard isSyncType else { return }
+        if finished {
             syncBusy = false
             // 单次事件失败多为网络抖动，镜像会自动重试，不据此翻成不可用
+        } else {
+            syncBusy = true
         }
         recomputeStatus()
     }

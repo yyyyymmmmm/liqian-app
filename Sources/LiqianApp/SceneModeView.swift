@@ -107,7 +107,9 @@ final class ExternalDisplayPresenter: ObservableObject {
 
     private var window: UIWindow?
     private var hosting: UIHostingController<MaskedDisplayView>?
-    private var observers: [NSObjectProtocol] = []
+    // 观察者 token 只在主线程增删、deinit 里统一移除；NSObjectProtocol 非 Sendable，
+    // Swift 6 下用 nonisolated(unsafe) 承接这一既定用法（deinit 无法访问隔离属性）。
+    nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     // 最近一次脱敏内容快照（连接/重连时回放）
     private var latestName: String?
