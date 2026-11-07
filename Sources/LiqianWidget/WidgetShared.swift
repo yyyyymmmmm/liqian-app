@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import WidgetKit
+import LiqianCore
 
 // MARK: - 共享底座：色板 / 快照镜像 / 时间线供给
 // 数据来自 App 侧 WidgetSummaryWriter 写入 App Group 的 "pendingSummary"。

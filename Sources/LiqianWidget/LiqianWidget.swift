@@ -1,3 +1,4 @@
+import SwiftUI
 import WidgetKit
 
 // MARK: - 小组件套件入口（v4.5）
