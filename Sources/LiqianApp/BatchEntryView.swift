@@ -25,11 +25,34 @@ struct BatchEntryView: View {
     @State private var errorTrigger = 0
 
     // 粘贴导入（v2）：整段文字粘贴 → Core 解析预览 → 成功行入库
-    private enum Mode { case rows, paste }
+    private enum Mode { case rows, paste, ai }
     @State private var mode: Mode = .rows
     @State private var pasteText = ""
     @State private var parsedLines: [ParsedLine]?
     @State private var pasteMessage: String?
+
+    // AI 解析（v2）：杂乱文本发 DeepSeek → JSON → 本地校验 → 同一套预览/导入
+    @State private var aiText = ""
+    @State private var aiLines: [AIPreviewLine]?
+    @State private var aiUncertain: [Int] = []
+    @State private var aiParsing = false
+    @State private var aiError: String?
+    @State private var aiRawResponse: String?
+    @State private var aiMessage: String?
+    @State private var showAIGuide = false
+
+    /// AI 预览行：ok 可导入；givenBlocked 是随礼行（本页粘贴通道只入收礼，先标出）；
+    /// failed 是本地校验没过的（姓名空/金额不对），不静默吞
+    private struct AIPreviewLine: Identifiable {
+        enum Status {
+            case ok(name: String, cents: Int, relation: String?, method: String?)
+            case givenBlocked(name: String, cents: Int)
+            case failed(reason: String)
+        }
+        var lineNo: Int
+        var status: Status
+        var id: Int { lineNo }
+    }
     @Query private var allRecords: [GiftRecord]
 
     /// 本簿已有姓名（粘贴预览里给同名提示，导入仍并列保存）
@@ -52,12 +75,15 @@ struct BatchEntryView: View {
                     Picker("录入方式", selection: $mode) {
                         Text("逐个录入").tag(Mode.rows)
                         Text("粘贴导入").tag(Mode.paste)
+                        Text("AI 解析").tag(Mode.ai)
                     }
                     .pickerStyle(.segmented)
                 }
 
                 if mode == .paste {
                     pasteSections
+                } else if mode == .ai {
+                    aiSections
                 } else {
                 Section {
                     Picker("方向", selection: $direction) {
@@ -139,6 +165,11 @@ struct BatchEntryView: View {
             .sensoryFeedback(.success, trigger: saveTrigger)
             .sensoryFeedback(.warning, trigger: errorTrigger)
             .sensoryFeedback(.selection, trigger: direction)
+            .alert("AI 还没准备好", isPresented: $showAIGuide) {
+                Button("好") {}
+            } message: {
+                Text(AIAccess.readiness().guideMessage)
+            }
         }
     }
 
@@ -332,6 +363,249 @@ struct BatchEntryView: View {
             pasteText = failedRaws.joined(separator: "\n")
             self.parsedLines = nil
             pasteMessage = "已导入 \(imported) 笔，剩下 \(failedRaws.count) 行没成功，改好后重新解析导入。"
+        }
+    }
+
+    // MARK: - AI 解析
+
+    @ViewBuilder
+    private var aiSections: some View {
+        Section {
+            Text("微信接龙、备忘录流水这种格式乱的文字，粘进来让 AI 读。将把这段文字发送至 DeepSeek 解析，解析结果先进预览，你确认了才入库；金额是本地换算校验的。解析不了或不想发，左边「粘贴导入」是本地规则解析，不出这台手机。")
+                .font(.system(size: 12.5))
+                .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+            TextEditor(text: $aiText)
+                .frame(minHeight: 140)
+            Button {
+                Task { await runAIParse() }
+            } label: {
+                HStack {
+                    Label("开始解析", systemImage: "sparkles")
+                    if aiParsing {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .disabled(aiParsing || aiText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if let aiError {
+                Text(aiError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                if let aiRawResponse {
+                    DisclosureGroup("查看原始返回（报障用）") {
+                        Text(aiRawResponse)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.stone)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            if let aiMessage {
+                Text(aiMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            }
+        }
+
+        if let aiLines {
+            Section {
+                if aiLines.isEmpty {
+                    Text("没解析出记录，换段文字试试，或者用「粘贴导入」的规则解析。")
+                        .foregroundStyle(Palette.stone)
+                } else {
+                    ForEach(aiLines) { line in
+                        aiParsedRow(line)
+                    }
+                    let okCount = aiLines.filter {
+                        if case .ok = $0.status { return true }
+                        return false
+                    }.count
+                    if okCount > 0 {
+                        Button {
+                            confirmAIImport()
+                        } label: {
+                            Label("确认导入 \(okCount) 笔", systemImage: "checkmark.circle")
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                    }
+                }
+                if !aiUncertain.isEmpty {
+                    Text("第 \(aiUncertain.map(String.init).joined(separator: "、")) 行 AI 拿不准，没有列进来，请用逐个录入补上。")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("解析预览")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func aiParsedRow(_ line: AIPreviewLine) -> some View {
+        switch line.status {
+        case .ok(let name, let cents, let relation, let method):
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? "") + (method.map { " · \($0)" } ?? ""))
+                            .font(bigMode ? .system(size: 17) : nil)
+                            .foregroundStyle(Palette.ink)
+                        aiBadge
+                    }
+                    if existingNames.contains(name) {
+                        Text("本簿已有此人，导入后并列保存")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                Spacer()
+            }
+        case .givenBlocked(let name, let cents):
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("\(name) · \(LedgerMath.fmtMoney(cents: cents)) · 随礼")
+                            .foregroundStyle(Palette.ink)
+                        aiBadge
+                    }
+                    Text("随礼行暂不支持在这里导入，请用逐个录入记这一笔")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+            }
+        case .failed(let reason):
+            HStack(spacing: 8) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text(reason)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.red)
+                Spacer()
+                aiBadge
+            }
+        }
+    }
+
+    private var aiBadge: some View {
+        Text("AI")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(Palette.primary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Palette.primaryTint, in: Capsule())
+    }
+
+    private struct AIResponse: Decodable {
+        struct Rec: Decodable {
+            var name: String
+            var amountYuan: Double
+            var relation: String?
+            var method: String?
+            var direction: String?
+        }
+        var records: [Rec]
+        var uncertain: [Int]?
+    }
+
+    private static let aiSystemPrompt = """
+        你是礼钱账本的解析助手。用户会给你一段中文人情往来记录文本（可能来自微信接龙、备忘录，格式杂乱，一行未必只有一笔）。请提取每一笔记录，只输出一个 JSON 对象，不要输出任何其他文字：{"records":[{"name":"","amountYuan":数字,"relation":null,"method":null,"direction":"received"}],"uncertain":[]}
+        规则：1) name 姓名照抄原文，绝不猜测或改名；2) amountYuan 是金额数字，单位元，中文数字要换算（如「五百」=500）；3) direction：别人送给记账人是 "received"，记账人送出去是 "given"，看不出给 "received"；4) relation 只能是 亲戚/朋友/同事/同学/邻居/其他 之一，看不出给 null；5) method 只能是 现金/微信/支付宝/银行转账/实物 之一，看不出给 null；6) 拿不准是哪一笔、或金额读不出的，把原文行号（从 1 起）放进 uncertain，不要编造记录凑数。
+        """
+
+    private func runAIParse() async {
+        switch AIAccess.readiness() {
+        case .ready:
+            break
+        case .noKey, .notEnabled:
+            showAIGuide = true
+            return
+        }
+        aiParsing = true
+        aiError = nil
+        aiRawResponse = nil
+        aiMessage = nil
+        do {
+            let client = try DeepSeekClient()
+            let data = try await client.chatJSON(system: Self.aiSystemPrompt, user: aiText)
+            aiParsing = false
+            do {
+                let response = try JSONDecoder().decode(AIResponse.self, from: data)
+                aiUncertain = response.uncertain ?? []
+                aiLines = response.records.enumerated().map { index, rec in
+                    let name = rec.name.trimmingCharacters(in: .whitespaces)
+                    let cents = Int((rec.amountYuan * 100.0).rounded())
+                    guard !name.isEmpty, rec.amountYuan > 0 else {
+                        return AIPreviewLine(
+                            lineNo: index + 1,
+                            status: .failed(reason: "第 \(index + 1) 条没读出姓名或金额，没列进来")
+                        )
+                    }
+                    if rec.direction == "given" {
+                        return AIPreviewLine(lineNo: index + 1, status: .givenBlocked(name: name, cents: cents))
+                    }
+                    return AIPreviewLine(
+                        lineNo: index + 1,
+                        status: .ok(
+                            name: name,
+                            cents: cents,
+                            relation: rec.relation.flatMap { LiqianConstants.relations.contains($0) ? $0 : nil },
+                            method: rec.method.flatMap { LiqianConstants.methods.contains($0) ? $0 : nil }
+                        )
+                    )
+                }
+            } catch {
+                aiError = "AI 返回的格式不对，没能解析。可以再试一次，或改用「粘贴导入」的规则解析。"
+                let raw = String(data: data, encoding: .utf8) ?? ""
+                aiRawResponse = String(raw.prefix(500))
+            }
+        } catch let error as DeepSeekError {
+            aiParsing = false
+            aiError = (error.errorDescription ?? "解析失败") + " 也可以改用「粘贴导入」的规则解析。"
+        } catch {
+            aiParsing = false
+            aiError = "解析失败：\(error.localizedDescription)。也可以改用「粘贴导入」的规则解析。"
+        }
+    }
+
+    private func confirmAIImport() {
+        guard let aiLines else { return }
+        var imported = 0
+        var remaining: [AIPreviewLine] = []
+        for line in aiLines {
+            switch line.status {
+            case .ok(let name, let cents, let relation, let method):
+                modelContext.insert(
+                    GiftRecord(
+                        ledgerID: ledger.id,
+                        person: name,
+                        relation: relation ?? "朋友",
+                        amountCents: cents,
+                        direction: LiqianConstants.received,
+                        method: method ?? "现金",
+                        date: LiqianDate.todayString()
+                    )
+                )
+                imported += 1
+            case .givenBlocked, .failed:
+                remaining.append(line)
+            }
+        }
+        guard imported > 0 else { return }
+        try? modelContext.save()
+        saveTrigger += 1
+        if remaining.isEmpty {
+            onSaved(imported)
+            dismiss()
+        } else {
+            self.aiLines = remaining
+            aiMessage = "已导入 \(imported) 笔收礼；剩下 \(remaining.count) 行没导入（随礼行或没读全的行），按行上的提示处理。"
         }
     }
 }

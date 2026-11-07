@@ -21,6 +21,7 @@ struct LedgerDetailView: View {
     @State private var showBatchResult = false
     @State private var deleteTrigger = 0
     @State private var pdfURL: URL?
+    @State private var showGreeting = false
 
     private var isBai: Bool { ledger.isBai }
 
@@ -125,6 +126,11 @@ struct LedgerDetailView: View {
                             Label("导出礼谱 PDF", systemImage: "doc.richtext")
                         }
                     }
+                    Button {
+                        showGreeting = true
+                    } label: {
+                        Label("生成贺词", systemImage: "text.quote")
+                    }
                 } label: {
                     Label("更多", systemImage: "ellipsis.circle")
                 }
@@ -171,6 +177,9 @@ struct LedgerDetailView: View {
         }
         .sheet(isPresented: $showEditLedger) {
             LedgerFormView(existing: ledger)
+        }
+        .sheet(isPresented: $showGreeting) {
+            GreetingView(ledger: ledger)
         }
         .alert("批量补录完成", isPresented: $showBatchResult) {
             Button("好") {}

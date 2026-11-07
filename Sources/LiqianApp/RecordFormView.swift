@@ -36,6 +36,8 @@ struct RecordFormView: View {
     @State private var errorTrigger = 0
     @State private var deleteTrigger = 0
     @State private var confirmDelete = false
+    @State private var showQuickSentence = false
+    @State private var showAIGuide = false
     @FocusState private var focus: Field?
 
     enum Field { case person, amount }
@@ -124,6 +126,30 @@ struct RecordFormView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if existing == nil {
+                    Section {
+                        Button {
+                            if AIAccess.readiness() == .ready {
+                                showQuickSentence = true
+                            } else {
+                                showAIGuide = true
+                            }
+                        } label: {
+                            HStack {
+                                Label("一句话记账", systemImage: "text.bubble")
+                                    .foregroundStyle(Palette.primary)
+                                Spacer()
+                                Text("说一句，自动填好")
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(Palette.stone)
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 if needsLedgerPicker {
                     Section {
                         if allLedgers.isEmpty {
@@ -270,6 +296,16 @@ struct RecordFormView: View {
             .sensoryFeedback(.warning, trigger: deleteTrigger)
             .sensoryFeedback(.selection, trigger: direction)
             .sensoryFeedback(.selection, trigger: status)
+            .sheet(isPresented: $showQuickSentence) {
+                QuickSentenceView { result in
+                    applyAIResult(result)
+                }
+            }
+            .alert("AI 还没准备好", isPresented: $showAIGuide) {
+                Button("好") {}
+            } message: {
+                Text(AIAccess.readiness().guideMessage)
+            }
             .confirmationDialog("删除这笔记录？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("删除", role: .destructive) { deleteExisting() }
                 Button("取消", role: .cancel) {}
@@ -462,6 +498,23 @@ struct RecordFormView: View {
                 }
             }
         }
+    }
+
+    /// 一句话记账的解析结果只预填字段，仍由用户核对后自己点保存
+    private func applyAIResult(_ result: QuickSentenceResult) {
+        person = result.name
+        amountText = Self.amountString(cents: result.amountCents)
+        if let relation = result.relation { self.relation = relation }
+        if let method = result.method { self.method = method }
+        direction = result.direction
+        if direction == LiqianConstants.given {
+            status = LiqianConstants.sentStatus
+        }
+        if note.isEmpty, let hint = result.eventHint {
+            note = hint
+        }
+        personError = nil
+        amountError = nil
     }
 
     private func deleteExisting() {

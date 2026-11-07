@@ -68,6 +68,9 @@ struct MeView: View {
                 groupHeader("数据")
                 asCardRow(dataGroupCard)
 
+                groupHeader("AI 智能助手")
+                asCardRow(aiGroupCard)
+
                 groupHeader("隐私与安全")
                 asCardRow(privacyCard)
 
@@ -310,6 +313,35 @@ struct MeView: View {
         } else {
             SampleData.generate(into: modelContext)
             showInfo(title: "示例数据已生成", message: "「礼簿」页多了两本示例礼簿，人情页能看到往来差额和备礼清单的效果。")
+        }
+    }
+
+    // MARK: - 分组：AI 智能助手
+
+    private var aiGroupCard: some View {
+        NavigationLink {
+            AISettingsView()
+        } label: {
+            entryRow(
+                icon: "wand.and.stars",
+                title: "AI 智能助手",
+                subtitle: aiStatusText,
+                iconColor: Palette.primary
+            )
+        }
+        .buttonStyle(.plain)
+        .cardSurface(padding: 0)
+    }
+
+    /// AI 状态小字：没 Key / 已停用 / 已启用，三态说清
+    private var aiStatusText: String {
+        switch AIAccess.readiness() {
+        case .noKey:
+            return "填你自己的 DeepSeek Key，用 AI 解析账目文字、生成贺词"
+        case .notEnabled:
+            return "Key 已填，开关还没打开"
+        case .ready:
+            return "已启用：智能解析、一句话记账、贺词生成"
         }
     }
 
