@@ -104,7 +104,7 @@ final class CloudSyncManager: ObservableObject {
             self.container = local.container
             self.storeMode = .localOnly
             self.launchDecision = local.emergency ? .emergencyMemory : .localByUserChoice
-        } else if let cloud = Self.makeCloudContainer(schema: schema) {
+        } else if Self.hasCloudKitEntitlement(), let cloud = Self.makeCloudContainer(schema: schema) {
             self.container = cloud
             self.storeMode = .cloudKit
             self.launchDecision = .cloudKit
@@ -129,6 +129,20 @@ final class CloudSyncManager: ObservableObject {
     }
 
     // MARK: - 容器工厂（分级回退）
+
+    /// 运行时 entitlement 探针：侧载重签会剥掉 iCloud 容器 entitlement，此时
+    /// 强行构造 CloudKit 容器会触发不可捕获的异常、启动直接闪退（v4.0 真机
+    /// 实锤：开关默认开，升级后首次启动即走到 CloudKit 路径）。先查内嵌
+    /// 描述文件，含本容器 ID 才放行 CloudKit 路径；查不到描述文件
+    /// （App Store 包的 entitlements 在二进制内）时放行，仍有 try? 回退兜底。
+    private static func hasCloudKitEntitlement() -> Bool {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let text = String(bytes: data, encoding: .isoLatin1) else {
+            return true
+        }
+        return text.contains(containerIdentifier)
+    }
 
     /// CloudKit 配置：与本地配置同为默认存储位置，切换/回退不搬家、不丢数据
     private static func makeCloudContainer(schema: Schema) -> ModelContainer? {
