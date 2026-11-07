@@ -225,7 +225,7 @@ final class SpeechTranscriber: ObservableObject {
 
     func start() {
         errorText = nil
-        guard let recognizer, recognizer.isAvailable else {
+        guard recognizer?.isAvailable == true else {
             errorText = "这台手机的语音识别暂时不可用，直接打字就行。"
             return
         }
@@ -242,14 +242,18 @@ final class SpeechTranscriber: ObservableObject {
                             self.errorText = "麦克风没给权限，直接打字就行；要用的话去系统设置里打开。"
                             return
                         }
-                        self.beginSession(recognizer: recognizer)
+                        self.beginSession()
                     }
                 }
             }
         }
     }
 
-    private func beginSession(recognizer: SFSpeechRecognizer) {
+    private func beginSession() {
+        guard let recognizer, recognizer.isAvailable else {
+            errorText = "这台手机的语音识别暂时不可用，直接打字就行。"
+            return
+        }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
