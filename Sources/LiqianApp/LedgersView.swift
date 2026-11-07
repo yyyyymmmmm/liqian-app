@@ -147,6 +147,9 @@ struct LedgersView: View {
             // 底部多留一段：滚动到底时最后一张卡不被 FAB 与 Tab 栏遮挡
             .contentMargins(.bottom, 72, for: .scrollContent)
             .animation(reduceMotion ? nil : .snappy, value: ledgers.count)
+            // 记录增减时汇总/待回/最近三张卡的出现与消失同样平滑（v4.4），
+            // 不只礼簿行有动画
+            .animation(reduceMotion ? nil : .snappy, value: statRecords.count)
             .navigationTitle("礼簿")
             .navigationBarTitleDisplayMode(.large)
             // 新增动作收敛到右下角 FAB（v2.4 定版，替代原工具栏 + 按钮）；
@@ -251,6 +254,7 @@ struct LedgersView: View {
                 Text("共 \(pendingPeople.count) 人 · \(LedgerMath.fmtMoney(cents: pendingTotal))")
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
+                    .contentTransition(.numericText())
             }
             .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(pendingPeople.prefix(3)) { p in
@@ -264,6 +268,7 @@ struct LedgersView: View {
                         Text(LedgerMath.fmtMoney(cents: p.pendingCents))
                             .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.primary)
+                            .contentTransition(.numericText())
                         Image(systemName: "chevron.right")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(Palette.stone)

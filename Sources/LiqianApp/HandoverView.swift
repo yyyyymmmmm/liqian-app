@@ -20,6 +20,9 @@ struct HandoverView: View {
     @State private var memorialURL: URL?
     @State private var generating = false
     @State private var errorText: String?
+    /// 生成成功/失败触感（v4.4，与礼谱导出口径一致）
+    @State private var generateTrigger = 0
+    @State private var generateErrorTrigger = 0
 
     /// 成册口径：排除待送出（与礼谱、统计一致）
     private var counted: [GiftRecord] { records.filter { !$0.isPendingSend } }
@@ -120,6 +123,8 @@ struct HandoverView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
+        .sensoryFeedback(.success, trigger: generateTrigger)
+        .sensoryFeedback(.warning, trigger: generateErrorTrigger)
         .navigationTitle("交接与纪念版")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -146,13 +151,16 @@ struct HandoverView: View {
         do {
             try data.write(to: url, options: [.atomic])
             packageURL = url
+            generateTrigger += 1
         } catch {
             errorText = "传承包生成失败，请重试。"
+            generateErrorTrigger += 1
             return
         }
         noteURL = HandoverNotePDF.make(ledger: ledger, records: records, members: members)
         if noteURL == nil {
             errorText = "交接说明生成失败，传承包本身不受影响。"
+            generateErrorTrigger += 1
         }
     }
 
@@ -166,8 +174,10 @@ struct HandoverView: View {
         generating = false
         if let url {
             memorialURL = url
+            generateTrigger += 1
         } else {
             errorText = "纪念版礼谱生成失败，请重试。"
+            generateErrorTrigger += 1
         }
     }
 }

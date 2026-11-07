@@ -9,6 +9,7 @@ struct LedgerDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query private var allRecords: [GiftRecord]
     @Query private var allMembers: [LedgerMember]
     @Query private var allSignatures: [GuestSignature]
@@ -176,6 +177,8 @@ struct LedgerDetailView: View {
                 if records.isEmpty {
                     emptyState
                 } else {
+                    // 行增删动画（v4.4）：以记录 id 集合为值，增删/恢复时整组平滑过渡，
+                    // 不再整表跳变；Reduce Motion 时关闭
                     ForEach(records) { record in
                         recordRow(record)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -190,8 +193,15 @@ struct LedgerDetailView: View {
                                     Label("编辑", systemImage: "pencil")
                                 }
                             }
-                            // 活礼谱（v4.2）：长按一笔 → 请这位来宾签名/留语音祝福
+                            // 长按菜单四动作（v4.4 口径对齐）：编辑/删除与左滑同组同序，
+                            // 再加活礼谱（v4.2）的签名/语音祝福——此前菜单只有后两项，
+                            // 不用左滑的用户在长按里找不到编辑与删除
                             .contextMenu {
+                                Button {
+                                    editingRecord = record
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
                                 Button {
                                     signatureRecord = record
                                 } label: {
@@ -202,10 +212,17 @@ struct LedgerDetailView: View {
                                 } label: {
                                     Label("语音祝福", systemImage: "waveform")
                                 }
+                                Divider()
+                                Button(role: .destructive) {
+                                    recordToDelete = record
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
                             }
                     }
                 }
             }
+            .animation(reduceMotion ? nil : .snappy, value: records.map(\.id))
 
         }
         .listStyle(.insetGrouped)
@@ -364,13 +381,9 @@ struct LedgerDetailView: View {
                 Text(ledger.title)
                     .font(.headline)
                     .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-                HStack(spacing: LiqianMetrics.spacingXS) {
-                    Text(LiqianDate.displayString(for: ledger.date))
-                    Text(LiqianDate.lunarString(for: ledger.date))
-                }
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
+                    // 大字号下标题放行两行（v4.4），正常字号仍单行截断
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                headerSubtitle
                 HStack(spacing: LiqianMetrics.spacingM) {
                     headerStat(label: "收礼", value: received, count: receivedCount)
                     headerStat(label: "随礼", value: given, count: givenCount)
@@ -379,12 +392,37 @@ struct LedgerDetailView: View {
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(Palette.ink)
                             .contentTransition(.numericText())
+                            .animation(reduceMotion ? nil : .snappy, value: peopleCount)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Text("人数")
                             .font(.footnote)
                             .foregroundStyle(Palette.stone)
                     }
                 }
             }
+        }
+    }
+
+    /// 头部副标题（公历＋农历）：正常字号横排分段；无障碍大字号时改纵排，
+    /// 两段各占一行完整呈现——旧实现横排 HStack 在大字号下两段互相挤压截断
+    /// （PRO-AUDIT-2 真机待验遗留：详情封面副标题大字号溢出，v4.4 落地）
+    @ViewBuilder
+    private var headerSubtitle: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                Text(LiqianDate.displayString(for: ledger.date))
+                Text(LiqianDate.lunarString(for: ledger.date))
+            }
+            .font(.footnote)
+            .foregroundStyle(Palette.stone)
+        } else {
+            HStack(spacing: LiqianMetrics.spacingXS) {
+                Text(LiqianDate.displayString(for: ledger.date))
+                Text(LiqianDate.lunarString(for: ledger.date))
+            }
+            .font(.footnote)
+            .foregroundStyle(Palette.stone)
         }
     }
 
@@ -395,6 +433,8 @@ struct LedgerDetailView: View {
                 .foregroundStyle(Palette.ink)
                 .contentTransition(.numericText())
                 .animation(reduceMotion ? nil : .snappy, value: value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text("\(label) · \(count) 笔")
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)

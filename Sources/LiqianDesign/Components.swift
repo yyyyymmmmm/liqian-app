@@ -17,14 +17,24 @@ public struct DirectionTag: View {
         // 浅签口径（对标大厂列表）：实心填充每行一枚会把强调色摊成底纹；
         // 改浅底＋同色文字，方向靠色相区分，白事/随礼统一素灰蓝
         let fg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.baiPrimary
-        let bg = fg.opacity(0.13)
+        // 对比度定版（v4.4，WCAG 公式逐组合实算，文字色对合成底）：
+        // 旧浅底 0.13 时夜晚主题收礼签仅 4.13:1、黄色主题 4.16:1，未过 AA 4.5
+        // （审计登记的「随礼签深色约 2.6:1」是更早的实心填充口径遗留数，
+        // 实心白字对 #93A1AD = 2.64:1，现行浅签下随礼签实测 5.07:1 已达标，
+        // 本轮把全部组合一并提到 ≥4.5）。浅底降到 0.06＋同色描边 0.45 保签形：
+        // 五主题 × 两方向最低 4.53:1（夜晚收礼），随礼/白事签最低 5.36:1。
+        let bg = fg.opacity(0.06)
         Text(direction)
-            .font(.caption2.weight(.medium))
+            .font(.caption2.weight(.semibold))
             .foregroundStyle(fg)
             // 签内边距为签形控件内部微调字面量（PRO-AUDIT §4.1 豁免口径），不走梯队
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(bg, in: RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner))
+            .overlay(
+                RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
+                    .stroke(fg.opacity(0.45), lineWidth: 1)
+            )
     }
 }
 
@@ -85,9 +95,13 @@ public struct LedgerCoverCard: View {
                     Text("收礼")
                         .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    // 大字号（Dynamic Type）防溢出（v4.4）：金额单行＋下限缩放，
+                    // 宁可略小不换行撑破卡面；正常字号下不触发
                     Text(LedgerMath.fmtMoney(cents: receivedCents))
                         .font(.liqianMoney(.title3))
                         .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Spacer().frame(width: 14)
                     Text("随礼")
                         .font(.footnote)
@@ -95,10 +109,14 @@ public struct LedgerCoverCard: View {
                     Text(LedgerMath.fmtMoney(cents: givenCents))
                         .font(.liqianMoney(.title3))
                         .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Spacer()
                     Text("\(count) 笔")
                         .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 .padding(.top, LiqianMetrics.spacingS)
             }
@@ -123,8 +141,13 @@ public struct LedgerCoverCard: View {
     /// 公历（displayString 定版格式）/ 农历 / 备注各成一段，备注超长截断
     private var subtitleRow: some View {
         HStack(spacing: LiqianMetrics.spacingXS) {
+            // 公历/农历两段优先保全（大字号时先缩后截），备注最后让位
             Text(LiqianDate.displayString(for: ledger.date))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             Text(LiqianDate.lunarString(for: ledger.date))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             if !ledger.note.isEmpty {
                 Text(ledger.note)
                     .lineLimit(1)
@@ -286,7 +309,9 @@ public struct AddFloatingButton: View {
                 .background(Palette.primaryFill, in: Circle())
                 .shadow(color: .black.opacity(0.20), radius: 10, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
+        // 主操作统一按压反馈（v4.4）：FAB 是全 App 新增动作的收敛入口，
+        // 与首页礼簿卡同走 ScaleOnPress（Reduce Motion 时样式内部自动不缩放）
+        .buttonStyle(ScaleOnPressButtonStyle())
         .accessibilityLabel(label)
         .padding(.trailing, LiqianMetrics.spacingM)
         .padding(.bottom, bottomPadding)

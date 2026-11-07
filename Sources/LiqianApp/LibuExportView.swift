@@ -25,6 +25,9 @@ struct LibuExportView: View {
     @State private var pdfURL: URL?
     @State private var errorText: String?
     @State private var fallbackNote: String?
+    /// 导出生成成功/失败的触感（v4.4）：此前生成完只有画面变化，无反馈
+    @State private var exportTrigger = 0
+    @State private var exportErrorTrigger = 0
 
     private var isBai: Bool { ledger.isBai }
 
@@ -110,6 +113,8 @@ struct LibuExportView: View {
                 errorText = nil
                 fallbackNote = nil
             }
+            .sensoryFeedback(.success, trigger: exportTrigger)
+            .sensoryFeedback(.warning, trigger: exportErrorTrigger)
         }
     }
 
@@ -163,8 +168,10 @@ struct LibuExportView: View {
             generating = false
             if let url {
                 pdfURL = url
+                exportTrigger += 1
             } else {
                 errorText = "礼谱生成失败，请重试。"
+                exportErrorTrigger += 1
             }
         }
     }

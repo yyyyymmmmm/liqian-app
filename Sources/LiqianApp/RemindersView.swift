@@ -21,6 +21,10 @@ struct RemindersView: View {
 
     @State private var formMode: FormMode?
     @State private var authStatus: UNAuthorizationStatus = .notDetermined
+    /// 提醒开关/删除的触感（v4.4）：本页此前全无反馈——左滑启停、删除、
+    /// 待回礼提醒总开关都是静默生效，与全 App 的 sensoryFeedback 体系对齐
+    @State private var dayToggleTrigger = 0
+    @State private var dayDeleteTrigger = 0
 
     private enum FormMode: Identifiable {
         case create
@@ -104,12 +108,14 @@ struct RemindersView: View {
                             Button(role: .destructive) {
                                 modelContext.delete(day)
                                 try? modelContext.save()
+                                dayDeleteTrigger += 1
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }
                             Button {
                                 day.enabled.toggle()
                                 try? modelContext.save()
+                                dayToggleTrigger += 1
                             } label: {
                                 Label(day.enabled ? "停用" : "启用",
                                       systemImage: day.enabled ? "bell.slash" : "bell")
@@ -146,6 +152,9 @@ struct RemindersView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
+        .sensoryFeedback(.selection, trigger: pendingEnabled)
+        .sensoryFeedback(.selection, trigger: dayToggleTrigger)
+        .sensoryFeedback(.warning, trigger: dayDeleteTrigger)
         .navigationTitle("人情提醒")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -276,6 +285,8 @@ struct ReminderDayFormView: View {
     @State private var leadDays: Int
     @State private var enabled: Bool
     @State private var note: String
+    /// 保存成功/开关切换触感（v4.4，与列表页同口径）
+    @State private var saveTrigger = 0
 
     init(existing: ReminderDay? = nil) {
         self.existing = existing
@@ -422,6 +433,9 @@ struct ReminderDayFormView: View {
             }
             .onChange(of: month) { _, _ in clampDay() }
             .onChange(of: calendarKind) { _, _ in clampDay() }
+            .scrollDismissesKeyboard(.interactively)
+            .sensoryFeedback(.success, trigger: saveTrigger)
+            .sensoryFeedback(.selection, trigger: enabled)
         }
     }
 
@@ -454,6 +468,7 @@ struct ReminderDayFormView: View {
             ))
         }
         try? modelContext.save()
+        saveTrigger += 1
         dismiss()
     }
 }

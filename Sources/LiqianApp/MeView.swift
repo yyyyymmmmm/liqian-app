@@ -117,6 +117,7 @@ struct MeView: View {
                             Spacer()
                             Text(pendingPeople.isEmpty ? "无" : LedgerMath.fmtMoney(cents: pendingTotal))
                                 .foregroundStyle(pendingPeople.isEmpty ? Palette.stone : Palette.primary)
+                                .contentTransition(.numericText())
                         }
                     }
                     NavigationLink {
@@ -693,6 +694,7 @@ struct PendingPeopleView: View {
                                 Text(LedgerMath.fmtMoney(cents: p.pendingCents))
                                     .font(.liqianMoney(.title3))
                                     .foregroundStyle(Palette.primary)
+                                    .contentTransition(.numericText())
                             }
                             .frame(minHeight: LiqianMetrics.minTapTarget)
                             .contentShape(Rectangle())

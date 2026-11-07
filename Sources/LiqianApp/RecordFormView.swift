@@ -23,6 +23,7 @@ import LiqianDesign
 struct RecordFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
     @Query private var allRecords: [GiftRecord]
 
@@ -186,14 +187,18 @@ struct RecordFormView: View {
                 .padding(LiqianMetrics.spacingM)
             }
             .background(Palette.pageBG.ignoresSafeArea())
+            // 滚动时可交互式收起系统键盘（v4.4）；只作用于系统键盘，
+            // 自绘金额键盘是 safeAreaInset 面板、不走键盘通道，互斥路径不受影响
+            .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                // 金额输入面：自绘键盘作为卡下固定面板升起，与系统键盘互斥
+                // 金额输入面：自绘键盘作为卡下固定面板升起，与系统键盘互斥；
+                // Reduce Motion 时面板改淡入，不滑动（v4.4）
                 if focus == .amount {
                     amountKeypadPanel
-                        .transition(.move(edge: .bottom))
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom))
                 }
             }
-            .animation(.snappy(duration: 0.25), value: focus)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: focus)
             .navigationTitle(existing == nil ? "记一笔" : "编辑记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -377,7 +382,7 @@ struct RecordFormView: View {
                             in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                         )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ScaleOnPressButtonStyle())
             }
         }
     }
@@ -458,7 +463,7 @@ struct RecordFormView: View {
                                     in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(ScaleOnPressButtonStyle())
                             .accessibilityLabel("选\(p.name)，\(p.relation)，共 \(p.count) 笔往来")
                         }
                     }
@@ -485,7 +490,8 @@ struct RecordFormView: View {
     private var supplementsBlock: some View {
         VStack(spacing: LiqianMetrics.spacingSM) {
             Button {
-                withAnimation(.snappy) { showSupplements.toggle() }
+                // Reduce Motion 时无动画直接展开（v4.4）；chevron 旋转随之静态切换
+                withAnimation(reduceMotion ? nil : .snappy) { showSupplements.toggle() }
             } label: {
                 HStack(spacing: LiqianMetrics.spacingS) {
                     Text("补充信息")
@@ -832,6 +838,7 @@ struct RecordFormView: View {
 /// 金额输入光标：金额面激活时在数字后闪烁的细竖线（品牌色），
 /// 提示「现在敲的是金额」——系统键盘收起后唯一的输入焦点信号
 private struct AmountCaret: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = true
 
     var body: some View {
@@ -841,6 +848,8 @@ private struct AmountCaret: View {
             .opacity(visible ? 1 : 0)
             .onAppear {
                 visible = true
+                // Reduce Motion 时光标常亮不闪烁（v4.4）：焦点信号保留、动效去掉
+                guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
                     visible = false
                 }

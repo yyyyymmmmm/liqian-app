@@ -16,6 +16,8 @@ struct GreetingView: View {
     @State private var isGenerating = false
     @State private var errorText: String?
     @State private var copiedIndex: Int?
+    /// 复制成功触感（v4.4）：此前只有按钮文案变「已复制」，无触觉确认
+    @State private var copyTrigger = 0
     @State private var showGuide = false
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -89,6 +91,7 @@ struct GreetingView: View {
                                 Button {
                                     UIPasteboard.general.string = candidates[i]
                                     copiedIndex = i
+                                    copyTrigger += 1
                                 } label: {
                                     Label(
                                         copiedIndex == i ? "已复制" : "复制这条",
@@ -113,6 +116,8 @@ struct GreetingView: View {
 
             .navigationTitle("生成贺词")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.interactively)
+            .sensoryFeedback(.success, trigger: copyTrigger)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }

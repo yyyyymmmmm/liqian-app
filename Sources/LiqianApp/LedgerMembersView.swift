@@ -16,12 +16,16 @@ struct LedgerMembersView: View {
     let ledger: Ledger
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allMembers: [LedgerMember]
 
     @State private var showNewMember = false
     @State private var editingMember: LedgerMember?
     @State private var memberToDelete: LedgerMember?
     @State private var sharingAvailability: SharingAvailability?
+    /// 成员保存/删除触感（v4.4，与全 App 体系对齐：保存＝成功、删除＝警告）
+    @State private var memberSaveTrigger = 0
+    @State private var memberDeleteTrigger = 0
 
     private var members: [LedgerMember] {
         allMembers
@@ -108,6 +112,9 @@ struct LedgerMembersView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
+        .animation(reduceMotion ? nil : .snappy, value: members.map(\.id))
+        .sensoryFeedback(.success, trigger: memberSaveTrigger)
+        .sensoryFeedback(.warning, trigger: memberDeleteTrigger)
         .navigationTitle("礼簿班子")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -123,6 +130,7 @@ struct LedgerMembersView: View {
                     LedgerMember(ledgerID: ledger.id, name: name, role: role.rawValue)
                 )
                 afterMutation()
+                memberSaveTrigger += 1
             }
         }
         .sheet(item: $editingMember) { member in
@@ -130,6 +138,7 @@ struct LedgerMembersView: View {
                 member.name = name
                 member.role = role.rawValue
                 afterMutation()
+                memberSaveTrigger += 1
             }
         }
         .alert(
@@ -143,6 +152,7 @@ struct LedgerMembersView: View {
                 if let m = memberToDelete {
                     modelContext.delete(m)
                     afterMutation()
+                    memberDeleteTrigger += 1
                 }
                 memberToDelete = nil
             }

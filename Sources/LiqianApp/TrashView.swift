@@ -12,6 +12,9 @@ struct TrashView: View {
     @State private var items: [TrashItem] = []
     @State private var confirmClearAll = false
     @State private var restoreTrigger = 0
+    /// 彻底删除/清空的警告触感（v4.4）：此前只有恢复有反馈，破坏性操作静默
+    @State private var purgeTrigger = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -67,6 +70,8 @@ struct TrashView: View {
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 .background(Palette.pageBG.ignoresSafeArea())
+                // 恢复/删除后行平滑离场（v4.4），不再整表闪变
+                .animation(reduceMotion ? nil : .snappy, value: items.map(\.id))
             }
         }
         .background(Palette.pageBG.ignoresSafeArea())
@@ -84,6 +89,7 @@ struct TrashView: View {
         .confirmationDialog("清空最近删除？", isPresented: $confirmClearAll, titleVisibility: .visible) {
             Button("全部彻底删除", role: .destructive) {
                 TrashStore.clearAll()
+                purgeTrigger += 1
                 reload()
             }
             Button("取消", role: .cancel) {}
@@ -91,6 +97,7 @@ struct TrashView: View {
             Text("清空后无法恢复。")
         }
         .sensoryFeedback(.success, trigger: restoreTrigger)
+        .sensoryFeedback(.warning, trigger: purgeTrigger)
         .onAppear { reload() }
     }
 
@@ -107,6 +114,7 @@ struct TrashView: View {
 
     private func purge(_ item: TrashItem) {
         TrashStore.purge(id: item.id)
+        purgeTrigger += 1
         reload()
     }
 

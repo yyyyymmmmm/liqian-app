@@ -1,10 +1,21 @@
 import SwiftUI
 import UIKit
 import WidgetKit
+import LiqianCore
 
 // MARK: - 待回礼速览小组件
 // 数据来自 App 侧 WidgetSummaryWriter 写入 App Group 的 "pendingSummary"。
-// 色值直接在本文件按 docs/DESIGN.md 令牌重声明（浅/深两套），不依赖 LiqianDesign。
+//
+// 单点化口径（v4.4）：
+// - 金额格式已收敛：直接用 LiqianCore 的 LedgerMath.fmtMoney（本 target
+//   本就链接 LiqianCore），本文件不再自带一份实现，口径永不漂移。
+// - 色值仍为镜像常量、未收敛到 LiqianDesign.Palette，原因有二：① Palette 的
+//   界面令牌是「主题令牌表」驱动的——解析时读 App 进程的 UserDefaults
+//   （AppTheme.current），小组件扩展进程读不到 App 的主题设置，硬接只会
+//   恒定回到白天主题，反而错版；② 本 target 未链接 LiqianDesign（其
+//   Components 还依赖模型层），为两个色值引入整包不划算。镜像值与
+//   AppTheme 白天/夜晚两套 primary 定值保持一致（A62B1F / D96A5C），
+//   改品牌色时两处同改——这是保留的唯一手工同步点。
 
 private enum WPalette {
     private static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
@@ -86,21 +97,9 @@ struct Provider: TimelineProvider {
     }
 }
 
-/// 金额格式与 App 内 LedgerMath.fmtMoney 同口径（整数不带小数）
+/// 金额格式（v4.4 单点化）：直接用 LiqianCore 的定版实现，不再本地复刻
 private func fmtMoney(cents: Int) -> String {
-    let sign = cents < 0 ? "-" : ""
-    let absCents = abs(cents)
-    let yuan = absCents / 100
-    let rem = absCents % 100
-    var head = String(yuan)
-    var grouped = ""
-    while head.count > 3 {
-        grouped = "," + head.suffix(3) + grouped
-        head = String(head.dropLast(3))
-    }
-    grouped = head + grouped
-    if rem == 0 { return "¥\(sign)\(grouped)" }
-    return "¥\(sign)\(grouped).\(rem < 10 ? "0" : "")\(rem)"
+    LedgerMath.fmtMoney(cents: cents)
 }
 
 struct PendingWidgetView: View {
