@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "4.4.0",
-        "CURRENT_PROJECT_VERSION": "44",
+        "MARKETING_VERSION": "4.5.0",
+        "CURRENT_PROJECT_VERSION": "45",
     ]),
     targets: [
         .target(
@@ -43,8 +43,24 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "4.4.0",
-                "CFBundleVersion": "44",
+                "CFBundleShortVersionString": "4.5.0",
+                "CFBundleVersion": "45",
+                // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
+                // 承接在 AppDelegate（冷启动 launchOptions / 运行时 performActionFor）
+                // → ShortcutActions 写标记 → ContentView 消费，与小组件深链同守卫
+                // （隐私锁定时不承接）。type 串与 ShortcutActions 常量必须同步改。
+                "UIApplicationShortcutItems": [
+                    [
+                        "UIApplicationShortcutItemType": "site.didichou.liqian.shortcut.record",
+                        "UIApplicationShortcutItemTitle": "记一笔",
+                        "UIApplicationShortcutItemIconSymbolName": "plus.circle.fill",
+                    ],
+                    [
+                        "UIApplicationShortcutItemType": "site.didichou.liqian.shortcut.pending",
+                        "UIApplicationShortcutItemTitle": "查看待回礼",
+                        "UIApplicationShortcutItemIconSymbolName": "gift.fill",
+                    ],
+                ],
                 "UIFileSharingEnabled": true,
                 "LSSupportsOpeningDocumentsInPlace": true,
                 "ITSAppUsesNonExemptEncryption": false,
@@ -129,13 +145,15 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "4.4.0",
-                "CFBundleVersion": "44",
+                "CFBundleShortVersionString": "4.5.0",
+                "CFBundleVersion": "45",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],
             ]),
             sources: ["Sources/LiqianWidget/**"],
+            // Widget 隐私清单（v4.5）：扩展进程独立 bundle，必须自带一份
+            resources: ["WidgetResources/**"],
             entitlements: .dictionary([
                 "com.apple.security.application-groups": .array([
                     .string("group.site.didichou.liqian"),

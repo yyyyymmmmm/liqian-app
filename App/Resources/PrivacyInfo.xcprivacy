@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  礼记 · App 隐私清单（v4.5 新增，上架硬门槛，见 docs 差距报告 Top 1）
+
+  必备理由 API 按代码实测申报（2026-11-07 全仓核查）：
+  - 只有 UserDefaults 一类命中：文件时间戳 / 磁盘空间 / 系统启动时间 /
+    活跃键盘四类均无调用，不申报。
+  - UserDefaults 在本 App 有两种用法：
+    · UserDefaults.standard（本机设置/标记）→ CA92.1（同 App 内访问）
+    · UserDefaults(suiteName: "group.site.didichou.liqian")（小组件速览与
+      记一笔标记通道）→ 1C8F.1（同 App Group 内访问）
+
+  数据收集申报口径：
+  - iCloud 同步的数据存于用户自己的 iCloud 私有数据库，开发者无从访问，
+    按 Apple 口径不属于开发者「收集」，不申报。
+  - 唯一会离开设备的数据流是用户自备 Key 的 DeepSeek AI 功能：用户主动
+    提交解析的文本从设备直连 DeepSeek，申报为 OtherUserContent /
+    AppFunctionality、未关联身份、不用作跟踪。
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+				<string>1C8F.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
