@@ -49,7 +49,11 @@ struct ContentView: View {
                 // 四栏（v4.6）：首页 0 / 往来 1 / 图表 2 / 我的 3——
                 // 全 App 的 tabSelection 赋值点都按这张表，改索引必全局核对
                 Tab("首页", systemImage: "house.fill", value: 0) {
-                    LedgersView()
+                    // v4.7：首页改总览台 HomeView（倒计时/待回/本月/快捷动作/
+                    // 最近动态/我的礼簿）；待回行与本月卡经这两个绑定回本视图
+                    // 走既有通道切 Tab——personDeepLinkName 与 liqian://person
+                    // 深链共用同一绑定，tabSelection 即本 TabView 的选择值。
+                    HomeView(deepLinkPerson: $personDeepLinkName, tabSelection: $tabSelection)
                 }
                 Tab("往来", systemImage: "person.2", value: 1) {
                     PeopleView(deepLinkPerson: $personDeepLinkName)

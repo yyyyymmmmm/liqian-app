@@ -59,9 +59,12 @@ jobs:
       # SideStore 的 AltSign 读不到能力声明——不建 App Group、新扩展的 App ID
       # 注册/profile 也容易缺失（v4.5 真机实证：Share 扩展缺有效 profile 导致
       # 整个 App 被系统拒启，官方 issue #1394 同症状）。
-      # 这里按 Project.swift 三个 target 的声明做 ad-hoc 预签（无身份、SideStore
-      # 仍会重签），让 AltSign 能从签名 blob 读到 entitlements 并正确建组/配发。
-      # 签完立即断言三个二进制都带 application-groups，缺失即失败，防假绿。
+      # 这里按 Project.swift 的声明做 ad-hoc 预签（无身份、SideStore 仍会重签），
+      # 让 AltSign 能从签名 blob 读到 entitlements 并正确建组/配发。
+      # 签完立即断言二进制都带 application-groups，缺失即失败，防假绿。
+      # v4.7：appex 改为遍历 PlugIns/*.appex 动态处理——Share 扩展自 v4.7 起
+      # 不进包（真机拒启基线，见 docs/V47-NOTES.md），包内 appex 集合会变动，
+      # 不再写死名单；断言范围＝主 App＋实际存在的每个 appex 二进制。
       - name: Ad-hoc presign with entitlements (for AltSign)
         run: |
           set -euo pipefail
@@ -103,21 +106,28 @@ jobs:
           </dict>
           </plist>
           EOF
-          # 由内向外签：Frameworks → 两个 appex → 主 App
+          # 由内向外签：Frameworks → 每个 appex → 主 App（appex 动态遍历）
           for fw in "$APP"/Frameworks/*.framework; do
             codesign --force --sign - "$fw"
           done
-          codesign --force --sign - --entitlements "$SIGN_DIR/ext.entitlements" "$APP/PlugIns/LiqianWidget.appex"
-          codesign --force --sign - --entitlements "$SIGN_DIR/ext.entitlements" "$APP/PlugIns/LiqianShare.appex"
+          for appex in "$APP"/PlugIns/*.appex; do
+            codesign --force --sign - --entitlements "$SIGN_DIR/ext.entitlements" "$appex"
+          done
           codesign --force --sign - --entitlements "$SIGN_DIR/app.entitlements" "$APP"
-          # 断言：blob 存在且含组声明（App 另须含 iCloud 服务声明）
-          for bin in "$APP/LiqianApp" "$APP/PlugIns/LiqianWidget.appex/LiqianWidget" "$APP/PlugIns/LiqianShare.appex/LiqianShare"; do
+          # 断言：blob 存在且含组声明（App 另须含 iCloud 服务声明）；
+          # 二进制名单＝主 App＋每个 appex 的同名主二进制，动态拼装
+          BINS=("$APP/LiqianApp")
+          for appex in "$APP"/PlugIns/*.appex; do
+            BINS+=("$appex/$(basename "$appex" .appex)")
+          done
+          for bin in "${BINS[@]}"; do
+            test -x "$bin" || { echo "ASSERT FAIL: missing binary $bin"; exit 1; }
             OUT=$(codesign -d --entitlements :- "$bin" 2>/dev/null)
             echo "$OUT" | grep -q "com.apple.security.application-groups" || { echo "ASSERT FAIL: no application-groups in $bin"; exit 1; }
             echo "$OUT" | grep -q "group.site.didichou.liqian" || { echo "ASSERT FAIL: no group id in $bin"; exit 1; }
           done
           codesign -d --entitlements :- "$APP/LiqianApp" 2>/dev/null | grep -q "com.apple.developer.icloud-services" || { echo "ASSERT FAIL: no icloud-services in app"; exit 1; }
-          echo "presign assertions passed"
+          echo "presign assertions passed (${#BINS[@]} binaries)"
 
       - name: Package unsigned IPA
         run: |

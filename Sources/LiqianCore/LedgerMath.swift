@@ -13,6 +13,9 @@ public struct EntrySnapshot: Sendable, Equatable {
     public var date: String
     public var status: String
     public var ledgerType: String
+    /// 所属礼簿 id（v4.7 新增）：场次（去重礼簿数）类聚合需要它；
+    /// 旧调用点不传时为 nil，该类聚合自动跳过 nil，不影响既有口径。
+    public var ledgerID: UUID?
 
     public init(
         person: String,
@@ -21,7 +24,8 @@ public struct EntrySnapshot: Sendable, Equatable {
         direction: String,
         date: String,
         status: String = LiqianConstants.sentStatus,
-        ledgerType: String = ""
+        ledgerType: String = "",
+        ledgerID: UUID? = nil
     ) {
         self.person = person
         self.relation = relation
@@ -30,6 +34,7 @@ public struct EntrySnapshot: Sendable, Equatable {
         self.date = date
         self.status = status
         self.ledgerType = ledgerType
+        self.ledgerID = ledgerID
     }
 
     public var isPendingSend: Bool {
@@ -241,6 +246,181 @@ public enum LedgerMath {
         return map.values.sorted { $0.total > $1.total }
     }
 
+    // MARK: - v4.7 图表补全聚合（纯函数，口径与上列一致：待送出不计金额/笔数）
+
+    /// 按月聚合行（key = yyyy-MM）；cumulativeNet 为自序列首月起的累计净额
+    public struct MonthAggregate: Sendable, Equatable, Identifiable {
+        public var month: String
+        public var received: Int
+        public var given: Int
+        public var count: Int
+        public var cumulativeNet: Int
+
+        public var id: String { month }
+        public var net: Int { received - given }
+
+        public init(month: String, received: Int = 0, given: Int = 0, count: Int = 0, cumulativeNet: Int = 0) {
+            self.month = month
+            self.received = received
+            self.given = given
+            self.count = count
+            self.cumulativeNet = cumulativeNet
+        }
+    }
+
+    /// 月度序列：只含有数据的月份、按月升序，cumulativeNet 逐月滚算。
+    /// 展示层的定长窗口（补零对齐）由视图按 key 取用，本函数不补空月。
+    public static func monthlyAggregates(from entries: [EntrySnapshot]) -> [MonthAggregate] {
+        var map: [String: MonthAggregate] = [:]
+        for e in entries where !e.isPendingSend {
+            let key = String(e.date.prefix(7))
+            if map[key] == nil { map[key] = MonthAggregate(month: key) }
+            if e.direction == LiqianConstants.received {
+                map[key]?.received += e.amountCents
+            } else {
+                map[key]?.given += e.amountCents
+            }
+            map[key]?.count += 1
+        }
+        var rows = map.values.sorted { $0.month < $1.month }
+        var running = 0
+        for i in rows.indices {
+            running += rows[i].net
+            rows[i].cumulativeNet = running
+        }
+        return rows
+    }
+
+    /// 单笔金额分桶（元界：200 / 500 / 1000 / 2000）：收、随不分开，
+    /// 每笔（待送出除外）按金额落桶，给笔数与金额合计双口径。
+    public struct AmountBucket: Sendable, Equatable, Identifiable {
+        public var label: String
+        /// 桶下界（分，含）；上界为下一桶下界，末桶无上界
+        public var lowerCents: Int
+        public var count: Int
+        public var totalCents: Int
+
+        public var id: String { label }
+
+        public init(label: String, lowerCents: Int, count: Int = 0, totalCents: Int = 0) {
+            self.label = label
+            self.lowerCents = lowerCents
+            self.count = count
+            self.totalCents = totalCents
+        }
+    }
+
+    public static func amountBuckets(from entries: [EntrySnapshot]) -> [AmountBucket] {
+        var buckets = [
+            AmountBucket(label: "200 元以下", lowerCents: 0),
+            AmountBucket(label: "200–499 元", lowerCents: 20_000),
+            AmountBucket(label: "500–999 元", lowerCents: 50_000),
+            AmountBucket(label: "1000–1999 元", lowerCents: 100_000),
+            AmountBucket(label: "2000 元以上", lowerCents: 200_000),
+        ]
+        for e in entries where !e.isPendingSend {
+            let idx = buckets.lastIndex { e.amountCents >= $0.lowerCents } ?? 0
+            buckets[idx].count += 1
+            buckets[idx].totalCents += e.amountCents
+        }
+        return buckets
+    }
+
+    /// 红白汇总行：红事＝事由非「白事」的全部场次（与 Ledger.isBai 同一判定），
+    /// 白事＝事由为「白事」。occasions 按 ledgerID 去重（nil 不计场次、金额照计）。
+    public struct KindAggregate: Sendable, Equatable, Identifiable {
+        public var isBai: Bool
+        public var received: Int
+        public var given: Int
+        public var count: Int
+        public var occasions: Int
+
+        public var id: Bool { isBai }
+        public var net: Int { received - given }
+        public var name: String { isBai ? "白事" : "红事" }
+
+        public init(isBai: Bool, received: Int = 0, given: Int = 0, count: Int = 0, occasions: Int = 0) {
+            self.isBai = isBai
+            self.received = received
+            self.given = given
+            self.count = count
+            self.occasions = occasions
+        }
+    }
+
+    /// 固定返回 [红事, 白事] 两行（无数据侧为全零行，展示层决定是否呈现）
+    public static func kindSummary(from entries: [EntrySnapshot]) -> [KindAggregate] {
+        var hong = KindAggregate(isBai: false)
+        var bai = KindAggregate(isBai: true)
+        var hongIDs: Set<UUID> = []
+        var baiIDs: Set<UUID> = []
+        for e in entries {
+            let isBai = e.ledgerType == LiqianConstants.baiType
+            if let id = e.ledgerID {
+                if isBai { baiIDs.insert(id) } else { hongIDs.insert(id) }
+            }
+            if e.isPendingSend { continue }
+            if e.direction == LiqianConstants.received {
+                if isBai { bai.received += e.amountCents } else { hong.received += e.amountCents }
+            } else {
+                if isBai { bai.given += e.amountCents } else { hong.given += e.amountCents }
+            }
+            if isBai { bai.count += 1 } else { hong.count += 1 }
+        }
+        hong.occasions = hongIDs.count
+        bai.occasions = baiIDs.count
+        return [hong, bai]
+    }
+
+    /// 年度整表行；netDelta 为与「上一个有数据的年份」的净额差（首行为 nil）
+    public struct YearAggregate: Sendable, Equatable, Identifiable {
+        public var year: String
+        public var received: Int
+        public var given: Int
+        public var count: Int
+        public var occasions: Int
+        public var netDelta: Int?
+
+        public var id: String { year }
+        public var net: Int { received - given }
+
+        public init(
+            year: String, received: Int = 0, given: Int = 0,
+            count: Int = 0, occasions: Int = 0, netDelta: Int? = nil
+        ) {
+            self.year = year
+            self.received = received
+            self.given = given
+            self.count = count
+            self.occasions = occasions
+            self.netDelta = netDelta
+        }
+    }
+
+    /// 年度整表：按年倒序（近年在前），occasions 按 ledgerID 去重
+    public static func yearlyAggregates(from entries: [EntrySnapshot]) -> [YearAggregate] {
+        var map: [String: YearAggregate] = [:]
+        var idsByYear: [String: Set<UUID>] = [:]
+        for e in entries {
+            let year = String(e.date.prefix(4))
+            if map[year] == nil { map[year] = YearAggregate(year: year) }
+            if let id = e.ledgerID { idsByYear[year, default: []].insert(id) }
+            if e.isPendingSend { continue }
+            if e.direction == LiqianConstants.received {
+                map[year]?.received += e.amountCents
+            } else {
+                map[year]?.given += e.amountCents
+            }
+            map[year]?.count += 1
+        }
+        var rows = map.values.sorted { $0.year < $1.year } // 先升序算 delta
+        for i in rows.indices {
+            rows[i].occasions = idsByYear[rows[i].year]?.count ?? 0
+            if i > 0 { rows[i].netDelta = rows[i].net - rows[i - 1].net }
+        }
+        return rows.sorted { $0.year > $1.year }
+    }
+
     // 回礼参考区间已由 v4.3 的 ReplyAdvisor（ReplyAdvice.swift）替换：
     // 旧版只有「锚 ×1.2 取整」一条糙规则、给不出理由，新模型为
     // 锚（最近收礼，回退最大/中位）×年涨幅复利×场合系数，再按红事整百/
@@ -258,7 +438,8 @@ public extension GiftRecord {
             direction: direction,
             date: date,
             status: status,
-            ledgerType: ledgerType
+            ledgerType: ledgerType,
+            ledgerID: ledgerID
         )
     }
 }

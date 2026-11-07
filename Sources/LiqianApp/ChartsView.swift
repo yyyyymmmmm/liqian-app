@@ -21,6 +21,9 @@ struct ChartsView: View {
     @State private var scope: ChartScope = .all
     @State private var selectedYear = ""
     @State private var personRoute: PeopleView.NameRoute?
+    /// 钻取（v4.7）：场合行 → 礼簿详情；关系行 → 该关系人物列表
+    @State private var ledgerRoute: Ledger?
+    @State private var relationRoute: RelationRoute?
     /// 入场进度 0→1：驱动柱条生长与环图扫入（Reduce Motion 时恒 1）
     @State private var entrance: Double = 0
     @Namespace private var rangeNamespace
@@ -161,6 +164,7 @@ struct ChartsView: View {
         var id: UUID
         var title: String
         var type: String
+        var date: String
         var received: Int
         var given: Int
         var count: Int
@@ -176,6 +180,7 @@ struct ChartsView: View {
                 let l = byID[r.ledgerID]
                 map[r.ledgerID] = OccasionRow(
                     id: r.ledgerID, title: l?.title ?? "（已删礼簿）", type: l?.type ?? "",
+                    date: l?.date ?? "",
                     received: 0, given: 0, count: 0
                 )
             }
@@ -194,6 +199,56 @@ struct ChartsView: View {
             .prefix(10).map { $0 }
     }
 
+    // MARK: - v4.7 补全聚合（沉到 Core 的 LedgerMath，视图只做窗口拼装）
+
+    private struct NetMonth: Identifiable {
+        var key: String
+        var label: String
+        var net: Int
+        /// 窗口内累计净额（自窗口首月起算）
+        var cumulative: Int
+        var id: String { key }
+    }
+
+    /// 净额趋势窗口与收送趋势同键同标（monthBuckets），净额/累计走 Core 月度聚合；
+    /// 累计只在窗口内滚算（口径在卡内注明），窗口外月份不混入。
+    private var netMonths: [NetMonth] {
+        let byKey = Dictionary(
+            LedgerMath.monthlyAggregates(from: scopedSnapshots).map { ($0.month, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var running = 0
+        return monthBuckets.map { bucket in
+            let net = byKey[bucket.key]?.net ?? 0
+            running += net
+            return NetMonth(key: bucket.key, label: bucket.label, net: net, cumulative: running)
+        }
+    }
+
+    private var typeRows: [TypeSummary] {
+        LedgerMath.typeSummary(from: scopedSnapshots).filter { $0.count > 0 }
+    }
+
+    /// 红白汇总：[红事, 白事] 固定两行（Core kindSummary，判定同 Ledger.isBai）
+    private var kindRows: [LedgerMath.KindAggregate] {
+        LedgerMath.kindSummary(from: scopedSnapshots)
+    }
+
+    private var bucketRows: [LedgerMath.AmountBucket] {
+        LedgerMath.amountBuckets(from: scopedSnapshots)
+    }
+
+    /// 年度整表：全范围（allSnapshots），不受顶部范围切换影响
+    private var yearTableRows: [LedgerMath.YearAggregate] {
+        LedgerMath.yearlyAggregates(from: allSnapshots)
+    }
+
+    /// 关系钻取路由（值为关系名）
+    private struct RelationRoute: Identifiable, Hashable {
+        var relation: String
+        var id: String { relation }
+    }
+
     // MARK: - 主体
 
     var body: some View {
@@ -208,10 +263,15 @@ struct ChartsView: View {
                     } else {
                         overviewCard
                         trendCard
+                        netTrendCard
                         relationCard
+                        typeCard
+                        kindCard
                         occasionCard
                         peopleCard
+                        amountBucketCard
                         pendingCard
+                        yearTableCard
                     }
                 }
                 .padding(.horizontal, LiqianMetrics.spacingL)
@@ -221,6 +281,20 @@ struct ChartsView: View {
             .navigationTitle("图表")
             .navigationDestination(item: $personRoute) { route in
                 PersonDetailView(name: route.name)
+            }
+            .navigationDestination(item: $ledgerRoute) { ledger in
+                LedgerDetailView(ledger: ledger)
+            }
+            .navigationDestination(item: $relationRoute) { route in
+                // 人物列表与环图同口径：只取该关系下的快照再按人聚合，
+                // 金额即该关系内的往来，不混入此人在其他关系下的记录
+                RelationPeopleList(
+                    relation: route.relation,
+                    people: LedgerMath.people(
+                        from: scopedSnapshots.filter { $0.relation == route.relation }
+                    ),
+                    personRoute: $personRoute
+                )
             }
             .onAppear { restartEntrance() }
             .onChange(of: scope) { _, _ in restartEntrance() }
@@ -460,9 +534,16 @@ struct ChartsView: View {
 
             if !yearRows.isEmpty {
                 Divider()
-                Text("按年汇总")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Palette.ink)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("按年汇总")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    // 与页末「年度总表」（全范围）区分：这里是当前范围内的年汇总
+                    Text(scope.caption(year: effectiveYear))
+                        .font(.caption)
+                        .foregroundStyle(Palette.stone)
+                }
                 VStack(spacing: LiqianMetrics.spacingS) {
                     ForEach(yearRows) { row in
                         HStack(spacing: LiqianMetrics.spacingS) {
@@ -508,6 +589,107 @@ struct ChartsView: View {
         return "收送趋势（按月）。" + (parts.isEmpty ? "暂无数据" : parts.joined(separator: "；"))
     }
 
+    // MARK: - 净额趋势（v4.7：月净额柱 + 窗口内累计折线，上下两图共用月份轴）
+
+    private var netTrendCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
+            cardHeader("净额趋势", caption: "月净额（收 − 送）与累计净额")
+            Chart(netMonths) { row in
+                BarMark(
+                    x: .value("月份", row.label),
+                    y: .value("净额", Double(row.net) * entrance / 100.0)
+                )
+                .foregroundStyle(row.net >= 0 ? Palette.primary : givenColor)
+                .cornerRadius(2)
+                RuleMark(y: .value("零", 0))
+                    .foregroundStyle(Palette.stone.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine().foregroundStyle(Palette.line)
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(axisMoneyText(v))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks { _ in
+                    AxisValueLabel()
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+            .frame(height: 120)
+            .accessibilityLabel(netTrendAccessibilityText)
+
+            Text("累计净额")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Palette.ink)
+            Chart(netMonths) { row in
+                LineMark(
+                    x: .value("月份", row.label),
+                    y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
+                )
+                .foregroundStyle(Palette.ink)
+                .lineStyle(StrokeStyle(lineWidth: 2))
+                PointMark(
+                    x: .value("月份", row.label),
+                    y: .value("累计净额", Double(row.cumulative) * entrance / 100.0)
+                )
+                .foregroundStyle(Palette.ink)
+                .symbolSize(14)
+                RuleMark(y: .value("零", 0))
+                    .foregroundStyle(Palette.stone.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine().foregroundStyle(Palette.line)
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(axisMoneyText(v))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks { _ in
+                    AxisValueLabel()
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+            .frame(height: 96)
+            .accessibilityLabel(cumulativeAccessibilityText)
+
+            if scope == .all {
+                Text("累计净额自窗口首月起算；全史净额见总览卡「净往来」。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.stone)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private var netTrendAccessibilityText: String {
+        let parts = netMonths.filter { $0.net != 0 }.map {
+            "\($0.key)：净 \(LedgerMath.fmtMoney(cents: $0.net))"
+        }
+        return "净额趋势（按月）。" + (parts.isEmpty ? "暂无数据" : parts.joined(separator: "；"))
+    }
+
+    private var cumulativeAccessibilityText: String {
+        guard let last = netMonths.last else { return "累计净额：暂无数据" }
+        return "累计净额：截至 \(last.key)，共 \(LedgerMath.fmtMoney(cents: last.cumulative))"
+    }
+
     // MARK: - 关系结构（环图）
 
     private var relationCard: some View {
@@ -544,24 +726,36 @@ struct ChartsView: View {
                 .accessibilityLabel(relationAccessibilityText)
                 VStack(spacing: LiqianMetrics.spacingS) {
                     ForEach(Array(relationRows.enumerated()), id: \.element.id) { idx, row in
-                        HStack(spacing: LiqianMetrics.spacingS) {
-                            Circle()
-                                .fill(sliceColor(index: idx))
-                                .frame(width: 8, height: 8)
-                            Text(row.relation)
-                                .font(.subheadline)
-                                .foregroundStyle(Palette.ink)
-                            Text("\(row.count) 笔")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(Palette.stone)
-                            Spacer()
-                            Text(percentText(row.total))
-                                .font(.footnote.monospacedDigit())
-                                .foregroundStyle(Palette.stone)
-                            Text(LedgerMath.fmtMoney(cents: row.total))
-                                .font(.liqianMoney(.body))
-                                .foregroundStyle(Palette.ink)
+                        // 钻取（v4.7）：点行进该关系的人物列表
+                        Button {
+                            relationRoute = RelationRoute(relation: row.relation)
+                        } label: {
+                            HStack(spacing: LiqianMetrics.spacingS) {
+                                Circle()
+                                    .fill(sliceColor(index: idx))
+                                    .frame(width: 8, height: 8)
+                                Text(row.relation)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Palette.ink)
+                                Text("\(row.count) 笔")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                                Spacer()
+                                Text(percentText(row.total))
+                                    .font(.footnote.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                                Text(LedgerMath.fmtMoney(cents: row.total))
+                                    .font(.liqianMoney(.body))
+                                    .foregroundStyle(Palette.ink)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Palette.stone)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -596,6 +790,162 @@ struct ChartsView: View {
         return "关系分布：" + parts.joined(separator: "；")
     }
 
+    // MARK: - 事由分布（v4.7：按礼簿事由，收/送分开成对条形）
+
+    private var typeCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("事由分布")
+                    .font(.headline)
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                legendDot(color: Palette.primary, text: "收礼")
+                legendDot(color: givenColor, text: "随礼")
+            }
+            if typeRows.isEmpty {
+                Text("暂无数据")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                Chart(typeRows) { row in
+                    BarMark(
+                        x: .value("收礼", Double(row.received) * entrance / 100.0),
+                        y: .value("事由", row.type)
+                    )
+                    .position(by: .value("方向", "收礼"))
+                    .foregroundStyle(by: .value("方向", "收礼"))
+                    .cornerRadius(3)
+                    BarMark(
+                        x: .value("随礼", Double(row.given) * entrance / 100.0),
+                        y: .value("事由", row.type)
+                    )
+                    .position(by: .value("方向", "随礼"))
+                    .foregroundStyle(by: .value("方向", "随礼"))
+                    .cornerRadius(3)
+                }
+                .chartForegroundStyleScale(["收礼": Palette.primary, "随礼": givenColor])
+                .chartLegend(.hidden)
+                .chartXAxis {
+                    AxisMarks(position: .bottom) { value in
+                        AxisGridLine().foregroundStyle(Palette.line)
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text(axisMoneyText(v))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel()
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.ink)
+                    }
+                }
+                .frame(height: CGFloat(typeRows.count) * 52 + 16)
+                .accessibilityLabel(typeAccessibilityText)
+                VStack(spacing: LiqianMetrics.spacingXS) {
+                    ForEach(typeRows) { row in
+                        HStack(spacing: LiqianMetrics.spacingS) {
+                            Text(row.type)
+                                .font(.caption)
+                                .foregroundStyle(Palette.stone)
+                                .frame(width: 30, alignment: .leading)
+                            Spacer()
+                            Text("收 \(LedgerMath.fmtMoney(cents: row.received)) · 送 \(LedgerMath.fmtMoney(cents: row.given)) · \(row.count) 笔")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private var typeAccessibilityText: String {
+        let parts = typeRows.map {
+            "\($0.type)：收 \(LedgerMath.fmtMoney(cents: $0.received))，送 \(LedgerMath.fmtMoney(cents: $0.given))，共 \($0.count) 笔"
+        }
+        return "事由分布：" + parts.joined(separator: "；")
+    }
+
+    // MARK: - 红白分开（v4.7：判定同 Ledger.isBai，红事朱砂、白事素蓝，不混账）
+
+    private var kindCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
+            cardHeader("红白分开", caption: "红事与白事分开统计")
+            Chart(kindRows) { row in
+                BarMark(
+                    x: .value("收礼", Double(row.received) * entrance / 100.0),
+                    y: .value("类别", row.name)
+                )
+                .position(by: .value("类目", row.isBai ? "白事收礼" : "红事收礼"))
+                .foregroundStyle(by: .value("类目", row.isBai ? "白事收礼" : "红事收礼"))
+                .cornerRadius(3)
+                BarMark(
+                    x: .value("随礼", Double(row.given) * entrance / 100.0),
+                    y: .value("类别", row.name)
+                )
+                .position(by: .value("类目", row.isBai ? "白事随礼" : "红事随礼"))
+                .foregroundStyle(by: .value("类目", row.isBai ? "白事随礼" : "红事随礼"))
+                .cornerRadius(3)
+            }
+            .chartForegroundStyleScale([
+                "红事收礼": Palette.primary,
+                "红事随礼": givenColor,
+                "白事收礼": Palette.baiPrimary,
+                "白事随礼": Palette.baiPrimary.opacity(0.45),
+            ])
+            .chartLegend(.hidden)
+            .chartXAxis {
+                AxisMarks(position: .bottom) { value in
+                    AxisGridLine().foregroundStyle(Palette.line)
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(axisMoneyText(v))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks { _ in
+                    AxisValueLabel()
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.ink)
+                }
+            }
+            .frame(height: 120)
+            .accessibilityLabel(kindAccessibilityText)
+            VStack(spacing: LiqianMetrics.spacingXS) {
+                ForEach(kindRows) { row in
+                    HStack(spacing: LiqianMetrics.spacingS) {
+                        Text(row.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(row.isBai ? Palette.baiPrimary : Palette.primary)
+                            .frame(width: 30, alignment: .leading)
+                        Spacer()
+                        Text("收 \(LedgerMath.fmtMoney(cents: row.received)) · 送 \(LedgerMath.fmtMoney(cents: row.given)) · 净 \(LedgerMath.fmtMoney(cents: row.net)) · \(row.count) 笔 · \(row.occasions) 场")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private var kindAccessibilityText: String {
+        let parts = kindRows.map {
+            "\($0.name)：收 \(LedgerMath.fmtMoney(cents: $0.received))，送 \(LedgerMath.fmtMoney(cents: $0.given))，净 \(LedgerMath.fmtMoney(cents: $0.net))，共 \($0.count) 笔、\($0.occasions) 场"
+        }
+        return "红白分开：" + parts.joined(separator: "；")
+    }
+
     // MARK: - 场合分布
 
     private var occasionCard: some View {
@@ -609,7 +959,10 @@ struct ChartsView: View {
                 Chart(occasionRows) { row in
                     BarMark(
                         x: .value("往来", Double(row.total) * entrance / 100.0),
-                        y: .value("场合", row.title)
+                        // 图类目按标题字符串归组：两本同名礼簿会被画成一条，
+                        // 与下方逐本明细对不上（v4.7 审计修正）——同名时
+                        // 图标签带上日期消歧，明细行仍显示原标题。
+                        y: .value("场合", occasionChartLabel(row))
                     )
                     .foregroundStyle(Palette.primary.opacity(barOpacity(total: row.total, in: occasionRows.map(\.total))))
                     .cornerRadius(4)
@@ -642,25 +995,44 @@ struct ChartsView: View {
                 .accessibilityLabel(occasionAccessibilityText)
                 VStack(spacing: LiqianMetrics.spacingXS) {
                     ForEach(occasionRows) { row in
-                        HStack(spacing: LiqianMetrics.spacingS) {
-                            Text(row.type)
-                                .font(.caption)
-                                .foregroundStyle(Palette.stone)
-                                .frame(width: 30, alignment: .leading)
-                            Text(row.title)
-                                .font(.caption)
-                                .foregroundStyle(Palette.stone)
-                                .lineLimit(1)
-                            Spacer()
-                            Text("收 \(LedgerMath.fmtMoney(cents: row.received)) · 送 \(LedgerMath.fmtMoney(cents: row.given)) · \(row.count) 笔")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(Palette.stone)
+                        // 钻取（v4.7）：点行进这本礼簿的详情页
+                        Button {
+                            ledgerRoute = ledgers.first { $0.id == row.id }
+                        } label: {
+                            HStack(spacing: LiqianMetrics.spacingS) {
+                                Text(row.type)
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.stone)
+                                    .frame(width: 30, alignment: .leading)
+                                Text(row.title)
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.stone)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("收 \(LedgerMath.fmtMoney(cents: row.received)) · 送 \(LedgerMath.fmtMoney(cents: row.given)) · \(row.count) 笔")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Palette.stone)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .liqianCardSurface()
+    }
+
+    /// 场合图标签：标题唯一时原样；同名多本时加日期消歧（与图归组口径对齐）
+    private func occasionChartLabel(_ row: OccasionRow) -> String {
+        let duplicates = occasionRows.filter { $0.title == row.title }.count > 1
+        guard duplicates, !row.date.isEmpty else { return row.title }
+        return "\(row.title) · \(LiqianDate.displayString(for: row.date))"
     }
 
     private var occasionAccessibilityText: String {
@@ -780,6 +1152,123 @@ struct ChartsView: View {
         .liqianCardSurface()
     }
 
+    // MARK: - 金额段分布（v4.7：单笔金额落桶，笔数条形 + 金额标注双口径）
+
+    private var amountBucketCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
+            cardHeader("金额段分布", caption: "按单笔金额分段，条长为笔数")
+            if bucketRows.allSatisfy({ $0.count == 0 }) {
+                Text("暂无数据")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                Chart(bucketRows) { row in
+                    BarMark(
+                        x: .value("笔数", Double(row.count) * entrance),
+                        y: .value("金额段", row.label)
+                    )
+                    .foregroundStyle(Palette.primary.opacity(barOpacity(total: row.count, in: bucketRows.map(\.count))))
+                    .cornerRadius(4)
+                    .annotation(position: .trailing, alignment: .leading, spacing: 4) {
+                        Text("\(row.count) 笔 · \(LedgerMath.fmtMoney(cents: row.totalCents))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(position: .bottom) { value in
+                        AxisGridLine().foregroundStyle(Palette.line)
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text("\(Int(v))")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel()
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.ink)
+                    }
+                }
+                .frame(height: CGFloat(bucketRows.count) * 36 + 16)
+                .accessibilityLabel(bucketAccessibilityText)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private var bucketAccessibilityText: String {
+        let parts = bucketRows.filter { $0.count > 0 }.map {
+            "\($0.label)：\($0.count) 笔，合计 \(LedgerMath.fmtMoney(cents: $0.totalCents))"
+        }
+        return "金额段分布：" + (parts.isEmpty ? "暂无数据" : parts.joined(separator: "；"))
+    }
+
+    // MARK: - 年度整表（v4.7：全范围，不随顶部范围切换；净额同比对上一个有数据的年份）
+
+    private var yearTableCard: some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            cardHeader("年度总表", caption: "全部年份 · 不随上方范围切换")
+            if yearTableRows.isEmpty {
+                Text("暂无数据")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                ForEach(Array(yearTableRows.enumerated()), id: \.element.id) { idx, row in
+                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                        HStack(spacing: LiqianMetrics.spacingS) {
+                            Text(row.year + " 年")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Palette.ink)
+                            Spacer()
+                            Text("\(row.count) 笔 · \(row.occasions) 场")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                        }
+                        HStack(spacing: LiqianMetrics.spacingS) {
+                            Text("收 \(LedgerMath.fmtMoney(cents: row.received))")
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                            Text("送 \(LedgerMath.fmtMoney(cents: row.given))")
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(Palette.stone)
+                            Spacer()
+                            Text("净 \(LedgerMath.fmtMoney(cents: row.net))")
+                                .font(.footnote.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(Palette.ink)
+                            if let delta = row.netDelta {
+                                Text("同比 \(delta >= 0 ? "+" : "−")\(LedgerMath.fmtMoney(cents: abs(delta)))")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(yearRowAccessibilityText(row))
+                    if idx != yearTableRows.count - 1 {
+                        Divider()
+                    }
+                }
+                Text("同比＝净额与上一个有数据的年份之差。")
+                    .font(.caption)
+                    .foregroundStyle(Palette.stone)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private func yearRowAccessibilityText(_ row: LedgerMath.YearAggregate) -> String {
+        var text = "\(row.year) 年：收 \(LedgerMath.fmtMoney(cents: row.received))，送 \(LedgerMath.fmtMoney(cents: row.given))，净 \(LedgerMath.fmtMoney(cents: row.net))，共 \(row.count) 笔、\(row.occasions) 场"
+        if let delta = row.netDelta {
+            text += "，净额同比 \(delta >= 0 ? "多" : "少") \(LedgerMath.fmtMoney(cents: abs(delta)))"
+        }
+        return text
+    }
+
     // MARK: - 通用小件
 
     private func cardHeader(_ title: String, caption: String) -> some View {
@@ -834,6 +1323,68 @@ private enum ChartScope: String, CaseIterable, Identifiable {
         case .last12: return "近 12 个月"
         case .year: return year + " 年"
         }
+    }
+}
+
+// MARK: - 关系人物列表（v4.7 钻取落点：环图明细行 → 本页 → 人物详情）
+
+/// 某关系下的往来人物（入参已按该关系口径聚合），按往来总额倒序；
+/// 点行经 personRoute 进人物详情（与待回清单同一条 NameRoute 通道）。
+private struct RelationPeopleList: View {
+    let relation: String
+    let people: [PersonSummary]
+    @Binding var personRoute: PeopleView.NameRoute?
+
+    private var sorted: [PersonSummary] {
+        people.sorted { ($0.received + $0.given) > ($1.received + $1.given) }
+    }
+
+    var body: some View {
+        List {
+            if sorted.isEmpty {
+                Text("这个关系下暂时没有往来记录")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                ForEach(sorted) { person in
+                    Button {
+                        personRoute = PeopleView.NameRoute(name: person.name)
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                                Text(person.name)
+                                    .font(.body)
+                                    .foregroundStyle(Palette.ink)
+                                Text("收 \(LedgerMath.fmtMoney(cents: person.received)) · 送 \(LedgerMath.fmtMoney(cents: person.given)) · \(person.count) 笔")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(Palette.stone)
+                            }
+                            Spacer()
+                            if person.hasPending {
+                                Text("待回 \(LedgerMath.fmtMoney(cents: person.pendingCents))")
+                                    .font(.footnote.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(Palette.primary)
+                            }
+                            Text(LedgerMath.fmtMoney(cents: person.received + person.given))
+                                .font(.liqianMoney(.body))
+                                .foregroundStyle(Palette.ink)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Palette.stone)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
+        .navigationTitle(relation)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

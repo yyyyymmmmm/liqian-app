@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "4.6.0",
-        "CURRENT_PROJECT_VERSION": "46",
+        "MARKETING_VERSION": "4.7.0",
+        "CURRENT_PROJECT_VERSION": "47",
     ]),
     targets: [
         .target(
@@ -43,8 +43,8 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "4.6.0",
-                "CFBundleVersion": "46",
+                "CFBundleShortVersionString": "4.7.0",
+                "CFBundleVersion": "47",
                 // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
                 // 承接在 AppDelegate（冷启动 launchOptions / 运行时 performActionFor）
                 // → ShortcutActions 写标记 → ContentView 消费，与小组件深链同守卫
@@ -105,7 +105,12 @@ let project = Project(
                 .target(name: "LiqianCore"),
                 .target(name: "LiqianDesign"),
                 .target(name: "LiqianWidget"),
-                .target(name: "LiqianShare"),
+                // LiqianShare 依赖自 v4.7 起摘除（休眠）：v4.5/v4.6 两版真机
+                // 实证——带 Share 扩展的完整包在 SideStore 重签后整 App 拒启
+                // （扩展 profile 注册问题），去分享包可用。本版基线不带它进包；
+                // target 定义与 Sources/LiqianShare 源码保留，恢复方法见
+                // docs/V47-NOTES.md（把本行加回依赖即可，Share plist 版本
+                // 届时需同步升到当版）。
             ]
         ),
         .target(
@@ -145,8 +150,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "4.6.0",
-                "CFBundleVersion": "46",
+                "CFBundleShortVersionString": "4.7.0",
+                "CFBundleVersion": "47",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],
