@@ -86,7 +86,7 @@ struct MeView: View {
                     showInfo(title: "导出失败", message: "备份没能存下来，再试一次。")
                 }
             }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
                 handleImport(result)
             }
             .confirmationDialog("覆盖恢复？", isPresented: $showImportConfirm, titleVisibility: .visible) {
