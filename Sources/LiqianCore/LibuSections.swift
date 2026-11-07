@@ -14,8 +14,9 @@ public struct LibuRelationSection<Element> {
 }
 
 public enum LibuSections {
-    /// 按关系分段（保序）：段序按 LiqianConstants.relations 枚举序
-    /// （亲戚/朋友/同事/同学/邻居/其他）；枚举外的关系附后、按字面升序
+    /// 按关系分段（保序）：段序按 RelationCatalog.all() 目录序（系统词表
+    /// 亲戚/朋友/同事/同学/邻居/其他在前、用户自定义关系按添加顺序随后）；
+    /// 目录外的关系（已删的自定义等）附后、按字面升序
     /// （与汇总页「按關係小計」同口径）；关系为空串者归入「其他」。
     /// 段内保持入参相对顺序——调用方先按现行成册口径
     /// （日期升序、同日姓名）排好再喂进来，本函数不重排段内。
@@ -31,8 +32,9 @@ public enum LibuSections {
             if grouped[key] == nil { seen.append(key) }
             grouped[key, default: []].append(record)
         }
-        let known = LiqianConstants.relations.filter { grouped[$0] != nil }
-        let unknown = seen.filter { !LiqianConstants.relations.contains($0) }.sorted()
+        let catalog = RelationCatalog.all()
+        let known = catalog.filter { grouped[$0] != nil }
+        let unknown = seen.filter { !catalog.contains($0) }.sorted()
         return (known + unknown).map {
             LibuRelationSection(relation: $0, records: grouped[$0] ?? [])
         }

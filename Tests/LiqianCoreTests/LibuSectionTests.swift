@@ -67,6 +67,50 @@ final class LibuSectionGroupingTests: XCTestCase {
     }
 }
 
+// MARK: - 段序走关系目录（自定义关系：系统之后、添加序、目录外附后）
+
+final class LibuCatalogOrderTests: XCTestCase {
+    private var savedRaw: Any?
+
+    override func setUp() {
+        super.setUp()
+        savedRaw = UserDefaults.standard.object(forKey: RelationCatalog.customRelationsKey)
+        UserDefaults.standard.removeObject(forKey: RelationCatalog.customRelationsKey)
+    }
+
+    override func tearDown() {
+        if let savedRaw {
+            UserDefaults.standard.set(savedRaw, forKey: RelationCatalog.customRelationsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: RelationCatalog.customRelationsKey)
+        }
+        super.tearDown()
+    }
+
+    private func sections(
+        _ rows: [(name: String, relation: String)]
+    ) -> [LibuRelationSection<SectionRow>] {
+        LibuSections.groupByRelation(
+            rows.map { SectionRow(name: $0.name, relation: $0.relation) }
+        ) { $0.relation }
+    }
+
+    /// 自定义关系按添加序排在系统词表之后（不是字面序）；
+    /// 目录外的关系（已删的自定义等）仍按字面序附在最后。
+    func testCustomRelationsFollowCatalogOrder() {
+        RelationCatalog.setCustom(["战友", "闺蜜"])
+        let result = sections([
+            ("甲", "闺蜜"), ("乙", "老乡"), ("丙", "战友"),
+            ("丁", "朋友"), ("戊", "闺蜜"),
+        ])
+        XCTAssertEqual(
+            result.map(\.relation),
+            ["朋友", "战友", "闺蜜", "老乡"]
+        )
+        XCTAssertEqual(result[2].records.map(\.name), ["甲", "戊"])
+    }
+}
+
 // MARK: - 段题签笔数（v3.1：汉字数字，账簿计数式起头省「壹」）
 
 final class LibuChineseCountTests: XCTestCase {

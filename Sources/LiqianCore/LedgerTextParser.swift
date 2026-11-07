@@ -73,12 +73,12 @@ public enum LedgerTextParser {
             return .failure(reason: "姓名不能包含数字")
         }
 
-        // 剩余 token 只允许一段关系：已知关系词或任意 2 字
+        // 剩余 token 只允许一段关系：关系目录（系统＋自定义）内的词或任意 2 字
         var relation: String?
         let extras = Array(rest.dropFirst())
         if extras.count == 1 {
             let r = extras[0]
-            if LiqianConstants.relations.contains(r) || r.count == 2 {
+            if RelationCatalog.all().contains(r) || r.count == 2 {
                 relation = r
             } else {
                 return .failure(reason: "无法识别「\(r)」，请填写关系（如亲戚、朋友、同事）")

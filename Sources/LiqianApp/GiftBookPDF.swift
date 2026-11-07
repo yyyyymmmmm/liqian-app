@@ -742,13 +742,15 @@ enum GiftBookPDF {
             }
         }
 
-        // 按關係小計（v2.8 新增；关系为记录数据原样，排序按词表序、表外者附后。
-        // 只有一种关系时与总计重复，不出此节）
+        // 按關係小計（v2.8 新增；关系为记录数据原样，排序按关系目录序
+        // （系统＋自定义）、目录外者附后。自定义关系照原样出、不转繁体，
+        // 与全谱用户数据口径一致。只有一种关系时与总计重复，不出此节）
         let relGroups = Dictionary(grouping: counted, by: \.relation)
         if relGroups.count > 1 {
             add("按關係小計", size: 16, header: true, dy: 36)
-            let orderedRelations = LiqianConstants.relations.filter { relGroups[$0] != nil }
-                + relGroups.keys.filter { !LiqianConstants.relations.contains($0) }.sorted()
+            let catalog = RelationCatalog.all()
+            let orderedRelations = catalog.filter { relGroups[$0] != nil }
+                + relGroups.keys.filter { !catalog.contains($0) }.sorted()
             for relation in orderedRelations {
                 guard let list = relGroups[relation] else { continue }
                 let rec = list.filter { $0.direction == LiqianConstants.received }
