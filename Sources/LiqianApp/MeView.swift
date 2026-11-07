@@ -19,12 +19,16 @@ struct MeView: View {
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
     @Query private var members: [LedgerMember]
+    @Query private var guestSignatures: [GuestSignature]
+    @Query private var voiceBlessings: [VoiceBlessing]
 
     @State private var csvURL: URL?
     @State private var exportDocument = JSONBackupDocument(data: Data())
     @State private var showExporter = false
     @State private var showImporter = false
     @State private var pendingImport: (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay], members: [BackupMember])?
+    /// 活礼谱（v4.2）：待导入备份的签名/祝福元数据段（无二进制本体）
+    @State private var pendingLive: (signatures: [BackupSignature], blessings: [BackupVoiceBlessing])?
     @State private var showImportConfirm = false
     @State private var infoTitle = ""
     @State private var infoMessage = ""
@@ -247,7 +251,8 @@ struct MeView: View {
                         exportDocument = JSONBackupDocument(
                             data: LiqianBackup.makeBackup(
                                 ledgers: ledgers, records: records,
-                                reminders: reminderDays, members: members
+                                reminders: reminderDays, members: members,
+                                signatures: guestSignatures, blessings: voiceBlessings
                             )
                         )
                         showExporter = true
@@ -255,7 +260,7 @@ struct MeView: View {
                         entryLabel(
                             icon: "tray.and.arrow.up",
                             title: "导出备份（JSON）",
-                            subtitle: "包含全部礼簿、记录、提醒日子与礼簿班子，可用于换机恢复"
+                            subtitle: "包含全部礼簿、记录、提醒日子与礼簿班子，可用于换机恢复；签名图片与祝福录音不在备份内（保存在本机与 iCloud）"
                         )
                     }
                     Button {
@@ -431,6 +436,7 @@ struct MeView: View {
         do {
             let data = try Data(contentsOf: url)
             pendingImport = try LiqianBackup.parseBackupFull(data)
+            pendingLive = LiqianBackup.parseBackupLive(data)
             showImportConfirm = true
         } catch {
             showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
@@ -443,6 +449,10 @@ struct MeView: View {
         for l in ledgers { modelContext.delete(l) }
         for d in reminderDays { modelContext.delete(d) }
         for m in members { modelContext.delete(m) }
+        // 活礼谱（v4.2）：旧签名/祝福随覆盖恢复一并清掉（录音文件留在
+        // 容器里成孤儿，不误删——恢复的祝福元数据可能还引用同名文件）
+        for s in guestSignatures { modelContext.delete(s) }
+        for b in voiceBlessings { modelContext.delete(b) }
         // 备份里的 id 是字符串：原生备份是 UUID 串可直转；
         // Flutter 旧备份是时间戳串，转不成 UUID 就新发一个，并按账本逐个建映射保证记录挂得上
         var idMap: [String: UUID] = [:]
@@ -458,11 +468,14 @@ struct MeView: View {
             )
         }
         var importedRecords = 0
+        var importedRecordIDs = Set<UUID>()
         for br in p.records {
             guard let lid = idMap[br.ledgerId] else { continue }
+            let recordID = br.idUUID ?? UUID()
+            importedRecordIDs.insert(recordID)
             modelContext.insert(
                 GiftRecord(
-                    id: br.idUUID ?? UUID(),
+                    id: recordID,
                     ledgerID: lid,
                     person: br.person,
                     relation: br.relation,
@@ -508,6 +521,28 @@ struct MeView: View {
             )
             importedMembers += 1
         }
+        // 活礼谱元数据恢复（v4.2）：只恢复祝福元数据（转写文字跟着回来）；
+        // 记录在本备份里不存在（或 id 被重发）的不挂。录音文件若在新设备
+        // 上不存在，播放时会如实提示。签名没有图片本体，不恢复成行——
+        // 备份里的签名段只是「谁签过」的存档清单。
+        if let live = pendingLive {
+            for bb in live.blessings {
+                guard let bid = bb.idUUID, let rid = bb.recordUUID,
+                      importedRecordIDs.contains(rid)
+                else { continue }
+                modelContext.insert(
+                    VoiceBlessing(
+                        id: bid,
+                        recordID: rid,
+                        fileName: bb.fileName,
+                        duration: bb.duration,
+                        transcript: bb.transcript,
+                        createdAt: LiqianISO8601.date(from: bb.createdAt) ?? Date()
+                    )
+                )
+            }
+        }
+        pendingLive = nil
         try? modelContext.save()
         // 恢复后按新数据重排提醒（旧排期对应的是被覆盖掉的日子）
         ReminderScheduler.reschedule(
@@ -663,7 +698,7 @@ struct AboutView: View {
                 Text("礼钱账本记亲友红白事的往来礼钱，方便日后回礼。")
                     .foregroundStyle(Palette.ink)
             } footer: {
-                Text("开启 iCloud 同步时，数据通过你自己的 iCloud 账号在你的设备间同步，换手机或重装后自动回来；未开启时数据仅保存在本机。导出备份可手动保存一份到任意位置，与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
+                Text("开启 iCloud 同步时，数据通过你自己的 iCloud 账号在你的设备间同步，换手机或重装后自动回来；未开启时数据仅保存在本机。导出备份可手动保存一份到任意位置，与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。注意：来宾签名图片与语音祝福录音不在 JSON 备份内，它们保存在本机与 iCloud 中。")
             }
         }
         .listStyle(.insetGrouped)

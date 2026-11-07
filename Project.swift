@@ -50,6 +50,15 @@ let project = Project(
                 "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
                 // CloudKit 静默推送：数据在其他设备变更时系统唤醒同步（feat/icloud）
                 "UIBackgroundModes": ["remote-notification"],
+                // 活礼谱（v4.2）：注册 liqian scheme——此前小组件的
+                // liqian://quick-record 也未注册（靠系统宽容才通），
+                // 祝福深链 liqian://blessing/<id>（礼谱索引页二维码）依赖它。
+                "CFBundleURLTypes": [
+                    [
+                        "CFBundleURLName": "site.didichou.liqian",
+                        "CFBundleURLSchemes": ["liqian"],
+                    ],
+                ],
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],

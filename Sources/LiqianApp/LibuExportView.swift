@@ -13,6 +13,10 @@ import LiqianDesign
 struct LibuExportView: View {
     let ledger: Ledger
     let records: [GiftRecord]
+    /// 活礼谱（v4.2）：本簿签名与成册口径内记录的祝福，由详情页透传；
+    /// 默认空——为空时生成的谱与旧版逐页一致。
+    var signatures: [GuestSignature] = []
+    var blessings: [VoiceBlessing] = []
 
     @Environment(\.dismiss) private var dismiss
 
@@ -153,7 +157,8 @@ struct LibuExportView: View {
             }
             let url = GiftBookPDF.makePDF(
                 ledger: ledger, records: records,
-                prefaceText: preface
+                prefaceText: preface,
+                signatures: signatures, blessings: blessings
             )
             generating = false
             if let url {

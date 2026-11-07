@@ -14,7 +14,10 @@ struct ContentView: View {
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
     @Query private var allReminderDays: [ReminderDay]
+    @Query private var allBlessings: [VoiceBlessing]
     @State private var isLocked = true
+    /// 活礼谱（v4.2）：祝福深链 liqian://blessing/<id> 的播放目标
+    @State private var deepLinkBlessing: VoiceBlessing?
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
     @State private var tabSelection = 0
@@ -107,11 +110,23 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             // 小组件深链：liqian://quick-record
-            guard url.scheme == "liqian", url.host == "quick-record" else { return }
-            presentQuickRecord()
+            if url.scheme == "liqian", url.host == "quick-record" {
+                presentQuickRecord()
+                return
+            }
+            // 活礼谱（v4.2）：祝福深链 liqian://blessing/<id>（礼谱祝福
+            // 索引页二维码扫码落点）；隐私锁锁着时不弹（不绕过锁定页）
+            if let id = LiqianDeepLink.blessingID(from: url),
+               let blessing = allBlessings.first(where: { $0.id == id }) {
+                if privacyLockEnabled && isLocked { return }
+                deepLinkBlessing = blessing
+            }
         }
         .sheet(isPresented: $showQuickRecord) {
             RecordFormView(personName: "", presetDirection: LiqianConstants.received)
+        }
+        .sheet(item: $deepLinkBlessing) { blessing in
+            BlessingPlayerView(blessing: blessing)
         }
     }
 

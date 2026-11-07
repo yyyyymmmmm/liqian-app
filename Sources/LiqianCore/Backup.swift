@@ -211,6 +211,91 @@ extension BackupMember {
     }
 }
 
+/// 活礼谱·签名元数据（v4.2 可选段）：只记元数据——签名 PNG 本体不进
+/// JSON 备份（保存在本机与 iCloud），故本段是「谁在何时签过」的存档清单，
+/// 恢复时不据此重建签名行（没有图，重建出来也是空行）。旧备份无此键 →
+/// 解码为 nil；新备份带此段时旧版 App 按未知键忽略。
+public struct BackupSignature: Codable, Sendable, Equatable {
+    public var id: String
+    public var ledgerId: String
+    public var recordId: String?
+    public var person: String
+    /// ISO8601（如 2026-11-16T05:30:00Z）
+    public var createdAt: String
+
+    public init(
+        id: String,
+        ledgerId: String,
+        recordId: String? = nil,
+        person: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.ledgerId = ledgerId
+        self.recordId = recordId
+        self.person = person
+        self.createdAt = createdAt
+    }
+
+    public var idUUID: UUID? { UUID(uuidString: id) }
+}
+
+extension BackupSignature {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        ledgerId = try c.decode(String.self, forKey: .ledgerId)
+        recordId = try c.decodeIfPresent(String.self, forKey: .recordId)
+        person = try c.decodeIfPresent(String.self, forKey: .person) ?? ""
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+    }
+}
+
+/// 活礼谱·语音祝福元数据（v4.2 可选段）：音频本体不进 JSON 备份（保存在
+/// 本机与 iCloud），但转写文字是元数据的一部分、随段保存——恢复后即使
+/// 录音文件不在新设备上，这段祝福的话还读得到（播放器会如实提示录音
+/// 文件不在本机）。旧备份无此键 → 解码为 nil。
+public struct BackupVoiceBlessing: Codable, Sendable, Equatable {
+    public var id: String
+    public var recordId: String
+    public var fileName: String
+    public var duration: Double
+    public var transcript: String?
+    /// ISO8601
+    public var createdAt: String
+
+    public init(
+        id: String,
+        recordId: String,
+        fileName: String,
+        duration: Double,
+        transcript: String? = nil,
+        createdAt: String
+    ) {
+        self.id = id
+        self.recordId = recordId
+        self.fileName = fileName
+        self.duration = duration
+        self.transcript = transcript
+        self.createdAt = createdAt
+    }
+
+    public var idUUID: UUID? { UUID(uuidString: id) }
+    public var recordUUID: UUID? { UUID(uuidString: recordId) }
+}
+
+extension BackupVoiceBlessing {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        recordId = try c.decode(String.self, forKey: .recordId)
+        fileName = try c.decodeIfPresent(String.self, forKey: .fileName) ?? ""
+        duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? 0
+        transcript = try c.decodeIfPresent(String.self, forKey: .transcript)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+    }
+}
+
 public struct BackupFile: Codable, Sendable, Equatable {
     public var ledgers: [BackupLedger]
     public var records: [BackupRecord]
@@ -218,16 +303,24 @@ public struct BackupFile: Codable, Sendable, Equatable {
     public var reminders: [BackupReminderDay]?
     /// v4.5 可选段：nil 表示备份里没有班子数据（旧备份恒为 nil）
     public var members: [BackupMember]?
+    /// v4.2 可选段：签名元数据（无图）；nil 表示备份里没有（旧备份恒为 nil）
+    public var signatures: [BackupSignature]?
+    /// v4.2 可选段：语音祝福元数据（无音频本体，含转写文字）
+    public var voiceBlessings: [BackupVoiceBlessing]?
 
     public init(
         ledgers: [BackupLedger], records: [BackupRecord],
         reminders: [BackupReminderDay]? = nil,
-        members: [BackupMember]? = nil
+        members: [BackupMember]? = nil,
+        signatures: [BackupSignature]? = nil,
+        voiceBlessings: [BackupVoiceBlessing]? = nil
     ) {
         self.ledgers = ledgers
         self.records = records
         self.reminders = reminders
         self.members = members
+        self.signatures = signatures
+        self.voiceBlessings = voiceBlessings
     }
 }
 
@@ -249,9 +342,12 @@ public enum LiqianBackup {
     }
 
     /// SwiftData 模型 → 备份 JSON（键序固定，便于 diff 与人工检查）
+    /// 活礼谱（v4.2）：signatures/blessings 只带元数据段（二进制不进 JSON）；
+    /// 两组都为空时写 nil 而不是空数组，没用过活礼谱的备份与旧格式同构。
     public static func makeBackup(
         ledgers: [Ledger], records: [GiftRecord], reminders: [ReminderDay] = [],
-        members: [LedgerMember] = []
+        members: [LedgerMember] = [],
+        signatures: [GuestSignature] = [], blessings: [VoiceBlessing] = []
     ) -> Data {
         let file = BackupFile(
             ledgers: ledgers.map {
@@ -299,6 +395,25 @@ public enum LiqianBackup {
                     role: $0.role,
                     createdAt: memberDateString(from: $0.createdAt)
                 )
+            },
+            signatures: signatures.isEmpty ? nil : signatures.map {
+                BackupSignature(
+                    id: $0.id.uuidString,
+                    ledgerId: $0.ledgerID.uuidString,
+                    recordId: $0.recordID?.uuidString,
+                    person: $0.person,
+                    createdAt: LiqianISO8601.string(from: $0.createdAt)
+                )
+            },
+            voiceBlessings: blessings.isEmpty ? nil : blessings.map {
+                BackupVoiceBlessing(
+                    id: $0.id.uuidString,
+                    recordId: $0.recordID.uuidString,
+                    fileName: $0.fileName,
+                    duration: $0.duration,
+                    transcript: $0.transcript,
+                    createdAt: LiqianISO8601.string(from: $0.createdAt)
+                )
             }
         )
         let encoder = JSONEncoder()
@@ -321,6 +436,18 @@ public enum LiqianBackup {
     ) {
         let file = try JSONDecoder().decode(BackupFile.self, from: data)
         return (file.ledgers, file.records, file.reminders ?? [], file.members ?? [])
+    }
+
+    /// 解析备份里的活礼谱元数据段（v4.2）：旧备份无此二键时返回空数组；
+    /// 整段解码失败也回退空数组（元数据是附带信息，不拖垮主数据校验，
+    /// 主段的严格校验在 parseBackupFull 里）。
+    public static func parseBackupLive(
+        _ data: Data
+    ) -> (signatures: [BackupSignature], blessings: [BackupVoiceBlessing]) {
+        guard let file = try? JSONDecoder().decode(BackupFile.self, from: data) else {
+            return ([], [])
+        }
+        return (file.signatures ?? [], file.voiceBlessings ?? [])
     }
 
     /// 导入确认前预览规模（同 Dart countJson）

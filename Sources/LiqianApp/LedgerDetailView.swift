@@ -11,6 +11,8 @@ struct LedgerDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allRecords: [GiftRecord]
     @Query private var allMembers: [LedgerMember]
+    @Query private var allSignatures: [GuestSignature]
+    @Query private var allBlessings: [VoiceBlessing]
 
     @State private var showRecordForm = false
     @State private var editingRecord: GiftRecord?
@@ -27,6 +29,9 @@ struct LedgerDetailView: View {
     @State private var showSceneMode = false
     @State private var ocrResultText = ""
     @State private var showOCRResult = false
+    // 活礼谱（v4.2）：记录行长按的两个动作目标
+    @State private var signatureRecord: GiftRecord?
+    @State private var blessingRecord: GiftRecord?
 
     private var isBai: Bool { ledger.isBai }
 
@@ -78,6 +83,25 @@ struct LedgerDetailView: View {
         Set(records.map(\.person)).count
     }
 
+    /// 活礼谱（v4.2）：本簿全部签名（导出礼谱/电子礼谱用）
+    private var ledgerSignatures: [GuestSignature] {
+        allSignatures.filter { $0.ledgerID == ledger.id }
+    }
+
+    /// 活礼谱（v4.2）：挂在本簿现有记录上的祝福（删掉的记录其祝福不算）
+    private var ledgerBlessings: [VoiceBlessing] {
+        let ids = Set(records.map(\.id))
+        return allBlessings.filter { ids.contains($0.recordID) }
+    }
+
+    /// 电子礼谱入口副文案：有签名/祝福就报真实数，没有就只说翻页看
+    private var liveSummaryText: String {
+        var parts: [String] = []
+        if !ledgerSignatures.isEmpty { parts.append("签名 \(ledgerSignatures.count)") }
+        if !ledgerBlessings.isEmpty { parts.append("祝福 \(ledgerBlessings.count) 段") }
+        return parts.isEmpty ? "翻页看" : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         List {
             Section {
@@ -127,6 +151,20 @@ struct LedgerDetailView: View {
                                 .foregroundStyle(Palette.stone)
                                 .lineLimit(1)
                         }
+
+            // 电子礼谱入口（v4.2 活礼谱）：护城河入口要可见（v2.3 教训），
+            // 放头部正下方独立一行，不藏进「更多」菜单
+            Section {
+                NavigationLink {
+                    ElectronicLibuView(ledger: ledger)
+                } label: {
+                    HStack {
+                        Label("电子礼谱", systemImage: "book.pages")
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Text(liveSummaryText)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
                     }
                 }
             }
@@ -147,6 +185,19 @@ struct LedgerDetailView: View {
                                     editingRecord = record
                                 } label: {
                                     Label("编辑", systemImage: "pencil")
+                                }
+                            }
+                            // 活礼谱（v4.2）：长按一笔 → 请这位来宾签名/留语音祝福
+                            .contextMenu {
+                                Button {
+                                    signatureRecord = record
+                                } label: {
+                                    Label("请来宾签名", systemImage: "signature")
+                                }
+                                Button {
+                                    blessingRecord = record
+                                } label: {
+                                    Label("语音祝福", systemImage: "waveform")
                                 }
                             }
                     }
@@ -239,7 +290,24 @@ struct LedgerDetailView: View {
             GreetingView(ledger: ledger)
         }
         .sheet(isPresented: $showExport) {
-            LibuExportView(ledger: ledger, records: records)
+            LibuExportView(
+                ledger: ledger, records: records,
+                signatures: ledgerSignatures, blessings: ledgerBlessings
+            )
+        }
+        .sheet(item: $signatureRecord) { record in
+            SignatureCaptureView(person: record.person) { png in
+                modelContext.insert(
+                    GuestSignature(
+                        ledgerID: ledger.id, recordID: record.id,
+                        person: record.person, imageData: png
+                    )
+                )
+                try? modelContext.save()
+            }
+        }
+        .sheet(item: $blessingRecord) { record in
+            RecordBlessingsView(record: record)
         }
         .sheet(isPresented: $showPhotoOCR) {
             PhotoOCRView(ledger: ledger) { n in

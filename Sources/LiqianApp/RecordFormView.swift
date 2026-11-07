@@ -169,6 +169,11 @@ struct RecordFormView: View {
                 VStack(spacing: LiqianMetrics.spacingM) {
                     directionSegmented
                     formCard
+                    // 活礼谱（v4.2）：签名/祝福挂具体一笔，只在编辑态出现
+                    // （新建的笔先保存拿到 id 才有处可挂）
+                    if let existing {
+                        RecordLiveMediaSection(record: existing)
+                    }
                     if existing == nil {
                         saveAndContinueCard
                     }

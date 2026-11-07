@@ -7,10 +7,14 @@ import LiqianDesign
 struct PersonDetailView: View {
     let name: String
 
+    @Environment(\.modelContext) private var modelContext
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var allReminderDays: [ReminderDay]
     @State private var formMode: FormMode?
+    // 活礼谱（v4.2）：时间线行长按的两个动作目标
+    @State private var signatureRecord: GiftRecord?
+    @State private var blessingRecord: GiftRecord?
 
     /// 这个人的重要日子（同名对齐，与全 App 人名口径一致），按下一次临近排序
     private var personDays: [ReminderDay] {
@@ -113,6 +117,19 @@ struct PersonDetailView: View {
                                     .padding(.leading, LiqianMetrics.spacingM)
                             }
                             timelineRow(r)
+                                // 活礼谱（v4.2）：长按一笔 → 签名/语音祝福
+                                .contextMenu {
+                                    Button {
+                                        signatureRecord = r
+                                    } label: {
+                                        Label("请来宾签名", systemImage: "signature")
+                                    }
+                                    Button {
+                                        blessingRecord = r
+                                    } label: {
+                                        Label("语音祝福", systemImage: "waveform")
+                                    }
+                                }
                         }
                     }
                     .liqianCardSurface(padding: 0)
@@ -156,6 +173,20 @@ struct PersonDetailView: View {
             case .edit(let record):
                 RecordFormView(existing: record)
             }
+        }
+        .sheet(item: $signatureRecord) { record in
+            SignatureCaptureView(person: record.person) { png in
+                modelContext.insert(
+                    GuestSignature(
+                        ledgerID: record.ledgerID, recordID: record.id,
+                        person: record.person, imageData: png
+                    )
+                )
+                try? modelContext.save()
+            }
+        }
+        .sheet(item: $blessingRecord) { record in
+            RecordBlessingsView(record: record)
         }
     }
 
