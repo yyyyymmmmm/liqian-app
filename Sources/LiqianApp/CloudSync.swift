@@ -294,6 +294,10 @@ final class CloudSyncManager: ObservableObject {
     /// 开关已改但存储模式下次启动才切换
     var hasPendingChange: Bool { syncEnabled != enabledAtLaunch }
 
+    /// 应急内存模式（本地文件存储打开失败）：记什么都不会落盘、关 App 即丢。
+    /// 这是绝不能沉默的状态——ContentView 据此挂全屏可见的红色警示条（v4.2）。
+    var isEmergencyStorage: Bool { launchDecision == .emergencyMemory }
+
     /// 未登录时给出「去设置」入口
     var showsSettingsShortcut: Bool { status == .notSignedIn && !hasPendingChange }
 }

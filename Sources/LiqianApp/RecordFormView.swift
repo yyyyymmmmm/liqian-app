@@ -42,6 +42,8 @@ struct RecordFormView: View {
     /// 防重复提交（PRO-AUDIT-2 F3）：落印 1.05s 等待期内锁住保存与退出，
     /// 连点「保存」只落一笔
     @State private var isSaving = false
+    /// 保存被拦的整表级原因（v4.2）：显示在主卡上方，不再只有震动反馈
+    @State private var formError: String?
     @State private var personError: String?
     @State private var amountError: String?
     @State private var savedMessage: String?
@@ -233,12 +235,20 @@ struct RecordFormView: View {
             }
             .onAppear {
                 if needsLedgerPicker, selectedLedgerID == nil {
-                    selectedLedgerID = allLedgers.first?.id
+                    // 默认礼簿（v4.2 修复）：此前取 allLedgers.first（顺序不定），
+                    // 示例礼簿常排在前面，随礼会默认记进示例簿——而示例数据是
+                    // 统计隔离的，往来/差额里看不到，表现为「保存没反应」。
+                    // 改为：日期最新的非示例礼簿；没有真礼簿时才落到示例簿。
+                    let sampleIDs = SampleData.sampleIDs(ledgers: allLedgers)
+                    let byDate = allLedgers.sorted { $0.date > $1.date }
+                    selectedLedgerID = (byDate.first { !sampleIDs.contains($0.id) } ?? byDate.first)?.id
                 }
                 if existing == nil {
                     focus = .person
                 }
             }
+            .onChange(of: person) { _, _ in formError = nil }
+            .onChange(of: amountText) { _, _ in formError = nil }
         }
     }
 
@@ -256,6 +266,12 @@ struct RecordFormView: View {
 
     private var formCard: some View {
         VStack(spacing: LiqianMetrics.spacingM) {
+            if let formError {
+                Text(formError)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Palette.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if needsLedgerPicker {
                 ledgerPickerRow
             }
@@ -677,9 +693,19 @@ struct RecordFormView: View {
         let cents: Int? = amountValue.flatMap { $0 > 0 ? Int(($0 * 100.0).rounded()) : nil }
         amountError = cents == nil ? "请输入正确的金额" : nil
         guard personError == nil, let cents, let lid = effectiveLedgerID else {
+            // v4.2：保存被拦必须出声——此前只有震动，用户只看到「没反应」。
+            // 缺什么说哪个（姓名/金额的字段级红字另有，这里给整表级一句话）。
+            if name.isEmpty {
+                formError = "请先填写姓名，再保存。"
+            } else if cents == nil {
+                formError = "请先填写正确的金额，再保存。"
+            } else {
+                formError = "还没有可以记的礼簿，请先新建一本礼簿再记。"
+            }
             errorTrigger += 1
             return
         }
+        formError = nil
         isSaving = true
         let finalStatus = direction == LiqianConstants.given ? status : LiqianConstants.sentStatus
         let trimmedNote = note.trimmingCharacters(in: .whitespaces)

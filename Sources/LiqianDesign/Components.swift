@@ -262,8 +262,10 @@ public struct AddFloatingButton: View {
     public let bottomPadding: CGFloat
     public let action: () -> Void
 
-    /// Tab 栏避让量：iOS 26 浮动 Tab 栏（高约 64 + 底部留白）占位约 92pt
-    public static let tabBarClearance: CGFloat = 92
+    /// Tab 栏避让量（v4.2 下调）：浮钮贴着浮动 Tab 栏上沿悬停，像钱迹那样
+    /// 压在栏上方一点点（92pt 时明显飘得太高，用户真机指出）；62pt 时
+    /// 56 圆钮下沿距屏底 62、与栏上沿轻微交叠，栏内各项仍可点。
+    public static let tabBarClearance: CGFloat = 62
 
     public init(
         label: String,

@@ -21,6 +21,8 @@ struct ContentView: View {
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
     @State private var tabSelection = 0
+    /// 存储健康（v4.2）：应急内存模式绝不沉默，顶部挂红条警示
+    @EnvironmentObject private var cloudSync: CloudSyncManager
 
     /// 切到后台/多任务预览时是否要盖模糊遮罩
     private var shieldVisible: Bool {
@@ -46,6 +48,17 @@ struct ContentView: View {
                 }
             }
             .tint(Palette.primary)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if cloudSync.isEmergencyStorage {
+                    Text("数据存储异常：现在记的内容不会被保存，请先到「我的 → 数据」导出备份。")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Palette.primary)
+                }
+            }
             .blur(radius: shieldVisible ? 20 : 0)
 
             if shieldVisible {
