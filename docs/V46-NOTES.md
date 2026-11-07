@@ -2,6 +2,20 @@
 
 分支 feat/v46-charts，两笔提交：v4.6 主体 + 质感审计调整。
 
+## 交付验证（2026-11-08）
+
+- CI：GitHub Actions run 42405345048（workflow_dispatch @ feat/v46-charts）
+  结论 success；首跑 42405225838 红于 BarMark position 写法，修后复跑绿。
+- 单测：LiqianCoreTests 共 134 条、0 失败（v4.5 的 132＋新增
+  AppGroupResolverTests 2 条）。
+- 预签断言：CI 日志含 "presign assertions passed"。
+- 解包实测（本地 Mach-O 解析）：App/Widget/Share 三 target 均
+  4.6.0 (46)；三二进制均带 LC_CODE_SIGNATURE 且可提取 entitlements
+  blob——App 含 application-groups＋aps-environment＋icloud 两键，
+  两 appex 含 application-groups，组名 group.site.didichou.liqian 在位；
+  Share 扩展在包（PlugIns/LiqianShare.appex）。
+- 产物：~/workspace/your_files/liqian-v4.6/liqian-native-unsigned.ipa
+
 ## 一、四栏导航
 
 ContentView 三 Tab 改四 Tab：**首页（0）/ 往来（1）/ 图表（2）/ 我的（3）**。
