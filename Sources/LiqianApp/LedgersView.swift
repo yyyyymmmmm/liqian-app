@@ -8,6 +8,7 @@ struct LedgersView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var records: [GiftRecord]
+    @Query private var allMembers: [LedgerMember]
     @State private var showNewLedger = false
     @State private var personRoute: PeopleView.NameRoute?
     @State private var ledgerRoute: Ledger?
@@ -196,9 +197,13 @@ struct LedgersView: View {
     /// 侧滑删除礼簿：与详情页删除同语义——整簿快照进最近删除，30 天可恢复
     private func deleteLedger(_ ledger: Ledger) {
         let rs = records.filter { $0.ledgerID == ledger.id }
-        TrashStore.archive(ledger: ledger, records: rs)
+        let ms = allMembers.filter { $0.ledgerID == ledger.id }
+        TrashStore.archive(ledger: ledger, records: rs, members: ms)
         for r in rs {
             modelContext.delete(r)
+        }
+        for m in ms {
+            modelContext.delete(m)
         }
         modelContext.delete(ledger)
         try? modelContext.save()

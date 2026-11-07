@@ -171,26 +171,87 @@ extension BackupReminderDay {
     }
 }
 
+/// 礼簿班子成员（v4.5 可选段）：旧备份无此键 → 解码为 nil（视为无班子）；
+/// 新备份带此段时旧版 App 按未知键忽略。ledgerId 与 BackupRecord 同口径用 String 承载。
+public struct BackupMember: Codable, Sendable, Equatable {
+    public var id: String
+    public var ledgerId: String
+    public var name: String
+    /// MemberRole 的 rawValue（主家/书记/核实/只读）
+    public var role: String
+    /// ISO8601 字符串（备份文件的日期统一走字符串，不引入 Date 解码策略差异）
+    public var createdAt: String
+
+    public init(
+        id: String,
+        ledgerId: String,
+        name: String,
+        role: String = MemberRole.viewer.rawValue,
+        createdAt: String = ""
+    ) {
+        self.id = id
+        self.ledgerId = ledgerId
+        self.name = name
+        self.role = role
+        self.createdAt = createdAt
+    }
+
+    public var idUUID: UUID? { UUID(uuidString: id) }
+    public var ledgerUUID: UUID? { UUID(uuidString: ledgerId) }
+}
+
+extension BackupMember {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        ledgerId = try c.decode(String.self, forKey: .ledgerId)
+        name = try c.decode(String.self, forKey: .name)
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? MemberRole.viewer.rawValue
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+    }
+}
+
 public struct BackupFile: Codable, Sendable, Equatable {
     public var ledgers: [BackupLedger]
     public var records: [BackupRecord]
     /// v3.0 可选段：nil 表示备份里没有提醒数据（旧备份恒为 nil）
     public var reminders: [BackupReminderDay]?
+    /// v4.5 可选段：nil 表示备份里没有班子数据（旧备份恒为 nil）
+    public var members: [BackupMember]?
 
     public init(
         ledgers: [BackupLedger], records: [BackupRecord],
-        reminders: [BackupReminderDay]? = nil
+        reminders: [BackupReminderDay]? = nil,
+        members: [BackupMember]? = nil
     ) {
         self.ledgers = ledgers
         self.records = records
         self.reminders = reminders
+        self.members = members
     }
 }
 
 public enum LiqianBackup {
+    /// 班子成员 createdAt 的备份字符串格式（与存储日期同为 ISO 口径、便于人工检查）
+    private static var memberDateFormatter: ISO8601DateFormatter {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }
+
+    public static func memberDateString(from date: Date) -> String {
+        memberDateFormatter.string(from: date)
+    }
+
+    /// 解析备份里的成员日期；空串/坏值兜底为当前时间（不让一本班子的恢复失败）
+    public static func memberDate(from string: String) -> Date {
+        memberDateFormatter.date(from: string) ?? Date()
+    }
+
     /// SwiftData 模型 → 备份 JSON（键序固定，便于 diff 与人工检查）
     public static func makeBackup(
-        ledgers: [Ledger], records: [GiftRecord], reminders: [ReminderDay] = []
+        ledgers: [Ledger], records: [GiftRecord], reminders: [ReminderDay] = [],
+        members: [LedgerMember] = []
     ) -> Data {
         let file = BackupFile(
             ledgers: ledgers.map {
@@ -229,6 +290,15 @@ public enum LiqianBackup {
                     enabled: $0.enabled,
                     note: $0.note
                 )
+            },
+            members: members.map {
+                BackupMember(
+                    id: $0.id.uuidString,
+                    ledgerId: $0.ledgerID.uuidString,
+                    name: $0.name,
+                    role: $0.role,
+                    createdAt: memberDateString(from: $0.createdAt)
+                )
             }
         )
         let encoder = JSONEncoder()
@@ -242,12 +312,15 @@ public enum LiqianBackup {
         return (parsed.ledgers, parsed.records)
     }
 
-    /// 解析备份（含 v3.0 提醒段）：旧备份无 reminders 键时返回空数组
+    /// 解析备份（含 v3.0 提醒段、v4.5 班子段）：旧备份无对应键时返回空数组
     public static func parseBackupFull(
         _ data: Data
-    ) throws -> (ledgers: [BackupLedger], records: [BackupRecord], reminders: [BackupReminderDay]) {
+    ) throws -> (
+        ledgers: [BackupLedger], records: [BackupRecord],
+        reminders: [BackupReminderDay], members: [BackupMember]
+    ) {
         let file = try JSONDecoder().decode(BackupFile.self, from: data)
-        return (file.ledgers, file.records, file.reminders ?? [])
+        return (file.ledgers, file.records, file.reminders ?? [], file.members ?? [])
     }
 
     /// 导入确认前预览规模（同 Dart countJson）

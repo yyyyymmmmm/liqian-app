@@ -18,6 +18,8 @@ struct TrashItem: Codable, Identifiable {
     var ledger: BackupLedger? = nil
     /// kind == .ledger：该簿全部记录快照
     var ledgerRecords: [BackupRecord]? = nil
+    /// kind == .ledger：该簿班子成员快照（v4.5 可选；旧快照无此字段 → nil 视为无班子）
+    var ledgerMembers: [BackupMember]? = nil
     /// kind == .record：记录快照
     var record: BackupRecord? = nil
     /// kind == .record：所属礼簿 id（与 record.ledgerId 同值，单列方便展示与校验）
@@ -71,7 +73,7 @@ enum TrashStore {
         save(items)
     }
 
-    static func archive(ledger: Ledger, records: [GiftRecord]) {
+    static func archive(ledger: Ledger, records: [GiftRecord], members: [LedgerMember] = []) {
         var items = list()
         items.append(
             TrashItem(
@@ -89,10 +91,21 @@ enum TrashStore {
                     verifier: ledger.verifier,
                     location: ledger.location
                 ),
-                ledgerRecords: records.map { backupRecord(from: $0) }
+                ledgerRecords: records.map { backupRecord(from: $0) },
+                ledgerMembers: members.map { backupMember(from: $0) }
             )
         )
         save(items)
+    }
+
+    private static func backupMember(from m: LedgerMember) -> BackupMember {
+        BackupMember(
+            id: m.id.uuidString,
+            ledgerId: m.ledgerID.uuidString,
+            name: m.name,
+            role: m.role,
+            createdAt: LiqianBackup.memberDateString(from: m.createdAt)
+        )
     }
 
     private static func backupRecord(from r: GiftRecord) -> BackupRecord {
@@ -159,6 +172,21 @@ enum TrashStore {
         for br in item.ledgerRecords ?? [] {
             if let rid = br.idUUID, existingIDs.contains(rid) { continue }
             context.insert(giftRecord(from: br, ledgerID: lid))
+        }
+        // 班子随礼簿一并恢复（v4.5）：挂到恢复后的礼簿 id 上，已存在同 id 成员不重复插
+        let existingMembers = (try? context.fetch(FetchDescriptor<LedgerMember>())) ?? []
+        let existingMemberIDs = Set(existingMembers.map(\.id))
+        for bm in item.ledgerMembers ?? [] {
+            if let mid = bm.idUUID, existingMemberIDs.contains(mid) { continue }
+            context.insert(
+                LedgerMember(
+                    id: bm.idUUID ?? UUID(),
+                    ledgerID: lid,
+                    name: bm.name,
+                    role: bm.role,
+                    createdAt: LiqianBackup.memberDate(from: bm.createdAt)
+                )
+            )
         }
         return true
     }

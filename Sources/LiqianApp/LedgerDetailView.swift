@@ -10,6 +10,7 @@ struct LedgerDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allRecords: [GiftRecord]
+    @Query private var allMembers: [LedgerMember]
 
     @State private var showRecordForm = false
     @State private var editingRecord: GiftRecord?
@@ -28,6 +29,26 @@ struct LedgerDetailView: View {
     @State private var showOCRResult = false
 
     private var isBai: Bool { ledger.isBai }
+
+    /// 本簿班子（v4.5）：排序口径与 Core 的 MemberSync.sorted 一致
+    /// （角色序 → 加入序 → 姓名），此处对模型直接排，避免值/模型来回映射
+    private var members: [LedgerMember] {
+        allMembers
+            .filter { $0.ledgerID == ledger.id }
+            .sorted {
+                ($0.roleValue.sortOrder, $0.createdAt, $0.name)
+                    < ($1.roleValue.sortOrder, $1.createdAt, $1.name)
+            }
+    }
+
+    /// 班子摘要（详情页入口行副标题）：如「书记 杨敏杰 · 核实 王芳」，空班子给引导文案
+    private var membersSummary: String {
+        let named = members.filter { $0.roleValue != .viewer }
+        if named.isEmpty {
+            return members.isEmpty ? "设主家、书记、核实人" : "共 \(members.count) 人"
+        }
+        return named.map { "\($0.role) \($0.name)" }.joined(separator: " · ")
+    }
 
     private var records: [GiftRecord] {
         allRecords
@@ -61,6 +82,53 @@ struct LedgerDetailView: View {
         List {
             Section {
                 headerRow
+            }
+
+            // 家族协作与传承（v4.5）：班子管理与交接/纪念版是礼簿级事务，
+            // 独立成组放在头部之下、记录之上，不进「更多」菜单（菜单顺序是 v2.5 定版）。
+            Section {
+                NavigationLink {
+                    LedgerMembersView(ledger: ledger)
+                } label: {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Image(systemName: "person.3")
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 24)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                            Text("礼簿班子")
+                                .foregroundStyle(Palette.ink)
+                            Text(membersSummary)
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        if !members.isEmpty {
+                            Text("\(members.count) 人")
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                }
+                NavigationLink {
+                    HandoverView(ledger: ledger, records: records, members: members)
+                } label: {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Image(systemName: "arrow.triangle.2.circlepath.doc.on.clipboard")
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 24)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                            Text("交接与纪念版")
+                                .foregroundStyle(Palette.ink)
+                            Text("生成传承包，或导出纪念版礼谱")
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                                .lineLimit(1)
+                        }
+                    }
+                }
             }
 
             Section {
@@ -346,9 +414,13 @@ struct LedgerDetailView: View {
     }
 
     private func deleteLedger() {
-        TrashStore.archive(ledger: ledger, records: records)
+        let ms = members
+        TrashStore.archive(ledger: ledger, records: records, members: ms)
         for r in records {
             modelContext.delete(r)
+        }
+        for m in ms {
+            modelContext.delete(m)
         }
         modelContext.delete(ledger)
         try? modelContext.save()

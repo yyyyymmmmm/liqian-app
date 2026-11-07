@@ -80,11 +80,14 @@ enum GiftBookPDF {
     /// hostName 参数只是兜底：礼簿没设主家时用它（缺省读全局「礼谱落款姓名」
     /// 设置），再空回退「主家」字面（colophonName）。
     /// prefaceText：非空时在封面后插入谱序页（文本由导出 sheet 备好：AI 或模板）。
+    /// memorial：纪念版开关（v4.5 传承）——封面右上加「紀念」题签，其余版式与
+    /// 正式礼谱完全一致（纪念版是只读导出物，不进日常记账流，靠题签区分）。
     static func makePDF(
         ledger: Ledger,
         records: [GiftRecord],
         hostName: String = UserDefaults.standard.string(forKey: "hostName") ?? "",
-        prefaceText: String? = nil
+        prefaceText: String? = nil,
+        memorial: Bool = false
     ) -> URL? {
         let bai = ledger.isBai
         let ledgerHost = (ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -114,7 +117,10 @@ enum GiftBookPDF {
 
         do {
             try renderer.writePDF(to: url) { context in
-                drawCover(context: context, ledger: ledger, bai: bai, hostName: host, location: location)
+                drawCover(
+                    context: context, ledger: ledger, bai: bai,
+                    hostName: host, location: location, memorial: memorial
+                )
                 if let prefaceText, !prefaceText.isEmpty {
                     drawPreface(
                         context: context, ledger: ledger, bai: bai,
@@ -193,7 +199,7 @@ enum GiftBookPDF {
 
     private static func drawCover(
         context: UIGraphicsPDFRendererContext, ledger: Ledger, bai: Bool,
-        hostName: String, location: String = ""
+        hostName: String, location: String = "", memorial: Bool = false
     ) {
         context.beginPage()
         let main = bai ? baiPrimary : cinnabar
@@ -202,6 +208,28 @@ enum GiftBookPDF {
 
         // 线装暗示（封面/封底才有）：两道竖细线 + 四个装订点
         drawBindingMarks(color: .white)
+
+        // 纪念版题签（v4.5）：封面右上一枚竖排小签「紀念」，细框白字，
+        // 与题字闲章分列两侧——闲章在题字右（+70），题签靠右框角，互不抢位。
+        if memorial {
+            let signCenterX = pageW - 64
+            let signTop: CGFloat = 54
+            let signStep: CGFloat = 25
+            let signRect = CGRect(
+                x: signCenterX - 16, y: signTop - 8,
+                width: 32, height: signStep * 2 + 18
+            )
+            UIColor.white.withAlphaComponent(0.75).setStroke()
+            let signPath = UIBezierPath(rect: signRect)
+            signPath.lineWidth = 1
+            signPath.stroke()
+            _ = drawVertical(
+                "紀念",
+                centerX: signCenterX, topY: signTop,
+                font: kaitiFont(19),
+                color: UIColor.white.withAlphaComponent(0.92), step: signStep
+            )
+        }
 
         // 内框线：红事描金、白事白色细线（白事无金）
         let frameRect = CGRect(x: 20, y: 20, width: pageW - 40, height: pageH - 40)

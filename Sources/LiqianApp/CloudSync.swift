@@ -93,7 +93,7 @@ final class CloudSyncManager: ObservableObject {
         self.syncEnabled = enabled
         self.enabledAtLaunch = enabled
 
-        let schema = Schema([Ledger.self, GiftRecord.self, ReminderDay.self])
+        let schema = Schema([Ledger.self, GiftRecord.self, ReminderDay.self, LedgerMember.self])
         if !enabled {
             let local = Self.makeLocalContainer(schema: schema)
             self.container = local.container
