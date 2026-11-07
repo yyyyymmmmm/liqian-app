@@ -78,6 +78,8 @@ struct LedgerFormView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Palette.pageBG.ignoresSafeArea())
             .navigationTitle(existing == nil ? "新建礼簿" : "编辑礼簿")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

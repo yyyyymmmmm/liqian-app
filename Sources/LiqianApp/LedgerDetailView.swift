@@ -59,24 +59,6 @@ struct LedgerDetailView: View {
                 headerRow
             }
 
-            // 礼谱是护城河功能，入口不藏菜单：一眼可见的行动区（菜单里保留同入口）
-            Section {
-                Button {
-                    showExport = true
-                } label: {
-                    Label("导出礼谱 PDF", systemImage: "doc.richtext")
-                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
-                }
-                Button {
-                    showGreeting = true
-                } label: {
-                    Label("生成贺词", systemImage: "text.quote")
-                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
-                }
-            }
-
             Section {
                 if records.isEmpty {
                     emptyState
@@ -99,27 +81,18 @@ struct LedgerDetailView: View {
                 }
             }
 
-            Section {
-                Button(role: .destructive) {
-                    confirmDeleteLedger = true
-                } label: {
-                    Text("删除这本礼簿")
-                        .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
-                }
-            }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle(ledger.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showEditLedger = true
-                } label: {
-                    Label("编辑礼簿", systemImage: "pencil")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
+                // 「更多」是本页唯一管理入口（v2.5 包 1/2 定版）：顺序固定为
+                // 批量补录／导出礼谱 PDF／生成贺词／编辑礼簿／删除礼簿，
+                // 删除垫底并标 destructive；原页内行动区与页尾删除区已删，
+                // 编辑礼簿的工具栏铅笔按钮一并收进本菜单，全页只剩这一个入口。
                 Menu {
                     // 批量补录原在底部行动栏，v2.4 随行动栏取消移入「更多」
                     Button {
@@ -131,23 +104,33 @@ struct LedgerDetailView: View {
                     Button {
                         showExport = true
                     } label: {
-                        Label("导出礼谱", systemImage: "doc.richtext")
+                        Label("导出礼谱 PDF", systemImage: "doc.richtext")
                     }
                     Button {
                         showGreeting = true
                     } label: {
                         Label("生成贺词", systemImage: "text.quote")
                     }
+                    Button {
+                        showEditLedger = true
+                    } label: {
+                        Label("编辑礼簿", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        confirmDeleteLedger = true
+                    } label: {
+                        Label("删除礼簿", systemImage: "trash")
+                    }
                 } label: {
                     Label("更多", systemImage: "ellipsis.circle")
                 }
             }
         }
-        .toolbar(.hidden, for: .tabBar)
-        // 记账动作收敛到右下角 FAB（v2.4 定版，替代原底部行动栏；
-        // 本页已隐藏 Tab 栏，FAB 用常规底部间距）
+        // 记账动作收敛到右下角 FAB（v2.4 定版，替代原底部行动栏）。
+        // v2.5 包 4：不再隐藏 Tab 栏（pop 后系统补显动画必然慢半拍），
+        // FAB 与列表页同口径用 tabBarClearance 避让。
         .overlay(alignment: .bottomTrailing) {
-            AddFloatingButton(label: "记一笔", bottomPadding: LiqianMetrics.spacingL) {
+            AddFloatingButton(label: "记一笔", bottomPadding: AddFloatingButton.tabBarClearance) {
                 showRecordForm = true
             }
         }

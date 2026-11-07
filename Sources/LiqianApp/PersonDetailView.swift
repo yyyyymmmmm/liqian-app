@@ -93,7 +93,8 @@ struct PersonDetailView: View {
         .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
+        // v2.5 包 4：不再隐藏 Tab 栏（pop 补显动画慢半拍）；底部双按钮是
+        // safeAreaInset，自动落在 Tab 栏上方，不会被遮挡。
         .safeAreaInset(edge: .bottom) {
             GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
                 HStack(spacing: LiqianMetrics.spacingSM) {

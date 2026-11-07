@@ -65,8 +65,11 @@ struct TrashView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .background(Palette.pageBG.ignoresSafeArea())
             }
         }
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle("最近删除")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -85,6 +85,8 @@ struct AISettingsView: View {
                 Text("说明")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle("AI 智能助手")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refreshSavedHint() }

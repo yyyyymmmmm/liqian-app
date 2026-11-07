@@ -182,15 +182,18 @@ public struct SealStampView: View {
     public let char: String
     public let size: CGFloat
     public let bai: Bool
+    /// 静态成品（分享图卡）传 true：印章恒朱砂定版，不跟随 App 主题（v2.5 包 6）
+    public let fixedBrand: Bool
 
-    public init(char: String, size: CGFloat = 56, bai: Bool = false) {
+    public init(char: String, size: CGFloat = 56, bai: Bool = false, fixedBrand: Bool = false) {
         self.char = char
         self.size = size
         self.bai = bai
+        self.fixedBrand = fixedBrand
     }
 
     public var body: some View {
-        let bg = bai ? Palette.baiPrimaryFill : Palette.primaryFill
+        let bg = bai ? Palette.baiPrimaryFill : (fixedBrand ? Palette.brandFillFixed : Palette.primaryFill)
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.16)
                 .fill(bg)
@@ -250,8 +253,8 @@ public struct SealStampOverlay: View {
 // MARK: - 右下角浮动添加按钮（FAB，v2.4 添加模型定版）
 // 全 App 新增动作收敛到这一个入口：圆形 56pt、强调填充底、白「+」、带投影。
 // 用法：挂在页面根视图的 .overlay(alignment: .bottomTrailing)，
-// bottomPadding 由调用方按场景传——Tab 页须避让浮动 Tab 栏（传 tabBarClearance），
-// 已隐藏 Tab 栏的详情页传常规间距即可。
+// bottomPadding 由调用方传 tabBarClearance 避让浮动 Tab 栏——
+// v2.5 包 4 起全 App 不再隐藏 Tab 栏，详情页与列表页同口径。
 
 public struct AddFloatingButton: View {
     /// 无障碍与提示文案，如「新建礼簿」「记一笔」

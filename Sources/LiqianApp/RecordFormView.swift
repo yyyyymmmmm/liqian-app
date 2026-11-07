@@ -284,6 +284,8 @@ struct RecordFormView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Palette.pageBG.ignoresSafeArea())
             .navigationTitle(existing == nil ? "记一笔" : "编辑记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

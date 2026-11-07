@@ -313,27 +313,27 @@ struct AnnualReportCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(alignment: .leading, spacing: 16) {
-                stat(label: "收礼", value: LedgerMath.fmtMoney(cents: receivedCents), color: Palette.ink)
-                stat(label: "随礼", value: LedgerMath.fmtMoney(cents: givenCents), color: Palette.ink)
-                stat(label: "往来亲友", value: "\(peopleCount) 位", color: Palette.ink)
-                Divider().overlay(Palette.hairline)
+                stat(label: "收礼", value: LedgerMath.fmtMoney(cents: receivedCents), color: Palette.paperInk)
+                stat(label: "随礼", value: LedgerMath.fmtMoney(cents: givenCents), color: Palette.paperInk)
+                stat(label: "往来亲友", value: "\(peopleCount) 位", color: Palette.paperInk)
+                Divider().overlay(Palette.paperLine)
                 if let topName, let topTotalCents {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("往来最多")
                             .font(.system(size: 12))
-                            .foregroundStyle(Palette.stone)
+                            .foregroundStyle(Palette.paperStone)
                         Text("\(topName) · \(LedgerMath.fmtMoney(cents: topTotalCents))")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Palette.ink)
+                            .foregroundStyle(Palette.paperInk)
                     }
                 }
                 Text("全年共 \(count) 笔往来")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Palette.stone)
+                    .foregroundStyle(Palette.paperStone)
                 Spacer()
                 Text("礼钱账本 · \(todayText)")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.stone)
+                    .foregroundStyle(Palette.paperStone)
             }
             Spacer()
             VStack(spacing: 14) {
@@ -341,10 +341,10 @@ struct AnnualReportCard: View {
                     ForEach(verticalTitle.indices, id: \.self) { i in
                         Text(verticalTitle[i])
                             .font(.liqianSerifFixed(size: 23))
-                            .foregroundStyle(Palette.ink)
+                            .foregroundStyle(Palette.paperInk)
                     }
                 }
-                SealStampView(char: "礼", size: 44)
+                SealStampView(char: "礼", size: 44, fixedBrand: true)
             }
         }
         .padding(24)
@@ -352,7 +352,7 @@ struct AnnualReportCard: View {
         .background(Palette.paper)
         .overlay(
             RoundedRectangle(cornerRadius: 18)
-                .stroke(Palette.hairline, lineWidth: 1)
+                .stroke(Palette.paperLine, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 18))
     }
@@ -364,7 +364,7 @@ struct AnnualReportCard: View {
                 .foregroundStyle(color)
             Text(label)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.stone)
+                .foregroundStyle(Palette.paperStone)
         }
     }
 }

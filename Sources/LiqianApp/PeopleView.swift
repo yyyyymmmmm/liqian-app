@@ -10,6 +10,7 @@ struct PeopleView: View {
     @State private var query = ""
     @State private var personRoute: NameRoute?
     @State private var ledgerRoute: Ledger?
+    @State private var prepToDelete: GiftRecord?
     @State private var showSampleDone = false
 
     /// 人物详情路由（按姓名）
@@ -95,9 +96,26 @@ struct PeopleView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Palette.pageBG.ignoresSafeArea())
             .navigationTitle("往来")
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "姓名、礼簿或事由")
+            .alert(
+                "删除这笔备礼？",
+                isPresented: Binding(
+                    get: { prepToDelete != nil },
+                    set: { if !$0 { prepToDelete = nil } }
+                )
+            ) {
+                Button("删除", role: .destructive) {
+                    if let r = prepToDelete { deletePrep(r) }
+                    prepToDelete = nil
+                }
+                Button("取消", role: .cancel) { prepToDelete = nil }
+            } message: {
+                Text("删除后 30 天内可以在「我的 → 最近删除」恢复。")
+            }
             .navigationDestination(item: $personRoute) { route in
                 PersonDetailView(name: route.name)
             }
@@ -112,7 +130,8 @@ struct PeopleView: View {
         }
     }
 
-    /// 备礼清单行：待送出的礼，点行进人物详情去处理
+    /// 备礼清单行：待送出的礼，点行进人物详情去处理；
+    /// 左滑删除（进最近删除）／标记已送出行（v2.5 包 3）
     private func prepRow(_ r: GiftRecord) -> some View {
         Button {
             personRoute = NameRoute(name: r.person)
@@ -133,6 +152,32 @@ struct PeopleView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                prepToDelete = r
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            Button {
+                markPrepSent(r)
+            } label: {
+                Label("已送出", systemImage: "checkmark.circle")
+            }
+            .tint(Palette.primary)
+        }
+    }
+
+    /// 标记已送出：与记录表单里改状态同一口径（status 置已送出，开始计入差额）
+    private func markPrepSent(_ r: GiftRecord) {
+        r.status = LiqianConstants.sentStatus
+        try? modelContext.save()
+    }
+
+    /// 删除备礼：与详情页删记录同语义——快照进最近删除，30 天可恢复
+    private func deletePrep(_ r: GiftRecord) {
+        TrashStore.archive(record: r)
+        modelContext.delete(r)
+        try? modelContext.save()
     }
 
     private func emptyRow(_ text: String) -> some View {
@@ -215,4 +260,112 @@ struct PeopleView: View {
         .buttonStyle(.plain)
     }
 
+}
+
+/// 备礼清单独立页（v2.5 包 5：「我的 → 记录」入口落点）：与「往来」页顶部
+/// 同源同规——全部待送出按计划日期升序，行形态与侧滑（删除进最近删除／
+/// 标记已送出）一致，点行进人物详情。本页自带 @Query，不依赖往来页状态。
+struct PrepListView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var records: [GiftRecord]
+    @State private var personRoute: PeopleView.NameRoute?
+    @State private var prepToDelete: GiftRecord?
+
+    private var pendingSends: [GiftRecord] {
+        records
+            .filter { $0.isPendingSend }
+            .sorted { $0.date < $1.date }
+    }
+
+    var body: some View {
+        List {
+            if pendingSends.isEmpty {
+                ContentUnavailableView {
+                    Label("没有待送出的礼", systemImage: "gift")
+                } description: {
+                    Text("记随礼时选「待送出」，会记在这里。")
+                }
+                .padding(.vertical, LiqianMetrics.spacingL)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } else {
+                Section {
+                    ForEach(pendingSends) { r in
+                        row(r)
+                    }
+                } footer: {
+                    Text("还没送出的礼记在这里，送出后在记录里改为已送出。")
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
+        .navigationTitle("备礼清单")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $personRoute) { route in
+            PersonDetailView(name: route.name)
+        }
+        .alert(
+            "删除这笔备礼？",
+            isPresented: Binding(
+                get: { prepToDelete != nil },
+                set: { if !$0 { prepToDelete = nil } }
+            )
+        ) {
+            Button("删除", role: .destructive) {
+                if let r = prepToDelete { deletePrep(r) }
+                prepToDelete = nil
+            }
+            Button("取消", role: .cancel) { prepToDelete = nil }
+        } message: {
+            Text("删除后 30 天内可以在「我的 → 最近删除」恢复。")
+        }
+    }
+
+    private func row(_ r: GiftRecord) -> some View {
+        Button {
+            personRoute = PeopleView.NameRoute(name: r.person)
+        } label: {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                Text(r.person)
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Spacer()
+                Text(LiqianDate.displayString(for: r.date))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+                Text(LedgerMath.fmtMoney(cents: r.amountCents))
+                    .font(.liqianMoney(.title3))
+                    .foregroundStyle(Palette.ink)
+            }
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                prepToDelete = r
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            Button {
+                markPrepSent(r)
+            } label: {
+                Label("已送出", systemImage: "checkmark.circle")
+            }
+            .tint(Palette.primary)
+        }
+    }
+
+    private func markPrepSent(_ r: GiftRecord) {
+        r.status = LiqianConstants.sentStatus
+        try? modelContext.save()
+    }
+
+    private func deletePrep(_ r: GiftRecord) {
+        TrashStore.archive(record: r)
+        modelContext.delete(r)
+        try? modelContext.save()
+    }
 }

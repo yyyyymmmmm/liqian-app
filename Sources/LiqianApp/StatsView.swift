@@ -151,6 +151,8 @@ struct StatsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle("统计")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $personRoute) { route in

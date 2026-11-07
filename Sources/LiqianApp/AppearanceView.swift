@@ -49,6 +49,8 @@ struct AppearanceView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle("主题")
         .navigationBarTitleDisplayMode(.inline)
     }

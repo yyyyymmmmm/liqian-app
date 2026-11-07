@@ -4,17 +4,17 @@ import UniformTypeIdentifiers
 import LiqianCore
 import LiqianDesign
 
-/// 「我的」（PRO-AUDIT-2 §3.3 整页重写）：List(.insetGrouped) 原生 Section 与行——
-/// 总览＝首个 Section 的三列统计行；待回礼＝独立 Section（空时整组不渲染，
-/// 计算说明入 Section footer）；五组入口＝原生 NavigationLink/Button 行，
-/// 披露箭头由系统唯一提供（手绘 chevron 已全删，双箭头与 274pt 空白同根同除）。
-/// 统计明细在 StatsView，本页只留入口。全部汇总口径排除示例账本（第 2 项统计隔离）。
+/// 「我的」（v2.5 包 5 按大厂设置页重组）：List(.insetGrouped) 原生 Section 与行，
+/// 披露箭头由系统唯一提供（手绘 chevron 已全删）。设置页不放数据看板——
+/// 原页顶总览统计与待回礼大卡改为「记录」组里的一行入口（人情总览进 StatsView、
+/// 待回礼进行内列表页并带总金额值），其余按功能域归档成组：
+/// 记录／礼谱／外观／智能／数据／关于。危险操作只留在所属组内用 destructive
+/// 确认（覆盖恢复在数据组），不与普通入口混排无标识。全部汇总口径排除示例账本。
 struct MeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
 
-    @State private var personRoute: PeopleView.NameRoute?
     @State private var csvURL: URL?
     @State private var exportDocument = JSONBackupDocument(data: Data())
     @State private var showExporter = false
@@ -41,37 +41,22 @@ struct MeView: View {
         )
     }
 
-    private var realLedgerCount: Int { ledgers.count - sampleIDs.count }
-
-    private var realRecordCount: Int {
-        let ids = sampleIDs
-        return records.filter { !ids.contains($0.ledgerID) }.count
-    }
-
-    /// 全时段总收（待送出不计，口径同 LedgerMath.yearSummary）
-    private var totalReceived: Int {
-        snapshots
-            .filter { !$0.isPendingSend && $0.direction == LiqianConstants.received }
-            .reduce(0) { $0 + $1.amountCents }
-    }
-
-    /// 全时段总送（待送出不计）
-    private var totalGiven: Int {
-        snapshots
-            .filter { !$0.isPendingSend && $0.direction == LiqianConstants.given }
-            .reduce(0) { $0 + $1.amountCents }
-    }
-
-    private var peopleCount: Int {
-        LedgerMath.people(from: snapshots).count
-    }
-
     private var pendingPeople: [PersonSummary] {
         LedgerMath.people(from: snapshots).filter { $0.hasPending }
     }
 
+    /// 待回礼总金额（「待回礼」入口行右侧值）
+    private var pendingTotal: Int {
+        pendingPeople.reduce(0) { $0 + $1.pendingCents }
+    }
+
+    /// 待送出件数（「备礼清单」入口行右侧值，口径与备礼清单页一致：全部记录）
+    private var prepCount: Int {
+        records.filter { $0.isPendingSend }.count
+    }
+
     /// 关于区版本号：动态读 Bundle，避免写死版本过期（PRO-AUDIT #31）
-    private static var appVersion: String {
+    static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     }
 
@@ -82,52 +67,15 @@ struct MeView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    HStack {
-                        overviewStat(label: "累计收礼", value: LedgerMath.fmtMoney(cents: totalReceived))
-                        Spacer()
-                        overviewStat(label: "累计随礼", value: LedgerMath.fmtMoney(cents: totalGiven))
-                        Spacer()
-                        overviewStat(label: "往来亲友", value: "\(peopleCount) 位")
-                    }
-                } footer: {
-                    Text("\(realLedgerCount) 本礼簿 · \(realRecordCount) 笔记录（待送出不计入收支）")
-                }
-
-                if !pendingPeople.isEmpty {
-                    Section {
-                        ForEach(pendingPeople) { p in
-                            Button {
-                                personRoute = PeopleView.NameRoute(name: p.name)
-                            } label: {
-                                HStack {
-                                    Text(p.name)
-                                        .foregroundStyle(Palette.ink)
-                                    Spacer()
-                                    // 待回礼是行动提示，保留朱砂（v3 纪律的明示例外）
-                                    Text(LedgerMath.fmtMoney(cents: p.pendingCents))
-                                        .font(.liqianMoney(.title3))
-                                        .foregroundStyle(Palette.primary)
-                                }
-                                .frame(minHeight: LiqianMetrics.minTapTarget)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } header: {
-                        Text("待回礼")
-                    } footer: {
-                        Text("收礼多于随礼的差额即待回金额，自动计算，无需手动标记。")
-                    }
-                }
-
+                // —— 记录：数据看板不进设置流（v2.5 包 5）——总览与待回礼
+                // 从页顶大卡改为一行入口，明细在各自二级页；按功能域归档。
                 Section {
                     NavigationLink {
                         StatsView()
                     } label: {
                         entryLabel(
                             icon: "chart.bar.xaxis",
-                            title: "统计",
+                            title: "人情总览",
                             subtitle: "年度、事由、往来排行与关系分布"
                         )
                     }
@@ -140,8 +88,97 @@ struct MeView: View {
                             subtitle: "含往来第一位亲友的姓名与汇总，其余为年度汇总数据"
                         )
                     }
+                    NavigationLink {
+                        PendingPeopleView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "arrow.uturn.backward.circle", title: "待回礼")
+                            Spacer()
+                            Text(pendingPeople.isEmpty ? "无" : LedgerMath.fmtMoney(cents: pendingTotal))
+                                .foregroundStyle(pendingPeople.isEmpty ? Palette.stone : Palette.primary)
+                        }
+                    }
+                    NavigationLink {
+                        PrepListView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "gift", title: "备礼清单")
+                            Spacer()
+                            if prepCount > 0 {
+                                Text("\(prepCount) 件")
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
+                    }
+                    NavigationLink {
+                        TrashView()
+                    } label: {
+                        entryLabel(
+                            icon: "trash",
+                            title: "最近删除",
+                            subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
+                        )
+                    }
                 } header: {
-                    Text("统计与报告")
+                    Text("记录")
+                }
+
+                Section {
+                    NavigationLink {
+                        HostNameEditView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "signature", title: "礼谱落款姓名")
+                            Spacer()
+                            Text(hostName.isEmpty ? "未设置" : hostName)
+                                .foregroundStyle(Palette.stone)
+                                .lineLimit(1)
+                        }
+                    }
+                    Button {
+                        toggleSamples()
+                    } label: {
+                        entryLabel(
+                            icon: "sparkles",
+                            title: "示例礼簿",
+                            subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿"
+                        )
+                    }
+                } header: {
+                    Text("礼谱")
+                } footer: {
+                    Text("落款姓名用于礼谱封面、谱序落款与主家印，不填时用「主家谨识」。")
+                }
+
+                Section {
+                    NavigationLink {
+                        AppearanceView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "paintbrush", title: "主题")
+                            Spacer()
+                            Text((AppTheme(rawValue: appThemeRaw) ?? .day).displayName)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                } header: {
+                    Text("外观")
+                } footer: {
+                    Text("主题只影响 App 界面，导出的礼谱不变。")
+                }
+
+                Section {
+                    NavigationLink {
+                        AISettingsView()
+                    } label: {
+                        entryLabel(
+                            icon: "wand.and.stars",
+                            title: "AI 智能助手",
+                            subtitle: aiStatusText
+                        )
+                    }
+                } header: {
+                    Text("智能")
                 }
 
                 Section {
@@ -167,71 +204,21 @@ struct MeView: View {
                             subtitle: "选一个备份文件，覆盖现在的数据"
                         )
                     }
-                    NavigationLink {
-                        TrashView()
-                    } label: {
-                        entryLabel(
-                            icon: "trash",
-                            title: "最近删除",
-                            subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
-                        )
-                    }
-                    Button {
-                        toggleSamples()
-                    } label: {
-                        entryLabel(
-                            icon: "sparkles",
-                            title: "示例数据",
-                            subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿"
-                        )
-                    }
-                    NavigationLink {
-                        HostNameEditView()
-                    } label: {
-                        entryLabel(
-                            icon: "signature",
-                            title: "礼谱落款姓名",
-                            subtitle: hostName.isEmpty
-                                ? "还没设置，礼谱落款先用「主家谨识」"
-                                : "礼谱封面、谱序落款与主家印用「\(hostName)」"
-                        )
-                    }
                 } header: {
                     Text("数据")
                 }
 
                 Section {
                     NavigationLink {
-                        AISettingsView()
-                    } label: {
-                        entryLabel(
-                            icon: "wand.and.stars",
-                            title: "AI 智能助手",
-                            subtitle: aiStatusText
-                        )
-                    }
-                } header: {
-                    Text("AI 智能助手")
-                }
-
-                Section {
-                    NavigationLink {
-                        AppearanceView()
+                        AboutView()
                     } label: {
                         HStack(spacing: LiqianMetrics.spacingSM) {
-                            entryLabel(icon: "paintbrush", title: "主题")
+                            entryLabel(icon: "info.circle", title: "关于礼钱账本")
                             Spacer()
-                            Text((AppTheme(rawValue: appThemeRaw) ?? .day).displayName)
+                            Text(Self.appVersion)
                                 .foregroundStyle(Palette.stone)
                         }
                     }
-                } header: {
-                    Text("外观")
-                } footer: {
-                    Text("主题只影响 App 界面，导出的礼谱不变。")
-                }
-
-                Section {
                     Toggle(isOn: $privacyLock) {
                         HStack(spacing: LiqianMetrics.spacingSM) {
                             Image(systemName: "faceid")
@@ -249,23 +236,14 @@ struct MeView: View {
                     }
                     .tint(Palette.primary)
                 } header: {
-                    Text("隐私与安全")
-                }
-
-                Section {
-                    LabeledContent("版本", value: Self.appVersion)
-                } header: {
                     Text("关于")
-                } footer: {
-                    Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Palette.pageBG.ignoresSafeArea())
             .navigationTitle("我的")
             .navigationBarTitleDisplayMode(.large)
-            .navigationDestination(item: $personRoute) { route in
-                PersonDetailView(name: route.name)
-            }
             .task(id: csvFingerprint) {
                 csvURL = AppSupport.writeTempFile(
                     name: "礼钱账本导出.csv",
@@ -303,18 +281,6 @@ struct MeView: View {
     }
 
     // MARK: - 行零件
-
-    private func overviewStat(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(value)
-                .font(.liqianMoney(.title2))
-                .foregroundStyle(Palette.ink)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
-    }
 
     /// 设置式入口行内容：图标（统一 ink 色、frame 24）+ 标题/副标题。
     /// 披露箭头不在这里画——NavigationLink 行由系统提供，Button/ShareLink 行本就没有。
@@ -481,6 +447,8 @@ struct HostNameEditView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
         .navigationTitle("礼谱落款姓名")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -494,5 +462,90 @@ struct HostNameEditView: View {
         .onAppear {
             if text.isEmpty { text = hostName }
         }
+    }
+}
+
+/// 待回礼列表（v2.5 包 5：「我的 → 记录 → 待回礼」落点）：原「我的」页顶的
+/// 待回礼大卡收敛为此独立页——只列待回的人，点行进人物详情处理回礼；
+/// 口径与首页/往来一致（净差额为正，排除示例账本）。
+struct PendingPeopleView: View {
+    @Query private var records: [GiftRecord]
+    @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
+
+    private var snapshots: [EntrySnapshot] {
+        let ids = SampleData.sampleIDs(ledgers: ledgers)
+        return AppSupport.snapshots(
+            records: records.filter { !ids.contains($0.ledgerID) },
+            ledgers: ledgers
+        )
+    }
+
+    private var pendingPeople: [PersonSummary] {
+        LedgerMath.people(from: snapshots).filter { $0.hasPending }
+    }
+
+    var body: some View {
+        List {
+            if pendingPeople.isEmpty {
+                ContentUnavailableView {
+                    Label("没有待回礼", systemImage: "arrow.uturn.backward.circle")
+                } description: {
+                    Text("收礼多于随礼时，差额会记在这里。")
+                }
+                .padding(.vertical, LiqianMetrics.spacingL)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } else {
+                Section {
+                    ForEach(pendingPeople) { p in
+                        NavigationLink {
+                            PersonDetailView(name: p.name)
+                        } label: {
+                            HStack {
+                                Text(p.name)
+                                    .foregroundStyle(Palette.ink)
+                                Spacer()
+                                // 待回礼是行动提示，保留强调色（v3 纪律的明示例外）
+                                Text(LedgerMath.fmtMoney(cents: p.pendingCents))
+                                    .font(.liqianMoney(.title3))
+                                    .foregroundStyle(Palette.primary)
+                            }
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                            .contentShape(Rectangle())
+                        }
+                    }
+                } footer: {
+                    Text("收礼多于随礼的差额即待回金额，自动计算，无需手动标记。")
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
+        .navigationTitle("待回礼")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// 关于礼钱账本（v2.5 包 5：「我的 → 关于」落点）：版本与数据说明，
+/// 原「我的」页关于区的页脚文案移入此处，设置页只留一行入口带版本号。
+struct AboutView: View {
+    var body: some View {
+        List {
+            Section {
+                LabeledContent("版本", value: MeView.appVersion)
+            }
+            Section {
+                Text("礼钱账本记亲友红白事的往来礼钱，方便日后回礼。")
+                    .foregroundStyle(Palette.ink)
+            } footer: {
+                Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.pageBG.ignoresSafeArea())
+        .navigationTitle("关于礼钱账本")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

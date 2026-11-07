@@ -11,6 +11,9 @@ struct LedgersView: View {
     @State private var showNewLedger = false
     @State private var personRoute: PeopleView.NameRoute?
     @State private var ledgerRoute: Ledger?
+    @State private var ledgerToDelete: Ledger?
+    @State private var editingLedger: Ledger?
+    @State private var deleteTrigger = 0
     @State private var showSampleDone = false
     @Namespace private var zoomSpace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -60,51 +63,89 @@ struct LedgersView: View {
         ledgers.first { $0.id == r.ledgerID }
     }
 
+    /// 卡片行口径（v2.5 包 3）：首页改为 List 承载以获得原生侧滑——
+    /// 全部内容同在一个 Section，行本身透明、无分隔线，卡片自带表面；
+    /// 行上下各留 6pt（半距字面量）拼出原卡间距 12，两侧 16 与原页面边距一致。
+    private var cardRowInsets: EdgeInsets {
+        EdgeInsets(
+            top: 6, leading: LiqianMetrics.spacingM,
+            bottom: 6, trailing: LiqianMetrics.spacingM
+        )
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
+            List {
+                Section {
                     // 0 数据时隐藏汇总卡：只留空状态，不重复宣告「什么都没有」（S7）
                     if !statRecords.isEmpty {
                         summaryCard
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(cardRowInsets)
                     }
                     if !pendingPeople.isEmpty {
                         pendingCard
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(cardRowInsets)
                     }
                     if thisYearSummary.count > 0 {
                         yearChartCard
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(cardRowInsets)
                     }
                     if !recentRecords.isEmpty {
                         recentCard
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(cardRowInsets)
                     }
                     if ledgers.isEmpty {
                         emptyState
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     } else {
-                        LazyVStack(spacing: LiqianMetrics.spacingSM) {
-                            ForEach(ledgers) { ledger in
-                                NavigationLink {
-                                    LedgerDetailView(ledger: ledger)
-                                        .navigationTransition(.zoom(sourceID: ledger.id, in: zoomSpace))
+                        ForEach(ledgers) { ledger in
+                            Button {
+                                ledgerRoute = ledger
+                            } label: {
+                                LedgerCoverCard(
+                                    ledger: ledger,
+                                    receivedCents: received(of: ledger),
+                                    givenCents: given(of: ledger),
+                                    count: count(of: ledger)
+                                )
+                                .matchedTransitionSource(id: ledger.id, in: zoomSpace)
+                            }
+                            .buttonStyle(ScaleOnPressButtonStyle())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(cardRowInsets)
+                            // 左滑：编辑／删除（删除走与详情页「更多」同款确认，包 1/3）
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    ledgerToDelete = ledger
                                 } label: {
-                                    LedgerCoverCard(
-                                        ledger: ledger,
-                                        receivedCents: received(of: ledger),
-                                        givenCents: given(of: ledger),
-                                        count: count(of: ledger)
-                                    )
-                                    .matchedTransitionSource(id: ledger.id, in: zoomSpace)
+                                    Label("删除", systemImage: "trash")
                                 }
-                                .buttonStyle(ScaleOnPressButtonStyle())
+                                Button {
+                                    editingLedger = ledger
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
                             }
                         }
-                        .animation(reduceMotion ? nil : .snappy, value: ledgers.count)
                     }
                 }
-                .padding(LiqianMetrics.spacingM)
-                // 底部多留一段：滚动到底时最后一张卡不被 FAB 与 Tab 栏遮挡
-                .padding(.bottom, 72)
             }
-            .background(Palette.groupedBackground.ignoresSafeArea())
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Palette.pageBG.ignoresSafeArea())
+            // 底部多留一段：滚动到底时最后一张卡不被 FAB 与 Tab 栏遮挡
+            .contentMargins(.bottom, 72, for: .scrollContent)
+            .animation(reduceMotion ? nil : .snappy, value: ledgers.count)
             .navigationTitle("礼簿")
             .navigationBarTitleDisplayMode(.large)
             // 新增动作收敛到右下角 FAB（v2.4 定版，替代原工具栏 + 按钮）；
@@ -119,16 +160,49 @@ struct LedgersView: View {
             }
             .navigationDestination(item: $ledgerRoute) { ledger in
                 LedgerDetailView(ledger: ledger)
+                    .navigationTransition(.zoom(sourceID: ledger.id, in: zoomSpace))
             }
             .sheet(isPresented: $showNewLedger) {
                 LedgerFormView()
             }
+            .sheet(item: $editingLedger) { ledger in
+                LedgerFormView(existing: ledger)
+            }
+            .confirmationDialog(
+                "删除这本礼簿？",
+                isPresented: Binding(
+                    get: { ledgerToDelete != nil },
+                    set: { if !$0 { ledgerToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("删除", role: .destructive) {
+                    if let l = ledgerToDelete { deleteLedger(l) }
+                    ledgerToDelete = nil
+                }
+                Button("取消", role: .cancel) { ledgerToDelete = nil }
+            } message: {
+                Text("礼簿里的记录会一并删除，30 天内可以在「我的 → 最近删除」恢复。")
+            }
+            .sensoryFeedback(.warning, trigger: deleteTrigger)
             .alert("示例数据已生成", isPresented: $showSampleDone) {
                 Button("好") {}
             } message: {
                 Text("「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
             }
         }
+    }
+
+    /// 侧滑删除礼簿：与详情页删除同语义——整簿快照进最近删除，30 天可恢复
+    private func deleteLedger(_ ledger: Ledger) {
+        let rs = records.filter { $0.ledgerID == ledger.id }
+        TrashStore.archive(ledger: ledger, records: rs)
+        for r in rs {
+            modelContext.delete(r)
+        }
+        modelContext.delete(ledger)
+        try? modelContext.save()
+        deleteTrigger += 1
     }
 
     private var summaryCard: some View {
