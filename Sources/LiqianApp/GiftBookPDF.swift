@@ -9,6 +9,10 @@ import LiqianCore
 /// 素纸无纹、无闲章、无描金。
 /// 口径：待送出的随礼不计入礼谱（钱还没送出去），汇总页另注笔数；
 /// 同人同簿多笔并列多列不合并，与 App 一致。
+/// v2.8（docs/V28-NOTES.md）：内页逐笔农历日期（同日只标首笔）、欄題
+/// （红事「賀儀」/白事「奠儀」）、固定文字全繁体、金额大写走正式财务繁体
+/// （MoneyText.chineseUppercaseTraditional）、汇总页加按日/按關係小計、
+/// 卷末補記页。人名/簿名/事由等用户数据照原样，严禁繁简转换。
 /// 免费版每页地脚带「礼钱账本 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -36,7 +40,7 @@ enum GiftBookPDF {
         )
     }
 
-    private static let footerBrand = "礼钱账本 · 导出" // 会员版置 ""
+    private static let footerBrand = "禮錢賬本 · 導出" // 会员版置 ""（固定品牌串，繁体）
 
     // 印刷色（PRO-AUDIT §3.2 整改）：与 Palette v3 浅色令牌逐项同值，改色先改
     // docs/DESIGN.md 与 Palette 再同步此处；PDF 是留存物，只用浅色值不跟深色模式。
@@ -80,6 +84,14 @@ enum GiftBookPDF {
             .filter { !$0.isPendingSend }
             .sorted { ($0.date, $0.person) < ($1.date, $1.person) }
         let pendingCount = records.count - counted.count
+        // 逐笔日期口径：同一天只在该日首笔标注（全册流序判「首笔」，跨页同理），
+        // 连排同日不重复出日期，版面清爽
+        var seenDates = Set<String>()
+        var firstOfDayIDs = Set<UUID>()
+        for r in counted where !seenDates.contains(r.date) {
+            seenDates.insert(r.date)
+            firstOfDayIDs.insert(r.id)
+        }
 
         let bounds = CGRect(x: 0, y: 0, width: pageW, height: pageH)
         let renderer = UIGraphicsPDFRenderer(bounds: bounds)
@@ -100,16 +112,23 @@ enum GiftBookPDF {
                     Array(counted[$0..<min($0 + columnsPerPage, counted.count)])
                 }
                 if chunks.isEmpty {
-                    drawContentPage(context: context, ledger: ledger, bai: bai, pageRecords: [], pageIndex: 1)
+                    drawContentPage(
+                        context: context, ledger: ledger, bai: bai,
+                        pageRecords: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs
+                    )
                 } else {
                     for (i, chunk) in chunks.enumerated() {
-                        drawContentPage(context: context, ledger: ledger, bai: bai, pageRecords: chunk, pageIndex: i + 1)
+                        drawContentPage(
+                            context: context, ledger: ledger, bai: bai,
+                            pageRecords: chunk, pageIndex: i + 1, firstOfDayIDs: firstOfDayIDs
+                        )
                     }
                 }
                 drawSummary(
                     context: context, ledger: ledger, bai: bai,
                     counted: counted, pendingCount: pendingCount, hostName: host
                 )
+                drawSupplementPage(context: context, ledger: ledger, bai: bai)
             }
             return url
         } catch {
@@ -122,15 +141,15 @@ enum GiftBookPDF {
         hostName.isEmpty ? "主家" : hostName
     }
 
-    /// 题字闲章吉语（按事由；白事不用闲章，返回 nil）
+    /// 题字闲章吉语（按事由匹配简体词表键，印文固定串用繁体；白事不用闲章，返回 nil）
     private static func idleSealText(for type: String) -> String? {
         switch type {
         case "婚礼": return "百年好合"
-        case "寿宴": return "福寿康宁"
-        case "乔迁": return "乔迁之喜"
-        case "满月", "周岁": return "平安喜乐"
-        case "升学": return "金榜题名"
-        case "开业": return "开业大吉"
+        case "寿宴": return "福壽康寧"
+        case "乔迁": return "喬遷之喜"
+        case "满月", "周岁": return "平安喜樂"
+        case "升学": return "金榜題名"
+        case "开业": return "開業大吉"
         case LiqianConstants.baiType: return nil
         default: return "吉祥如意"
         }
@@ -170,8 +189,8 @@ enum GiftBookPDF {
             centerX: pageW / 2, topY: 168,
             font: kaitiFont(titleSize), color: .white, step: titleStep
         )
-        // 题字左列：事由 + 公历 + 干支全日期（全谱统一写法）
-        let info = "\(ledger.type) · \(ledger.date) · \(LiqianDate.ganzhiFullDate(for: ledger.date))"
+        // 题字左列：事由（用户数据原样） + 公历 + 干支全日期（生成串转繁体，全谱统一写法）
+        let info = "\(ledger.type) · \(ledger.date) · \(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)))"
         _ = drawVertical(
             info,
             centerX: pageW / 2 - 76, topY: 176,
@@ -189,15 +208,15 @@ enum GiftBookPDF {
             )
         }
 
-        // 右下落款 + 主家印
+        // 右下落款 + 主家印（落款用语为固定串用繁体；姓名为用户数据原样）
         _ = drawVertical(
-            "\(colophonName(hostName: hostName))谨识",
+            "\(colophonName(hostName: hostName))謹識",
             centerX: pageW - 148, topY: pageH - 268,
             font: kaitiFont(15), color: UIColor.white.withAlphaComponent(0.9), step: 21
         )
         drawSeal(
             center: CGPoint(x: pageW - 98, y: pageH - 108),
-            size: 54, text: hostName.isEmpty ? "主家谨识" : hostName,
+            size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
             fill: bai ? baiDeep : cinnabarDeep,
             stroke: UIColor.white.withAlphaComponent(0.65),
             speck: main
@@ -235,8 +254,8 @@ enum GiftBookPDF {
         columns.append(PrefaceColumn())
         let colophonIndex = columns.count
         columns.append(PrefaceColumn(runs: [
-            ("\(colophonName(hostName: hostName)) 谨识", kaitiFont(15), ink, 20),
-            (LiqianDate.ganzhiFullDate(for: ledger.date), serifFont(10.5), sub, 15),
+            ("\(colophonName(hostName: hostName)) 謹識", kaitiFont(15), ink, 20),
+            (LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)), serifFont(10.5), sub, 15),
         ]))
 
         let pageChunks = stride(from: 0, to: columns.count, by: columnsPerPage).map {
@@ -245,7 +264,7 @@ enum GiftBookPDF {
         for (pi, pageCols) in pageChunks.enumerated() {
             context.beginPage()
             drawPaperBase(bai: bai)
-            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: pi == 0 ? "谱序" : "谱序（续）")
+            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: pi == 0 ? "譜序" : "譜序（續）")
             for (ci, col) in pageCols.enumerated() {
                 let centerX = contentRight - colW * (CGFloat(ci) + 0.5)
                 var y = contentTop
@@ -260,7 +279,7 @@ enum GiftBookPDF {
                 if pi * columnsPerPage + ci == colophonIndex {
                     drawSeal(
                         center: CGPoint(x: centerX, y: min(y + 30, contentBottom - 4)),
-                        size: 54, text: hostName.isEmpty ? "主家谨识" : hostName,
+                        size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
                         fill: bai ? baiPrimary : cinnabar,
                         stroke: bai ? nil : gold,
                         speck: bai ? baiPaper : paper
@@ -275,7 +294,8 @@ enum GiftBookPDF {
     private static func drawContentPage(
         context: UIGraphicsPDFRendererContext,
         ledger: Ledger, bai: Bool,
-        pageRecords: [GiftRecord], pageIndex: Int
+        pageRecords: [GiftRecord], pageIndex: Int,
+        firstOfDayIDs: Set<UUID>
     ) {
         context.beginPage()
         drawPaperBase(bai: bai)
@@ -283,14 +303,23 @@ enum GiftBookPDF {
         let ink = bai ? baiInk : cardInk
         let sub = bai ? baiPrimary : stone
 
-        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "第 \(pageIndex) 页")
+        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "第 \(pageIndex) 頁")
 
-        // 列间朱砂（白事素蓝）细线
+        // 欄題：版框内顶端居中（红事「賀儀」/白事「奠儀」；白事全谱禁用賀字）
+        let columnTitle = bai ? "奠儀" : "賀儀"
+        let titleAttr = NSAttributedString(
+            string: columnTitle,
+            attributes: [.font: kaitiFont(15), .foregroundColor: main]
+        )
+        let titleSize = titleAttr.size()
+        titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
+
+        // 列间朱砂（白事素蓝）细线（自欄題下方起）
         main.withAlphaComponent(0.45).setStroke()
         for i in 1..<columnsPerPage {
             let x = contentRight - colW * CGFloat(i)
             let line = UIBezierPath()
-            line.move(to: CGPoint(x: x, y: contentTop - 10))
+            line.move(to: CGPoint(x: x, y: contentTop + 6))
             line.addLine(to: CGPoint(x: x, y: contentBottom))
             line.lineWidth = 0.75
             line.stroke()
@@ -300,50 +329,59 @@ enum GiftBookPDF {
             // 右起：第 0 列在最右
             let centerX = contentRight - colW * (CGFloat(i) + 0.5)
             var y = contentTop
-            // 姓名：楷体大字，限 4 字高
+            // 姓名：楷体大字，限 4 字高（用户数据原样）
             y = drawVertical(
                 String(r.person.prefix(4)),
                 centerX: centerX, topY: y,
                 font: kaitiFont(20), color: ink, step: 27
             )
             y += 14
-            // 金额大写
+            // 金额大写（正式财务繁体，PDF 专用）
             y = drawVertical(
-                MoneyText.chineseUppercase(cents: r.amountCents),
+                MoneyText.chineseUppercaseTraditional(cents: r.amountCents),
                 centerX: centerX, topY: y,
                 font: kaitiFont(13), color: main, step: 18
             )
             y += 10
-            // 小字：阿拉伯金额 + 方式（随礼另注方向，避免混册时看错）
+            // 小字：阿拉伯金额 + 方式（随礼另注方向，避免混册时看错；方式为记录数据原样）
             var small = "\(LedgerMath.fmtMoney(cents: r.amountCents)) · \(r.method)"
-            if r.direction == LiqianConstants.given { small += " · 随礼" }
-            _ = drawVertical(
+            if r.direction == LiqianConstants.given { small += " · 隨禮" }
+            y = drawVertical(
                 small,
                 centerX: centerX, topY: y,
                 font: serifFont(9), color: sub, step: 13
             )
+            // 逐笔日期：该日首笔才标农历月日小字（生成串转繁体），同日连排不重复
+            if firstOfDayIDs.contains(r.id) {
+                y += 8
+                _ = drawVertical(
+                    LibuText.traditionalGenerated(LiqianDate.lunarMonthDay(for: r.date)),
+                    centerX: centerX, topY: y,
+                    font: kaitiFont(10.5), color: sub, step: 14
+                )
+            }
         }
     }
 
     // MARK: - 汇总页（封底）
+
+    /// 汇总流式行：正文行与段头行（段头主色、略大），dy 为行后步进
+    private struct SummaryLine {
+        let text: String
+        let size: CGFloat
+        let isHeader: Bool
+        let dy: CGFloat
+    }
 
     private static func drawSummary(
         context: UIGraphicsPDFRendererContext,
         ledger: Ledger, bai: Bool,
         counted: [GiftRecord], pendingCount: Int, hostName: String
     ) {
-        context.beginPage()
-        drawPaperBase(bai: bai)
         let main = bai ? baiPrimary : cinnabar
         let ink = bai ? baiInk : cardInk
-
-        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "汇总")
-        // 线装暗示（封底才有）
-        drawBindingMarks(color: main)
-
-        var y: CGFloat = 132
-        drawText("汇总", at: CGPoint(x: contentLeft, y: y), font: kaitiFont(24), color: ink)
-        y += 52
+        // 页题：白事用奠儀口径（繁体固定串）；红事「彙總」
+        let title = bai ? "奠儀總計" : "彙總"
 
         let receivedList = counted.filter { $0.direction == LiqianConstants.received }
         let givenList = counted.filter { $0.direction == LiqianConstants.given }
@@ -351,22 +389,22 @@ enum GiftBookPDF {
         let totalReceived = receivedList.reduce(0) { $0 + $1.amountCents }
         let totalGiven = givenList.reduce(0) { $0 + $1.amountCents }
 
-        let lineFont = kaitiFont(15.5)
-        func line(_ s: String, dy: CGFloat = 34) {
-            drawText(s, at: CGPoint(x: contentLeft, y: y), font: lineFont, color: ink)
-            y += dy
+        // —— 组装全部汇总行（固定文字繁体；人名/方式/关系等记录数据原样）——
+        var lines: [SummaryLine] = []
+        func add(_ s: String, size: CGFloat = 15.5, header: Bool = false, dy: CGFloat = 34) {
+            lines.append(SummaryLine(text: s, size: size, isHeader: header, dy: dy))
         }
-        line("总人数 \(peopleCount) 人 · 总笔数 \(counted.count) 笔")
+        add("總人數 \(peopleCount) 人 · 總筆數 \(counted.count) 筆")
         if !receivedList.isEmpty {
-            line("收礼合计 \(LedgerMath.fmtMoney(cents: totalReceived))")
-            line("大写：\(MoneyText.chineseUppercase(cents: totalReceived))", dy: 40)
+            add("收禮合計 \(LedgerMath.fmtMoney(cents: totalReceived))")
+            add("大寫：\(MoneyText.chineseUppercaseTraditional(cents: totalReceived))", dy: 40)
         }
         if !givenList.isEmpty {
-            line("随礼合计 \(LedgerMath.fmtMoney(cents: totalGiven))")
-            line("大写：\(MoneyText.chineseUppercase(cents: totalGiven))", dy: 40)
+            add("隨禮合計 \(LedgerMath.fmtMoney(cents: totalGiven))")
+            add("大寫：\(MoneyText.chineseUppercaseTraditional(cents: totalGiven))", dy: 40)
         }
         if pendingCount > 0 {
-            line("另有待送出 \(pendingCount) 笔，未计入本谱。", dy: 40)
+            add("另有待送出 \(pendingCount) 筆，未計入本譜。", dy: 40)
         }
 
         // 按方式分布（口径同上：只计已成册记录）
@@ -382,17 +420,112 @@ enum GiftBookPDF {
             byMethod.append(("其他", otherMethods.reduce(0) { $0 + $1.amountCents }, otherMethods.count))
         }
         if !byMethod.isEmpty {
-            y += 6
-            drawText("按方式", at: CGPoint(x: contentLeft, y: y), font: kaitiFont(16), color: main)
-            y += 36
+            add("按方式", size: 16, header: true, dy: 36)
             for item in byMethod {
-                line("\(item.method)：\(LedgerMath.fmtMoney(cents: item.cents)) · \(item.count) 笔", dy: 30)
+                add("\(item.method)：\(LedgerMath.fmtMoney(cents: item.cents)) · \(item.count) 筆", dy: 30)
             }
         }
 
-        // 校对空行（纸礼簿的手工仪式感）
+        // 按日小計（v2.8 新增；成册口径、日期升序；金额只出数字，大写只留总计。
+        // 只有一天时与总计重复，不出此节）
+        let dayGroups = Dictionary(grouping: counted, by: \.date)
+            .sorted { $0.key < $1.key }
+        if dayGroups.count > 1 {
+            add("按日小計", size: 16, header: true, dy: 36)
+            for (date, list) in dayGroups {
+                let rec = list.filter { $0.direction == LiqianConstants.received }
+                    .reduce(0) { $0 + $1.amountCents }
+                let giv = list.filter { $0.direction == LiqianConstants.given }
+                    .reduce(0) { $0 + $1.amountCents }
+                var s = "\(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: date))) · \(list.count) 筆"
+                if rec > 0 { s += " 收 \(LedgerMath.fmtMoney(cents: rec))" }
+                if giv > 0 { s += " 隨 \(LedgerMath.fmtMoney(cents: giv))" }
+                add(s, size: 13.5, dy: 28)
+            }
+        }
+
+        // 按關係小計（v2.8 新增；关系为记录数据原样，排序按词表序、表外者附后。
+        // 只有一种关系时与总计重复，不出此节）
+        let relGroups = Dictionary(grouping: counted, by: \.relation)
+        if relGroups.count > 1 {
+            add("按關係小計", size: 16, header: true, dy: 36)
+            let orderedRelations = LiqianConstants.relations.filter { relGroups[$0] != nil }
+                + relGroups.keys.filter { !LiqianConstants.relations.contains($0) }.sorted()
+            for relation in orderedRelations {
+                guard let list = relGroups[relation] else { continue }
+                let rec = list.filter { $0.direction == LiqianConstants.received }
+                    .reduce(0) { $0 + $1.amountCents }
+                let giv = list.filter { $0.direction == LiqianConstants.given }
+                    .reduce(0) { $0 + $1.amountCents }
+                var s = "\(relation)：\(list.count) 筆"
+                if rec > 0 { s += " 收 \(LedgerMath.fmtMoney(cents: rec))" }
+                if giv > 0 { s += " 隨 \(LedgerMath.fmtMoney(cents: giv))" }
+                add(s, size: 13.5, dy: 28)
+            }
+        }
+
+        // —— 分页：末页底部留给校对与落款印章（行不得排进 pageH-300 以下）——
+        let firstStartY: CGFloat = 190 // 首页题下（题 132 + 24 号字 + 呼吸）
+        let contStartY = contentTop
+        let lastBottom = pageH - 300
+        var chunks: [[SummaryLine]] = []
+        var current: [SummaryLine] = []
+        var y = firstStartY
+        for line in lines {
+            if y + line.dy > contentBottom && !current.isEmpty {
+                chunks.append(current)
+                current = []
+                y = contStartY
+            }
+            current.append(line)
+            y += line.dy
+        }
+        chunks.append(current)
+        // 恰好整页排满时尾部会多一个空块，去掉免得出一页空白汇总
+        if chunks.count > 1, chunks[chunks.count - 1].isEmpty {
+            chunks.removeLast()
+        }
+        // 末页溢出校对区时，把末尾行整体挪到新的一页
+        func endY(of chunk: [SummaryLine], pageIndex: Int) -> CGFloat {
+            (pageIndex == 0 ? firstStartY : contStartY) + chunk.reduce(0) { $0 + $1.dy }
+        }
+        while chunks.count > 0, endY(of: chunks[chunks.count - 1], pageIndex: chunks.count - 1) > lastBottom,
+              chunks[chunks.count - 1].count > 1 {
+            var moved: [SummaryLine] = []
+            while endY(of: chunks[chunks.count - 1], pageIndex: chunks.count - 1) > lastBottom,
+                  chunks[chunks.count - 1].count > 1 {
+                moved.insert(chunks[chunks.count - 1].removeLast(), at: 0)
+            }
+            chunks.append(moved)
+        }
+        if chunks.isEmpty { chunks = [[]] }
+
+        for (pi, chunk) in chunks.enumerated() {
+            context.beginPage()
+            drawPaperBase(bai: bai)
+            drawHeaderFooter(
+                ledger: ledger, bai: bai,
+                pageLabel: pi == 0 ? title : "\(title)（續）"
+            )
+            if pi == 0 {
+                // 线装暗示（汇总首页沿旧封底规格）
+                drawBindingMarks(color: main)
+                drawText(title, at: CGPoint(x: contentLeft, y: 132), font: kaitiFont(24), color: ink)
+            }
+            var ly = pi == 0 ? firstStartY : contStartY
+            for line in chunk {
+                drawText(
+                    line.text, at: CGPoint(x: contentLeft, y: ly),
+                    font: kaitiFont(line.size), color: line.isHeader ? main : ink
+                )
+                ly += line.dy
+            }
+        }
+        // 以下校对/落款落在最后一个汇总页（当前页）上，位置口径与旧版一致
+
+        // 校對空行（纸礼簿的手工仪式感）
         let checkY: CGFloat = pageH - 268
-        drawText("校对：", at: CGPoint(x: contentLeft, y: checkY), font: kaitiFont(15), color: ink)
+        drawText("校對：", at: CGPoint(x: contentLeft, y: checkY), font: kaitiFont(15), color: ink)
         main.withAlphaComponent(0.6).setStroke()
         let underline = UIBezierPath()
         underline.move(to: CGPoint(x: contentLeft + 52, y: checkY + 22))
@@ -400,21 +533,23 @@ enum GiftBookPDF {
         underline.lineWidth = 0.75
         underline.stroke()
 
-        // 落款 + 主家印 + 纪年印（干支年 + 月雅称，如「丙午冬月」）
+        // 落款 + 主家印 + 纪年印（干支年 + 月雅称，如「丙午冬月」，生成串转繁体）
         _ = drawVertical(
-            "\(colophonName(hostName: hostName))谨识",
+            "\(colophonName(hostName: hostName))謹識",
             centerX: pageW - 148, topY: pageH - 268,
             font: kaitiFont(15), color: ink, step: 21
         )
         drawSeal(
             center: CGPoint(x: pageW - 98, y: pageH - 120),
-            size: 54, text: hostName.isEmpty ? "主家谨识" : hostName,
+            size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
             fill: main,
             stroke: bai ? nil : gold,
             speck: bai ? baiPaper : paper
         )
-        let eraText = LiqianDate.ganzhiYear(for: ledger.date)
-            + LiqianDate.lunarMonthAlias(for: ledger.date)
+        let eraText = LibuText.traditionalGenerated(
+            LiqianDate.ganzhiYear(for: ledger.date)
+                + LiqianDate.lunarMonthAlias(for: ledger.date)
+        )
         drawSeal(
             center: CGPoint(x: pageW - 184, y: pageH - 120),
             size: 48, text: eraText,
@@ -422,6 +557,38 @@ enum GiftBookPDF {
             stroke: bai ? nil : gold,
             speck: bai ? baiPaper : paper
         )
+    }
+
+    // MARK: - 補記页（卷末空白页：同版框同栏格，供打印后手写补记）
+
+    private static func drawSupplementPage(
+        context: UIGraphicsPDFRendererContext,
+        ledger: Ledger, bai: Bool
+    ) {
+        context.beginPage()
+        drawPaperBase(bai: bai)
+        let main = bai ? baiPrimary : cinnabar
+
+        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "補記")
+
+        // 页题：版框内顶端居中，与内页欄題同位同式
+        let titleAttr = NSAttributedString(
+            string: "補記",
+            attributes: [.font: kaitiFont(15), .foregroundColor: main]
+        )
+        let titleSize = titleAttr.size()
+        titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
+
+        // 栏格：与内页相同的列间细线，空栏待手写
+        main.withAlphaComponent(0.45).setStroke()
+        for i in 1..<columnsPerPage {
+            let x = contentRight - colW * CGFloat(i)
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: x, y: contentTop + 6))
+            line.addLine(to: CGPoint(x: x, y: contentBottom))
+            line.lineWidth = 0.75
+            line.stroke()
+        }
     }
 
     // MARK: - 纸面、版框、页眉地脚、线装

@@ -78,6 +78,13 @@ public enum LiqianDate {
         return "农历" + leap + monthName + lunarDayName(comps.day ?? 1)
     }
 
+    /// 农历月日（不带年、不带「农历」前缀），如「十月初八」「闰四月廿三」。
+    /// 礼谱内页逐笔日期小字用。
+    public static func lunarMonthDay(for dateString: String) -> String {
+        let lunar = lunarString(for: dateString)
+        return lunar.hasPrefix("农历") ? String(lunar.dropFirst(2)) : lunar
+    }
+
     public static func currentYearString() -> String {
         String(Calendar.current.component(.year, from: Date()))
     }
