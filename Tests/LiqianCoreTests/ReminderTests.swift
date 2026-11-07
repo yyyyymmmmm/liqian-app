@@ -140,13 +140,15 @@ final class ReminderTests: XCTestCase {
             leadDays: 3, enabled: false
         )
         XCTAssertTrue(ReminderPlanner.planDays([off], now: date("2026-11-07")).isEmpty)
-        // 提前 7 天但日子只剩 2 天：今年这次触发已过，顺延到明年（超出 12 个月窗口则不排）
+        // 提前 7 天但日子只剩 2 天：今年这次触发已过，顺延到明年；
+        // 明年触发 2027-11-02 距今 360 天、在 12 个月窗口内，应排出（原期望误算为窗口外，已纠正）
         let missed = ReminderDayValue(
             person: "大舅", kind: LiqianConstants.reminderBirthday,
             calendarKind: LiqianConstants.calendarGregorian, month: 11, day: 9, leadDays: 7
         )
         let planned = ReminderPlanner.planDays([missed], now: date("2026-11-07", hour: 10))
-        XCTAssertTrue(planned.isEmpty) // 明年触发在 2027-11-02，窗口（+12 个月）之外
+        XCTAssertEqual(planned.count, 1)
+        XCTAssertEqual(planned.first?.fireDate, date("2027-11-02", hour: 9))
     }
 
     // MARK: 待回判定与排期
