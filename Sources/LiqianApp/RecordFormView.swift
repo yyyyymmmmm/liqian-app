@@ -190,8 +190,8 @@ struct RecordFormView: View {
             .sensoryFeedback(.selection, trigger: direction)
             .sensoryFeedback(.selection, trigger: status)
             .sheet(isPresented: $showQuickSentence) {
-                QuickSentenceView { result in
-                    applyAIResult(result)
+                QuickSentenceView { results in
+                    saveAIResults(results)
                 }
             }
             .alert("AI 还没准备好", isPresented: $showAIGuide) {
@@ -351,7 +351,7 @@ struct RecordFormView: View {
                     .focused($focus, equals: .person)
                 if existing == nil {
                     // 一句话记账（含语音）入口收敛到姓名行右侧麦克风钮：
-                    // 点开仍走既有 QuickSentenceView 与 applyAIResult 回填，通道未动
+                    // 点开 QuickSentenceView 拆多笔核对，确认后走 saveAIResults 一次落库
                     Button {
                         openQuickSentence()
                     } label: {
@@ -691,21 +691,57 @@ struct RecordFormView: View {
         }
     }
 
-    /// 一句话记账的解析结果只预填字段，仍由用户核对后自己点保存
-    private func applyAIResult(_ result: QuickSentenceResult) {
-        person = result.name
-        amountText = Self.amountString(cents: result.amountCents)
-        if let relation = result.relation { self.relation = relation }
-        if let method = result.method { self.method = method }
-        direction = result.direction
-        if direction == LiqianConstants.given {
-            status = LiqianConstants.sentStatus
+    /// 一句话记账确认后的多笔（1 笔也是走这里）一次落库：沿用 save() 的字段口径
+    /// （关系/方式缺失时用表单当前选择、日期用表单日期、随礼状态口径与 save() 一致）
+    /// 与防重入 isSaving；整批只 save 一次、落印只盖一次
+    private func saveAIResults(_ results: [QuickSentenceResult]) {
+        guard !isSaving, !results.isEmpty, let lid = effectiveLedgerID else { return }
+        isSaving = true
+        let dateString = LiqianDate.string(from: date)
+        for result in results {
+            modelContext.insert(
+                GiftRecord(
+                    ledgerID: lid,
+                    person: result.name,
+                    relation: result.relation ?? relation,
+                    amountCents: result.amountCents,
+                    direction: result.direction,
+                    method: result.method ?? method,
+                    note: result.eventHint ?? "",
+                    date: dateString,
+                    status: result.direction == LiqianConstants.given
+                        ? status
+                        : LiqianConstants.sentStatus
+                )
+            )
         }
-        if note.isEmpty, let hint = result.eventHint {
-            note = hint
+        try? modelContext.save()
+        saveTrigger += 1
+        // 落印口径同 save()：全是随礼用礼簿名首字印，其余（含混合）盖「礼」印
+        sealText = results.allSatisfy { $0.direction == LiqianConstants.given }
+            ? (effectiveLedger.map { String($0.title.prefix(1)) } ?? "礼")
+            : "礼"
+        showSeal = true
+        sealTrigger += 1
+        if saveAndContinue {
+            person = ""
+            amountText = ""
+            note = ""
+            personError = nil
+            amountError = nil
+            savedMessage = "已保存 \(results.count) 笔，继续记下一笔"
+            focus = .person
+            Task {
+                try? await Task.sleep(for: .milliseconds(1050))
+                showSeal = false
+                isSaving = false
+            }
+        } else {
+            Task {
+                try? await Task.sleep(for: .milliseconds(1050))
+                dismiss()
+            }
         }
-        personError = nil
-        amountError = nil
     }
 
     private func deleteExisting() {
