@@ -293,7 +293,7 @@ struct QuickSentenceView: View {
     }
 
     private static let systemPrompt = """
-        你是礼钱账本的记账助手。用户会说一段中文人情往来记录，可能一句话里包含好几个人、多笔账（也可能只有一笔），也可能是多行文本。请把每一笔都提取出来，只输出一个 JSON 对象，不要输出任何其他文字：{"records":[{"name":"","amountYuan":数字,"relation":null,"method":null,"direction":"received","eventHint":null}]}
+        你是礼记的记账助手。用户会说一段中文人情往来记录，可能一句话里包含好几个人、多笔账（也可能只有一笔），也可能是多行文本。请把每一笔都提取出来，只输出一个 JSON 对象，不要输出任何其他文字：{"records":[{"name":"","amountYuan":数字,"relation":null,"method":null,"direction":"received","eventHint":null}]}
         规则：1) 有几笔就给几条，如「大舅2000，二姨1000，张三给了500」要返回 3 条；多行文本逐行逐笔提取，不要把多人合并成一条；2) name 姓名照抄原文，绝不猜测或改名；3) amountYuan 是金额数字，单位元，中文数字要换算（如「五百」=500、「一千二」=1200、「八百八」=880）；4) direction：别人送给记账人是 "received"，记账人送出去是 "given"，看不出给 "received"；5) relation 只能是 亲戚/朋友/同事/同学/邻居/其他 之一，看不出给 null；6) method 只能是 现金/微信/支付宝/银行转账/实物 之一，看不出给 null；7) eventHint 是事由（如 婚礼/满月/乔迁），没有就给 null；8) 某笔实在提取不到姓名或金额时，那条 name 给空字符串、amountYuan 给 0，不要编造，也不要因为一笔读不出就丢掉其他笔。
         """
 }

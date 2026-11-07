@@ -25,7 +25,7 @@ enum AppLockAuthenticator {
         }
         do {
             return try await context.evaluatePolicy(
-                .deviceOwnerAuthentication, localizedReason: "解锁礼钱账本")
+                .deviceOwnerAuthentication, localizedReason: "解锁礼记")
         } catch {
             return false
         }
@@ -41,7 +41,7 @@ struct LockScreenView: View {
             Palette.groupedBackground.ignoresSafeArea()
             VStack(spacing: LiqianMetrics.spacingL) {
                 coverMark
-                Text("礼钱账本已锁定")
+                Text("礼记已锁定")
                     .font(.headline)
                     .foregroundStyle(Palette.ink)
                 Button {

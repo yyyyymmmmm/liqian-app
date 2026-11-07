@@ -331,7 +331,7 @@ struct AnnualReportCard: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(Palette.paperStone)
                 Spacer()
-                Text("礼钱账本 · \(todayText)")
+                Text("礼记 · \(todayText)")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.paperStone)
             }

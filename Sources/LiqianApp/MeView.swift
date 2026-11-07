@@ -303,7 +303,7 @@ struct MeView: View {
                         AboutView()
                     } label: {
                         HStack(spacing: LiqianMetrics.spacingSM) {
-                            entryLabel(icon: "info.circle", title: "关于礼钱账本")
+                            entryLabel(icon: "info.circle", title: "关于礼记")
                             Spacer()
                             Text(Self.appVersion)
                                 .foregroundStyle(Palette.stone)
@@ -336,7 +336,7 @@ struct MeView: View {
             .navigationBarTitleDisplayMode(.large)
             .task(id: csvFingerprint) {
                 csvURL = AppSupport.writeTempFile(
-                    name: "礼钱账本导出.csv",
+                    name: "礼记导出.csv",
                     content: AppSupport.csvText(records: records, ledgers: ledgers)
                 )
             }
@@ -344,7 +344,7 @@ struct MeView: View {
                 isPresented: $showExporter,
                 document: exportDocument,
                 contentType: .json,
-                defaultFilename: "礼钱账本备份"
+                defaultFilename: "礼记备份"
             ) { result in
                 if case .failure = result {
                     showInfo(title: "导出失败", message: "备份导出失败，请重试。")
@@ -445,7 +445,7 @@ struct MeView: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             if case .failure = result {
-                showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
+                showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼记的备份。数据没有动。")
             }
             return
         }
@@ -460,7 +460,7 @@ struct MeView: View {
             pendingCustomRelations = LiqianBackup.parseBackupRelations(data)
             showImportConfirm = true
         } catch {
-            showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼钱账本的备份。数据没有动。")
+            showInfo(title: "备份文件无效", message: "这个文件读不了，或者不是礼记的备份。数据没有动。")
         }
     }
 
@@ -711,7 +711,7 @@ struct PendingPeopleView: View {
     }
 }
 
-/// 关于礼钱账本（v2.5 包 5：「我的 → 关于」落点）：版本与数据说明，
+/// 关于礼记（v2.5 包 5：「我的 → 关于」落点）：版本与数据说明，
 /// 原「我的」页关于区的页脚文案移入此处，设置页只留一行入口带版本号。
 struct AboutView: View {
     var body: some View {
@@ -720,7 +720,7 @@ struct AboutView: View {
                 LabeledContent("版本", value: MeView.appVersion)
             }
             Section {
-                Text("礼钱账本记亲友红白事的往来礼钱，方便日后回礼。")
+                Text("礼记记亲友红白事的往来礼钱，方便日后回礼。")
                     .foregroundStyle(Palette.ink)
             } footer: {
                 Text("开启 iCloud 同步时，数据通过你自己的 iCloud 账号在你的设备间同步，换手机或重装后自动回来；未开启时数据仅保存在本机。导出备份可手动保存一份到任意位置，与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。注意：来宾签名图片与语音祝福录音不在 JSON 备份内，它们保存在本机与 iCloud 中。")
@@ -729,7 +729,7 @@ struct AboutView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
-        .navigationTitle("关于礼钱账本")
+        .navigationTitle("关于礼记")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

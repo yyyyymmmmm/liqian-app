@@ -136,7 +136,7 @@ struct PendingWidgetView: View {
                         .foregroundStyle(WPalette.stone)
                 }
             } else {
-                Text("打开礼钱账本\n查看待回礼")
+                Text("打开礼记\n查看待回礼")
                     .font(.subheadline)
                     .foregroundStyle(WPalette.ink)
                     .lineSpacing(4)

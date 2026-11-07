@@ -7,7 +7,7 @@ import Foundation
 /// ContentView 在 scenePhase 变 .active 时读标记弹出记一笔表单。
 struct QuickRecordIntent: AppIntent {
     static let title: LocalizedStringResource = "记一笔"
-    static let description = IntentDescription("打开礼钱账本，记一笔新的人情往来。")
+    static let description = IntentDescription("打开礼记，记一笔新的人情往来。")
     static let openAppWhenRun = true
 
     @MainActor

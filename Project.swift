@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "1.0.0",
-        "CURRENT_PROJECT_VERSION": "1",
+        "MARKETING_VERSION": "4.4.0",
+        "CURRENT_PROJECT_VERSION": "44",
     ]),
     targets: [
         .target(
@@ -39,7 +39,7 @@ let project = Project(
             bundleId: "site.didichou.liqian",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleDisplayName": "礼钱账本",
+                "CFBundleDisplayName": "礼记",
                 "UIFileSharingEnabled": true,
                 "LSSupportsOpeningDocumentsInPlace": true,
                 "ITSAppUsesNonExemptEncryption": false,

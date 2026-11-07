@@ -67,7 +67,7 @@ struct RemindersView: View {
                         Label("通知未开，提醒不会推送", systemImage: "bell.slash")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Palette.danger)
-                        Text("日子和排期都记着，只是系统不让弹窗。去系统设置里给「礼钱账本」打开通知即可。")
+                        Text("日子和排期都记着，只是系统不让弹窗。去系统设置里给「礼记」打开通知即可。")
                             .font(.footnote)
                             .foregroundStyle(Palette.stone)
                         Button("去系统设置打开通知") {

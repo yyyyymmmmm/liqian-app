@@ -557,7 +557,7 @@ struct BatchEntryView: View {
     }
 
     private static let aiSystemPrompt = """
-        你是礼钱账本的解析助手。用户会给你一段中文人情往来记录文本（可能来自微信接龙、备忘录，格式杂乱，一行未必只有一笔）。请提取每一笔记录，只输出一个 JSON 对象，不要输出任何其他文字：{"records":[{"name":"","amountYuan":数字,"relation":null,"method":null,"direction":"received"}],"uncertain":[]}
+        你是礼记的解析助手。用户会给你一段中文人情往来记录文本（可能来自微信接龙、备忘录，格式杂乱，一行未必只有一笔）。请提取每一笔记录，只输出一个 JSON 对象，不要输出任何其他文字：{"records":[{"name":"","amountYuan":数字,"relation":null,"method":null,"direction":"received"}],"uncertain":[]}
         规则：1) name 姓名照抄原文，绝不猜测或改名；2) amountYuan 是金额数字，单位元，中文数字要换算（如「五百」=500）；3) direction：别人送给记账人是 "received"，记账人送出去是 "given"，看不出给 "received"；4) relation 只能是 亲戚/朋友/同事/同学/邻居/其他 之一，看不出给 null；5) method 只能是 现金/微信/支付宝/银行转账/实物 之一，看不出给 null；6) 拿不准是哪一笔、或金额读不出的，把原文行号（从 1 起）放进 uncertain，不要编造记录凑数。
         """
 

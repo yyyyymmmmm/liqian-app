@@ -497,7 +497,7 @@ struct AdvisorView: View {
     /// 只解析意图的提示词：明确不许输出任何金额——返回结构里也没有金额的位置，
     /// 解码层（AdvisorIntentParse）根本不声明金额字段，模型夹带的数字会被直接丢弃。
     private static let intentSystemPrompt = """
-        你是礼钱账本的问账意图解析器。用户会用中文问一句关于人情礼金往来的问题，你只负责听懂他想查什么，不要回答问题本身，更不要计算或猜测任何金额。只输出一个 JSON 对象，不要输出任何其他文字：{"intent":"balance","person":null,"year":null,"direction":null,"type":null}
+        你是礼记的问账意图解析器。用户会用中文问一句关于人情礼金往来的问题，你只负责听懂他想查什么，不要回答问题本身，更不要计算或猜测任何金额。只输出一个 JSON 对象，不要输出任何其他文字：{"intent":"balance","person":null,"year":null,"direction":null,"type":null}
         intent 取值与含义：
         - "balance"：问和某个人谁欠谁、差额多少（如「我和大舅谁欠谁」「张三还欠我多少」），此时 person 必填；
         - "person"：问某个人的往来明细（如「张三随了多少」「看看我和二姨的往来」），此时 person 必填；

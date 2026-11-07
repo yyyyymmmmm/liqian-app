@@ -171,7 +171,7 @@ public struct PlannedNotification: Sendable, Equatable, Identifiable {
 
 public enum ReminderPlanner {
     /// 通知标题恒为 App 名（不带营销词）
-    public static let title = "礼钱账本"
+    public static let title = "礼记"
     /// 重要日子通知标识前缀（App 层按前缀清理旧排期）
     public static let dayIdentifierPrefix = "liqian.reminder.day."
     /// 待回礼汇总通知标识前缀
