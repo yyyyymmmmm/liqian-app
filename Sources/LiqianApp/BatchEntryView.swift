@@ -14,6 +14,7 @@ struct BatchEntryView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 大字模式（办席当天用）：字号与行高放大，持久化记住选择
     @AppStorage("batchBigMode") private var bigMode = false
@@ -171,6 +172,9 @@ struct BatchEntryView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Palette.groupedBackground.ignoresSafeArea())
+            // 滚动交互式收起键盘（v4.4）；逐行增删平滑过渡（以行数为值）
+            .scrollDismissesKeyboard(.interactively)
+            .animation(reduceMotion ? nil : .snappy, value: rows.count)
             .safeAreaInset(edge: .top, spacing: 0) {
                 liveSummaryBar
             }

@@ -180,6 +180,7 @@ struct AnnualReportView: View {
                         Text(LedgerMath.fmtMoney(cents: p.received + p.given))
                             .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
                     }
                     .frame(minHeight: 36)
                 }
@@ -208,6 +209,7 @@ struct AnnualReportView: View {
                         Text("收 \(LedgerMath.fmtMoney(cents: t.received)) · 随 \(LedgerMath.fmtMoney(cents: t.given))")
                             .font(.liqianMoney(.title3))
                             .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
                     }
                     .padding(.vertical, LiqianMetrics.spacingXS)
                 }
@@ -228,7 +230,10 @@ struct AnnualReportView: View {
                 Text("待回礼 \(pendingPeople.count) 人 · 合计 \(LedgerMath.fmtMoney(cents: pendingTotal))")
                     .font(.body)
                     .foregroundStyle(Palette.ink)
-                Text("按最近一笔收礼之后是否已送出自动计算，不分年份。")
+                    .contentTransition(.numericText())
+                // 文案与定版口径对齐（v4.4）：计算一直是净差额（LedgerMath），
+                // 旧句描述的是已废止的「最后一笔收礼之后」规则，只改文案不动计算
+                Text("收礼多于随礼的差额自动计算，不分年份。")
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
             }

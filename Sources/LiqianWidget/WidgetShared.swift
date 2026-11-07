@@ -145,21 +145,15 @@ struct ReminderProvider: TimelineProvider {
     }
 }
 
-/// 金额格式与 App 内 LedgerMath.fmtMoney 同口径（整数不带小数）
+/// 金额格式单点化（v4.4 打磨口径，合并时从旧单体文件移植）：直接调
+/// LiqianCore 的 LedgerMath.fmtMoney（本 target 本就链接 LiqianCore），
+/// 不再自带复刻实现，口径永不漂移。
+/// 色值未单点化的原因（同口径）：Palette 令牌解析时读 App 进程的
+/// UserDefaults 主题设置，扩展进程读不到、硬接会恒回白天主题；且本
+/// target 未链接 LiqianDesign。WPalette 镜像值与 App 白天/夜晚定值
+/// 保持一致，改品牌色时两处同改——保留的唯一手工同步点。
 func fmtMoney(cents: Int) -> String {
-    let sign = cents < 0 ? "-" : ""
-    let absCents = abs(cents)
-    let yuan = absCents / 100
-    let rem = absCents % 100
-    var head = String(yuan)
-    var grouped = ""
-    while head.count > 3 {
-        grouped = "," + head.suffix(3) + grouped
-        head = String(head.dropLast(3))
-    }
-    grouped = head + grouped
-    if rem == 0 { return "¥\(sign)\(grouped)" }
-    return "¥\(sign)\(grouped).\(rem < 10 ? "0" : "")\(rem)"
+    LedgerMath.fmtMoney(cents: cents)
 }
 
 /// 示例角标：只在组件库预览的示例数据上出现

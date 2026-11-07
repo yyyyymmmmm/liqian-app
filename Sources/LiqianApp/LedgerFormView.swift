@@ -105,6 +105,8 @@ struct LedgerFormView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Palette.pageBG.ignoresSafeArea())
+            // 滚动交互式收起键盘（v4.4），与记一笔同口径
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(existing == nil ? "新建礼簿" : "编辑礼簿")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

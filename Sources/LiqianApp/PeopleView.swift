@@ -5,6 +5,7 @@ import LiqianDesign
 
 struct PeopleView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @State private var query = ""
@@ -20,6 +21,11 @@ struct PeopleView: View {
     init(deepLinkPerson: Binding<String?> = .constant(nil)) {
         _deepLinkPerson = deepLinkPerson
     }
+
+    /// 备礼左滑结果的触感（v4.4）：删除＝警告、标记已送出＝成功，
+    /// 此前两条路径都是静默改数（触感审计补齐）
+    @State private var prepDeleteTrigger = 0
+    @State private var prepSentTrigger = 0
 
     /// 人物详情路由（按姓名）
     struct NameRoute: Identifiable, Hashable {
@@ -132,6 +138,11 @@ struct PeopleView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Palette.pageBG.ignoresSafeArea())
+            // 行增删动画（v4.4）：人物与备礼行集合变化时平滑过渡
+            .animation(reduceMotion ? nil : .snappy, value: summaries.map(\.name))
+            .animation(reduceMotion ? nil : .snappy, value: pendingSends.map(\.id))
+            .sensoryFeedback(.warning, trigger: prepDeleteTrigger)
+            .sensoryFeedback(.success, trigger: prepSentTrigger)
             .navigationTitle("往来")
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "姓名、礼簿或事由")
@@ -220,6 +231,7 @@ struct PeopleView: View {
     private func markPrepSent(_ r: GiftRecord) {
         r.status = LiqianConstants.sentStatus
         try? modelContext.save()
+        prepSentTrigger += 1
     }
 
     /// 删除备礼：与详情页删记录同语义——快照进最近删除，30 天可恢复
@@ -227,6 +239,7 @@ struct PeopleView: View {
         TrashStore.archive(record: r)
         modelContext.delete(r)
         try? modelContext.save()
+        prepDeleteTrigger += 1
     }
 
     private func emptyRow(_ text: String) -> some View {
@@ -258,6 +271,8 @@ struct PeopleView: View {
                     .foregroundStyle(statusColor(p))
                     .lineLimit(1)
                     .layoutPriority(1)
+                    // 差额变化数字滚动过渡（v4.4）：待回/多随金额变更不再整字跳变
+                    .contentTransition(.numericText())
             }
             .contentShape(Rectangle())
         }
@@ -316,9 +331,13 @@ struct PeopleView: View {
 /// 标记已送出）一致，点行进人物详情。本页自带 @Query，不依赖往来页状态。
 struct PrepListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var records: [GiftRecord]
     @State private var personRoute: PeopleView.NameRoute?
     @State private var prepToDelete: GiftRecord?
+    /// 与往来页同口径的左滑结果触感（v4.4）：删除＝警告、已送出＝成功
+    @State private var prepDeleteTrigger = 0
+    @State private var prepSentTrigger = 0
 
     private var pendingSends: [GiftRecord] {
         records
@@ -350,6 +369,9 @@ struct PrepListView: View {
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
+        .animation(reduceMotion ? nil : .snappy, value: pendingSends.map(\.id))
+        .sensoryFeedback(.warning, trigger: prepDeleteTrigger)
+        .sensoryFeedback(.success, trigger: prepSentTrigger)
         .navigationTitle("备礼清单")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $personRoute) { route in
@@ -410,11 +432,13 @@ struct PrepListView: View {
     private func markPrepSent(_ r: GiftRecord) {
         r.status = LiqianConstants.sentStatus
         try? modelContext.save()
+        prepSentTrigger += 1
     }
 
     private func deletePrep(_ r: GiftRecord) {
         TrashStore.archive(record: r)
         modelContext.delete(r)
         try? modelContext.save()
+        prepDeleteTrigger += 1
     }
 }

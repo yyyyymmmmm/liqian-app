@@ -77,6 +77,7 @@ struct StatsView: View {
                             Text("收 \(LedgerMath.fmtMoney(cents: t.received)) · 随 \(LedgerMath.fmtMoney(cents: t.given))")
                                 .font(.liqianMoney(.title3))
                                 .foregroundStyle(Palette.ink)
+                                .contentTransition(.numericText())
                         }
                     }
                 }
@@ -110,6 +111,7 @@ struct StatsView: View {
                                     Text(LedgerMath.fmtMoney(cents: p.received + p.given))
                                         .font(.liqianMoney(.title3))
                                         .foregroundStyle(Palette.ink)
+                                        .contentTransition(.numericText())
                                     Text(balanceSmallText(p))
                                         .font(.caption)
                                         .foregroundStyle(Palette.stone)
@@ -167,6 +169,7 @@ struct StatsView: View {
             Text(LedgerMath.fmtMoney(cents: cents))
                 .font(.liqianMoney(.title3))
                 .foregroundStyle(Palette.ink)
+                .contentTransition(.numericText())
         }
     }
 

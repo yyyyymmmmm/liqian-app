@@ -9,6 +9,7 @@ import LiqianDesign
 /// AI 未就绪或解析失败时走 AdvisorRules 关键词兜底。
 /// 会话只在本页内存里，离开即散（本期口径，不落库）。
 struct AdvisorView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @StateObject private var transcriber = SpeechTranscriber()
@@ -62,7 +63,12 @@ struct AdvisorView: View {
                 }
                 .onChange(of: messages.count) {
                     if let last = messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        // Reduce Motion 时直接定位不滚动动画（v4.4）
+                        if reduceMotion {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        } else {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
                     }
                 }
             }

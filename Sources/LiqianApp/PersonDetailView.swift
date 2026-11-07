@@ -8,6 +8,7 @@ struct PersonDetailView: View {
     let name: String
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var allReminderDays: [ReminderDay]
@@ -15,6 +16,9 @@ struct PersonDetailView: View {
     // 活礼谱（v4.2）：时间线行长按的两个动作目标
     @State private var signatureRecord: GiftRecord?
     @State private var blessingRecord: GiftRecord?
+    /// 长按菜单删除（v4.4）：与礼簿详情页同款确认＋同款归档口径
+    @State private var recordToDelete: GiftRecord?
+    @State private var deleteTrigger = 0
 
     /// 这个人的重要日子（同名对齐，与全 App 人名口径一致），按下一次临近排序
     private var personDays: [ReminderDay] {
@@ -117,8 +121,14 @@ struct PersonDetailView: View {
                                     .padding(.leading, LiqianMetrics.spacingM)
                             }
                             timelineRow(r)
-                                // 活礼谱（v4.2）：长按一笔 → 签名/语音祝福
+                                // 长按菜单四动作（v4.4 与礼簿详情页同口径同序）：
+                                // 编辑（与点行同效）/签名/语音祝福/删除（垫底标红）
                                 .contextMenu {
+                                    Button {
+                                        formMode = .edit(r)
+                                    } label: {
+                                        Label("编辑", systemImage: "pencil")
+                                    }
                                     Button {
                                         signatureRecord = r
                                     } label: {
@@ -129,10 +139,18 @@ struct PersonDetailView: View {
                                     } label: {
                                         Label("语音祝福", systemImage: "waveform")
                                     }
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        recordToDelete = r
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
                                 }
                         }
                     }
                     .liqianCardSurface(padding: 0)
+                    // 时间线行增删动画（v4.4）
+                    .animation(reduceMotion ? nil : .snappy, value: personRecords.map(\.id))
                 }
             }
             .padding(LiqianMetrics.spacingM)
@@ -188,6 +206,30 @@ struct PersonDetailView: View {
         .sheet(item: $blessingRecord) { record in
             RecordBlessingsView(record: record)
         }
+        .alert(
+            "删除这笔记录？",
+            isPresented: Binding(
+                get: { recordToDelete != nil },
+                set: { if !$0 { recordToDelete = nil } }
+            )
+        ) {
+            Button("删除", role: .destructive) {
+                if let r = recordToDelete { deleteRecord(r) }
+                recordToDelete = nil
+            }
+            Button("取消", role: .cancel) { recordToDelete = nil }
+        } message: {
+            Text("删除后 30 天内可以在「我的 → 最近删除」恢复。")
+        }
+        .sensoryFeedback(.warning, trigger: deleteTrigger)
+    }
+
+    /// 删一笔：与礼簿详情页同语义——快照进最近删除，30 天可恢复
+    private func deleteRecord(_ r: GiftRecord) {
+        TrashStore.archive(record: r)
+        modelContext.delete(r)
+        try? modelContext.save()
+        deleteTrigger += 1
     }
 
     private var headerCard: some View {
@@ -203,11 +245,13 @@ struct PersonDetailView: View {
             Text(conclusion)
                 .font(.body.weight(.bold))
                 .foregroundStyle(Palette.ink)
+                .contentTransition(.numericText())
             if pending > 0 {
                 Text("其中 \(LedgerMath.fmtMoney(cents: pending)) 待回礼")
                     .font(.footnote)
                     .foregroundStyle(Palette.primary)
                     .padding(.top, LiqianMetrics.spacingXS)
+                    .contentTransition(.numericText())
             }
         }
         .liqianCardSurface()
@@ -262,9 +306,11 @@ struct PersonDetailView: View {
                     Text("\(LedgerMath.fmtMoney(cents: a.lowerCents)) – \(LedgerMath.fmtMoney(cents: a.upperCents))")
                         .font(.liqianMoney(.title3))
                         .foregroundStyle(Palette.ink)
+                        .contentTransition(.numericText())
                     Text("可参考 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
                         .font(.subheadline)
                         .foregroundStyle(Palette.primary)
+                        .contentTransition(.numericText())
                 }
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     ForEach(a.reasons, id: \.self) { reason in
@@ -293,6 +339,8 @@ struct PersonDetailView: View {
             Text(LedgerMath.fmtMoney(cents: value))
                 .font(.liqianMoney(.title3))
                 .foregroundStyle(Palette.ink)
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .snappy, value: value)
             Text(label)
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)
