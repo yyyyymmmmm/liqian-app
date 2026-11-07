@@ -1,0 +1,183 @@
+import SwiftUI
+import LiqianCore
+
+// MARK: - 方向签：收礼＝朱砂底签（白事内用素灰蓝），随礼＝素蓝灰底签
+
+public struct DirectionTag: View {
+    public let direction: String
+    public let bai: Bool
+
+    public init(direction: String, bai: Bool = false) {
+        self.direction = direction
+        self.bai = bai
+    }
+
+    public var body: some View {
+        let isReceived = direction == LiqianConstants.received
+        let bg = isReceived ? (bai ? Palette.baiPrimary : Palette.primary) : Palette.givenTag
+        Text(direction)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(bg, in: RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+// MARK: - 待送出素签：描边小签
+
+public struct PendingTag: View {
+    public let bai: Bool
+
+    public init(bai: Bool = false) {
+        self.bai = bai
+    }
+
+    public var body: some View {
+        let color = bai ? Palette.baiPrimary : Palette.stone
+        Text("待送出")
+            .font(.system(size: 11))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(color, lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - 礼簿封面卡（全 App 唯一的记忆点，其余表面安静克制）
+// 左：封面块（朱砂/白事素灰蓝，竖排事由 + 印点 + 描金边，顶部高光模拟纸面光泽）
+// 右：标题、日期备注、收/随小计与笔数
+
+public struct LedgerCoverCard: View {
+    public let ledger: Ledger
+    public let receivedCents: Int
+    public let givenCents: Int
+    public let count: Int
+
+    public init(ledger: Ledger, receivedCents: Int, givenCents: Int, count: Int) {
+        self.ledger = ledger
+        self.receivedCents = receivedCents
+        self.givenCents = givenCents
+        self.count = count
+    }
+
+    private var isBai: Bool { ledger.isBai }
+
+    public var body: some View {
+        HStack(spacing: 14) {
+            coverBlock
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ledger.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    .lineLimit(1)
+                HStack(spacing: 0) {
+                    Text("收 ")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    Text(LedgerMath.fmtMoney(cents: receivedCents))
+                        .font(.liqianMoney(size: 15))
+                        .foregroundStyle(isBai ? Palette.baiInk : Palette.primary)
+                    Spacer().frame(width: 14)
+                    Text("随 ")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    Text(LedgerMath.fmtMoney(cents: givenCents))
+                        .font(.liqianMoney(size: 15))
+                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                    Spacer()
+                    Text("\(count) 笔")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                }
+                .padding(.top, 6)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+        }
+        .padding(12)
+        .frame(minHeight: LiqianMetrics.minTapTarget)
+        .background(
+            isBai ? Palette.baiCard : Palette.card,
+            in: RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner)
+                .stroke(isBai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.coverCorner))
+    }
+
+    private var subtitle: String {
+        ledger.note.isEmpty ? ledger.date : "\(ledger.date) · \(ledger.note)"
+    }
+
+    private var coverBlock: some View {
+        let base = isBai ? Palette.baiPrimary : Palette.primary
+        return ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(base)
+            // 顶部亮面：白 0.28 → 透明（同 Flutter 封面渐变口径）
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.28), .white.opacity(0)],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                )
+            VStack(spacing: 6) {
+                Text(ledger.type.map { String($0) }.joined(separator: "\n"))
+                    .font(.liqianSerif(size: 20))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+                Circle()
+                    .fill(isBai ? Palette.baiLine : Palette.paper)
+                    .frame(width: 7, height: 7)
+            }
+            VStack {
+                Rectangle()
+                    .fill(.white.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 3)
+                Spacer()
+            }
+        }
+        .frame(width: 56, height: 92)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isBai ? Palette.baiLine : Palette.gold, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - 按压反馈按钮样式：按下缩放 0.98（弹簧），减动效开启时不缩放
+
+public struct ScaleOnPressButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        PressableLabel(configuration: configuration)
+    }
+
+    private struct PressableLabel: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1.0)
+                .animation(.snappy, value: configuration.isPressed)
+        }
+    }
+}

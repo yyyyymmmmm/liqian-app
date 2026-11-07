@@ -1,0 +1,17 @@
+# 礼钱账本 SwiftLint 规则（大厂常用基线：错误级规则拦截，警告级提示）
+disabled_rules:
+  - trailing_whitespace
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - redundant_nil_coalescing
+  - first_where
+line_length:
+  warning: 160
+  error: 220
+identifier_name:
+  min_length: 2
+excluded:
+  - Liqian.xcodeproj
+  - flutter-legacy
+reporter: "xcode"

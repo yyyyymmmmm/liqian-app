@@ -1,0 +1,34 @@
+# 礼钱账本 fastlane —— 行业标准发布自动化。
+# 当前阶段（无开发者账号）：CI 用 xcodebuild 直出未签名 IPA 侧载测试，本文件先备好 lane。
+# 启用 TestFlight 前置：Apple Developer 账号 + App Store Connect API Key，
+# 密钥经环境变量 ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT 注入（不进 git）。
+default_platform(:ios)
+
+platform :ios do
+  desc "跑 LiqianCore 单元测试"
+  lane :unit do
+    run_tests(scheme: "LiqianApp", devices: ["iPhone 17"])
+  end
+
+  desc "构建未签名 IPA（侧载测试，与 CI 同口径）"
+  lane :unsigned do
+    build_app(
+      scheme: "LiqianApp",
+      configuration: "Release",
+      skip_codesigning: true,
+      skip_package_ipa: false,
+      output_directory: "build/unsigned"
+    )
+  end
+
+  desc "上传 TestFlight（待开发者账号与 ASC 密钥就绪后启用）"
+  lane :beta do
+    app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_content: ENV["ASC_KEY_CONTENT"]
+    )
+    build_app(scheme: "LiqianApp", configuration: "Release", export_method: "app-store")
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+end
