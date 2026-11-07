@@ -101,17 +101,17 @@ struct LedgersView: View {
                     }
                 }
                 .padding(LiqianMetrics.spacingM)
+                // 底部多留一段：滚动到底时最后一张卡不被 FAB 与 Tab 栏遮挡
+                .padding(.bottom, 72)
             }
             .background(Palette.groupedBackground.ignoresSafeArea())
             .navigationTitle("礼簿")
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showNewLedger = true
-                    } label: {
-                        Label("新建礼簿", systemImage: "plus")
-                    }
+            // 新增动作收敛到右下角 FAB（v2.4 定版，替代原工具栏 + 按钮）；
+            // 首页不隐藏 Tab 栏，FAB 须避让浮动 Tab 栏高度
+            .overlay(alignment: .bottomTrailing) {
+                AddFloatingButton(label: "新建礼簿", bottomPadding: AddFloatingButton.tabBarClearance) {
+                    showNewLedger = true
                 }
             }
             .navigationDestination(item: $personRoute) { route in

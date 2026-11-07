@@ -44,7 +44,10 @@ public struct PersonSummary: Sendable, Equatable, Identifiable {
     public var received: Int
     /// 随礼合计（我送出去，仅已送出）
     public var given: Int
-    /// 未回金额：最后一笔「已送出」随礼之后的收礼合计（自动规则 FR-04.1）
+    /// 待回金额（v2.4 定版）：＝ max(收 − 随差额, 0)，与 balance 同源——
+    /// balance > 0 ⇔ pendingCents == balance；balance ≤ 0 时为 0。
+    /// （旧口径「最后一笔已送出随礼之后的收礼合计」与差额是两套账，
+    /// 会出现「我多给却挂着待回」的自相矛盾，已废止。）
     public var pendingCents: Int
     /// 笔数（不含待送出）
     public var count: Int
@@ -143,12 +146,12 @@ public enum LedgerMath {
         entries.reduce(0) { $0 + $1.amountCents }
     }
 
-    /// 按人聚合（跨账本），语义与 Flutter store.people() 一致：
+    /// 按人聚合（跨账本），差额语义与 Flutter store.people() 一致：
     /// - 差额：收礼全计；随礼只计已送出，待送出不计金额与笔数（只更新最近日期）。
-    /// - 未回（自动规则）：把一个人的记录按时间正序排（日期升序；同日时序号大的
-    ///   视为更早——即约定传入顺序为「新→旧」，与 Flutter records 列表一致），
-    ///   每遇到一笔已送出随礼就把未回清零，其后的收礼累计为未回金额。
-    /// - relation 取时间上最近一笔的关系（同日取正序排列的最后一笔）。
+    /// - 待回（v2.4 定版）：待回金额恒等于 max(差额, 0)，与差额同源同值，
+    ///   不再另算一套「最近一笔随礼之后的收礼」（旧自动规则会与差额互相矛盾）。
+    /// - relation 取时间上最近一笔的关系：把记录按时间正序排（日期升序；同日时
+    ///   序号大的视为更早——即约定传入顺序为「新→旧」，与 Flutter records 列表一致）。
     /// - 结果按 lastDate 倒序。
     public static func people(from entries: [EntrySnapshot]) -> [PersonSummary] {
         var summaries: [String: PersonSummary] = [:]
@@ -176,18 +179,12 @@ public enum LedgerMath {
                 if a.entry.date != b.entry.date { return a.entry.date < b.entry.date }
                 return a.index > b.index // 同日：序号大＝创建更早（传入顺序为新→旧）
             }
-            var pending = 0
-            for item in chrono {
-                let r = item.entry
-                if r.direction == LiqianConstants.given && !r.isPendingSend {
-                    pending = 0 // 已送出一次，之前的收礼视为已回
-                } else if r.direction == LiqianConstants.received {
-                    pending += r.amountCents
-                }
-            }
-            summaries[name]?.pendingCents = pending
             if let latest = chrono.last {
                 summaries[name]?.relation = latest.entry.relation
+            }
+            // 待回与差额同源（v2.4 定版）：收多于随的差额即待回，我多给时为 0
+            if let s = summaries[name] {
+                summaries[name]?.pendingCents = max(s.balance, 0)
             }
         }
 

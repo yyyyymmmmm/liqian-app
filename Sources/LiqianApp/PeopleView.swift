@@ -48,7 +48,7 @@ struct PeopleView: View {
                     } header: {
                         Text("备礼清单")
                     } footer: {
-                        Text("记下了还没送出去的礼，送出后把那笔改成「已送出」。")
+                        Text("还没送出的礼记在这里，送出后在记录里改为已送出。")
                     }
                 }
 
@@ -140,6 +140,10 @@ struct PeopleView: View {
             .foregroundStyle(Palette.stone)
     }
 
+    /// 人物行（v2.4 定版结构）：左＝姓名＋全量数字次行；
+    /// 右＝状态金额单行不换行。待回与差额同源（LedgerMath 定版）：
+    /// 差额 > 0 时主行即「待回 ¥X」（朱砂），不再另挂一行同义的「待回礼」；
+    /// 差额 < 0 显示「多随 ¥X」（墨色），差额 = 0 显示「已结清」。
     private func personRow(_ p: PersonSummary) -> some View {
         Button {
             personRoute = NameRoute(name: p.name)
@@ -148,32 +152,34 @@ struct PeopleView: View {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text(p.name)
                         .foregroundStyle(Palette.ink)
-                    Text("\(p.relation) · \(p.count) 笔 · 最近 \(LiqianDate.displayString(for: p.lastDate))")
+                        .lineLimit(1)
+                    Text("收 \(LedgerMath.fmtMoney(cents: p.received)) · 随 \(LedgerMath.fmtMoney(cents: p.given)) · \(p.count) 笔 · 最近 \(LiqianDate.displayString(for: p.lastDate))")
                         .font(.footnote)
                         .foregroundStyle(Palette.stone)
+                        .lineLimit(1)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: LiqianMetrics.spacingXS) {
-                    Text(balanceText(p))
-                        .font(.liqianMoney(.title3))
-                        .foregroundStyle(Palette.ink)
-                    if p.hasPending {
-                        Text("待回礼 \(LedgerMath.fmtMoney(cents: p.pendingCents))")
-                            .font(.caption)
-                            .foregroundStyle(Palette.primary)
-                    }
-                }
+                Text(statusText(p))
+                    .font(.liqianMoney(.title3))
+                    .foregroundStyle(statusColor(p))
+                    .lineLimit(1)
+                    .layoutPriority(1)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func balanceText(_ p: PersonSummary) -> String {
-        if p.balance == 0 { return "已结清" }
-        return p.balance > 0
-            ? "对方多给 \(LedgerMath.fmtMoney(cents: p.balance))"
-            : "我多给 \(LedgerMath.fmtMoney(cents: -p.balance))"
+    private func statusText(_ p: PersonSummary) -> String {
+        if p.balance > 0 { return "待回 \(LedgerMath.fmtMoney(cents: p.pendingCents))" }
+        if p.balance < 0 { return "多随 \(LedgerMath.fmtMoney(cents: -p.balance))" }
+        return "已结清"
+    }
+
+    private func statusColor(_ p: PersonSummary) -> Color {
+        if p.balance > 0 { return Palette.primary } // 待回是行动提示，用强调色
+        if p.balance < 0 { return Palette.ink }
+        return Palette.stone
     }
 
     private func ledgerRow(_ l: Ledger) -> some View {

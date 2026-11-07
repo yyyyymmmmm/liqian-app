@@ -48,7 +48,13 @@ struct LedgerFormView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("礼簿名称", text: $title, prompt: Text("如：我的婚礼 / 爸爸六十大寿"))
+                    // 名称行（v2.4 原生化）：行首标签＋输入框，与系统表单一致，
+                    // 不再是无标签的胶囊输入（标签不用占位符代替，ux-writing 口径）
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("名称")
+                            .foregroundStyle(Palette.ink)
+                        TextField("名称", text: $title, prompt: Text("如：我的婚礼 / 爸爸六十大寿"))
+                    }
                     if let titleError {
                         Text(titleError)
                             .font(.footnote)
@@ -65,7 +71,11 @@ struct LedgerFormView: View {
                         TextField("事由名称", text: $customType, prompt: Text("如：店铺开业 / 孩子升学"))
                     }
                     DatePicker("日期", selection: $date, displayedComponents: .date)
-                    TextField("备注（选填）", text: $note)
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("备注")
+                            .foregroundStyle(Palette.ink)
+                        TextField("备注", text: $note, prompt: Text("选填"))
+                    }
                 }
             }
             .navigationTitle(existing == nil ? "新建礼簿" : "编辑礼簿")

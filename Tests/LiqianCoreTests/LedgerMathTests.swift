@@ -68,7 +68,7 @@ final class LedgerMathTests: XCTestCase {
         XCTAssertEqual(people[0].lastDate, "2025-02-01") // 但更新最近日期（同 Dart）
     }
 
-    // MARK: 未回自动规则（FR-04.1）
+    // MARK: 待回口径（v2.4 定版：待回恒等于 max(差额, 0)，与差额同源）
 
     func testPendingOnlyReceived() {
         let people = LedgerMath.people(from: [
@@ -88,22 +88,51 @@ final class LedgerMathTests: XCTestCase {
     }
 
     func testPendingSendFirstThenReceive() {
+        // 先随 500、后收 800：差额 +300（对方净多给 300），待回即差额 300，
+        // 不是后收的全额 800（旧自动规则口径，已废止）
         let people = LedgerMath.people(from: [
             entry("王五", "随礼", 500_00, "2024-01-01"),
             entry("王五", "收礼", 800_00, "2024-06-01"),
         ])
-        XCTAssertEqual(people[0].pendingCents, 800_00)
+        XCTAssertEqual(people[0].balance, 300_00)
+        XCTAssertEqual(people[0].pendingCents, 300_00)
     }
 
     func testPendingPartialSendThenReceiveAgain() {
-        // 收 1000 → 送出 400 → 再收 300：规则按「最后一笔已送出之后」算，
-        // 送出一次即把此前的未回清零，剩余未回只有后收的 300
+        // 收 1000 → 送出 400 → 再收 300：差额 900，待回即 900（与差额同源；
+        // 旧规则只算「最后一笔送出之后」的 300，会与差额行自相矛盾，已废止）
         let people = LedgerMath.people(from: [
             entry("赵六", "收礼", 1000_00, "2024-01-01"),
             entry("赵六", "随礼", 400_00, "2024-02-01"),
             entry("赵六", "收礼", 300_00, "2024-03-01"),
         ])
-        XCTAssertEqual(people[0].pendingCents, 300_00)
+        XCTAssertEqual(people[0].balance, 900_00)
+        XCTAssertEqual(people[0].pendingCents, 900_00)
+    }
+
+    func testPendingEqualsPositiveBalanceOnly() {
+        // 锁定等式：balance > 0 ⇔ 待回 == balance；balance ≤ 0 ⇔ 待回 == 0。
+        // 含截图实证的矛盾形态：我多给（差额为负）时绝不能挂待回。
+        let people = LedgerMath.people(from: [
+            entry("甲", "收礼", 200_00, "2024-01-01"),
+            entry("甲", "随礼", 500_00, "2024-02-01"), // 差额 -300：我多给
+            entry("乙", "收礼", 1000_00, "2024-01-01"),
+            entry("乙", "随礼", 400_00, "2024-02-01"), // 差额 +600：对方多给
+            entry("丙", "收礼", 500_00, "2024-01-01"),
+            entry("丙", "随礼", 500_00, "2024-02-01"), // 差额 0：两清
+        ])
+        for p in people {
+            if p.balance > 0 {
+                XCTAssertEqual(p.pendingCents, p.balance, "\(p.name) 待回应等于差额")
+                XCTAssertTrue(p.hasPending)
+            } else {
+                XCTAssertEqual(p.pendingCents, 0, "\(p.name) 差额非正时待回必须为 0")
+                XCTAssertFalse(p.hasPending)
+            }
+        }
+        XCTAssertEqual(people.first { $0.name == "甲" }?.pendingCents, 0)
+        XCTAssertEqual(people.first { $0.name == "乙" }?.pendingCents, 600_00)
+        XCTAssertEqual(people.first { $0.name == "丙" }?.pendingCents, 0)
     }
 
     func testPendingNotClearedByPendingSend() {

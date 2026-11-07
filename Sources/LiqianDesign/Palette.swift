@@ -8,7 +8,8 @@ import UIKit
 // 全部令牌为动态色：浅色走 v3 色板，深色走 v3 深色令牌。
 //
 // v3 色彩纪律（大厂口径，去 AI 味）：
-// - 90% 中性打底：纸白/纯白卡面/中性暖灰墨色阶占满界面，朱砂是唯一强调色。
+// - 90% 中性打底：中性色阶占满界面，强调色只有一个色族、面积受控。
+//   强调色族自 v2.4 起由外观主题驱动（默认朱砂，见 AppTheme），纪律不变。
 // - 朱砂只出现在：主按钮、选中态、链接、印章、礼簿封面、收礼方向签/小色点、
 //   「待回礼」行动提示。记录金额一律墨色，收/送靠 +/− 符号与方向签区分。
 // - 描金退出 UI：App 视图禁止引用 Palette.gold，仅礼谱 PDF 等静态成品可参考。
@@ -34,6 +35,54 @@ private extension UIColor {
 }
 #endif
 
+// MARK: - 外观主题（v2.4，「我的 → 外观」五选一）
+// 白天＝浅色＋朱砂；夜晚＝深色＋朱砂；腾讯蓝＝浅色＋TDesign 蓝 #0052D9；
+// 灰色＝浅色＋石墨灰；黄色＝浅色＋琥珀金。划分由用户点名定版：深色仅夜晚提供。
+// 主题只驱动 App 界面强调色族（primary/primaryFill/primaryTint）；
+// 礼谱 PDF 与分享图卡是成品，永远朱砂定版，不读主题。
+public enum AppTheme: String, CaseIterable, Identifiable {
+    case day
+    case night
+    case tencentBlue
+    case graphite
+    case amber
+
+    public var id: String { rawValue }
+
+    /// @AppStorage 键（ContentView 与外观页共用）
+    public static let storageKey = "appTheme"
+
+    /// 当前主题：读 UserDefaults（动态色 provider 在解析时调用，切换即时生效）
+    public static var current: AppTheme {
+        AppTheme(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .day
+    }
+
+    public var displayName: String {
+        switch self {
+        case .day: return "白天"
+        case .night: return "夜晚"
+        case .tencentBlue: return "腾讯蓝"
+        case .graphite: return "灰色"
+        case .amber: return "黄色"
+        }
+    }
+
+    /// 强制的外观：夜晚深色，其余四主题一律浅色
+    public var colorScheme: ColorScheme {
+        self == .night ? .dark : .light
+    }
+
+    /// 主题色点（外观页列表的识别色块）：取该主题的强调色浅色值
+    public var swatch: Color {
+        switch self {
+        case .day, .night: return Color(hex: 0xA62B1F)
+        case .tencentBlue: return Color(hex: 0x0052D9)
+        case .graphite: return Color(hex: 0x4E5969)
+        case .amber: return Color(hex: 0xB7791F)
+        }
+    }
+}
+
 public enum Palette {
     /// 动态色工厂：浅/深两套值，系统切换外观时自动生效
     private static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
@@ -43,6 +92,33 @@ public enum Palette {
         }))
         #else
         return Color(hex: light)
+        #endif
+    }
+
+    /// 主题强调色工厂：provider 解析时读 AppTheme.current，
+    /// 根视图在主题变化时重挂子树，颜色随之即时重解析。
+    /// day/night 用浅/深两值（夜晚恒取 night 值），其余三主题为浅色专用单值。
+    private static func themed(
+        dayLight: UInt32,
+        dayDark: UInt32,
+        night: UInt32,
+        blue: UInt32,
+        gray: UInt32,
+        yellow: UInt32
+    ) -> Color {
+        #if canImport(UIKit)
+        return Color(uiColor: UIColor(dynamicProvider: { traits in
+            let dark = traits.userInterfaceStyle == .dark
+            switch AppTheme.current {
+            case .day: return UIColor(hex: dark ? dayDark : dayLight)
+            case .night: return UIColor(hex: night)
+            case .tencentBlue: return UIColor(hex: blue)
+            case .graphite: return UIColor(hex: gray)
+            case .amber: return UIColor(hex: yellow)
+            }
+        }))
+        #else
+        return Color(hex: dayLight)
         #endif
     }
 
@@ -76,14 +152,28 @@ public enum Palette {
     public static let ink = Color.primary
     /// 次文字＝系统 secondaryLabel
     public static let stone = Color.secondary
-    /// 朱砂：唯一强调色 #A62B1F 不变，使用面按文件头纪律收敛
-    public static let primary = dyn(0xA62B1F, 0xD96A5C)
-    /// 朱砂 tint 底（选中态衬底、快捷金额钮底等）
-    public static let primaryTint = dyn(0xF3E2DC, 0x38251F)
-    /// 朱砂填充定版（PRO-AUDIT-2 §3.1）：一切「朱砂底＋白字」的填充（主按钮、
-    /// 方向签、封面签、印章）双模式共用浅色值，白字对比 7.03:1 ✓。
-    /// primary 本体只作文字/图标强调，不再直接当填充（深色值作填充仅 3.41:1 不达 AA）。
-    public static let primaryFill = dyn(0xA62B1F, 0xA62B1F)
+    /// 强调色（文字/图标）：由外观主题驱动（v2.4）——白天/夜晚朱砂
+    /// （浅 #A62B1F、白底对比 7.03:1；深色面 #D96A5C、黑底约 5.9:1）、
+    /// 腾讯蓝 #0052D9（白底约 5.9:1）、石墨灰 #4E5969（约 6.8:1）、
+    /// 琥珀金 #A16207（约 4.9:1），均为浅色底上的文字级对比达标值。
+    public static let primary = themed(
+        dayLight: 0xA62B1F, dayDark: 0xD96A5C, night: 0xD96A5C,
+        blue: 0x0052D9, gray: 0x4E5969, yellow: 0xA16207
+    )
+    /// 强调 tint 底（选中态衬底、快捷金额钮底等），随主题同族
+    public static let primaryTint = themed(
+        dayLight: 0xF3E2DC, dayDark: 0x38251F, night: 0x38251F,
+        blue: 0xE3EDFB, gray: 0xE9EBEE, yellow: 0xF7EBCB
+    )
+    /// 强调填充定版：一切「强调底＋白字」的填充（主按钮、FAB、封面签、印章）
+    /// 白字对比全部 ≥4.5:1——朱砂 #A62B1F 7.03:1（PRO-AUDIT-2 §3.1）、
+    /// 腾讯蓝取深一档 #003CAB（约 8.0:1）、石墨灰 #4E5969（约 6.8:1）、
+    /// 琥珀金取深档 #854D0E（约 6.3:1，亮黄 #B7791F 白字仅约 3.6:1 禁用）。
+    /// primary 本体只作文字/图标强调，不直接当填充。
+    public static let primaryFill = themed(
+        dayLight: 0xA62B1F, dayDark: 0xA62B1F, night: 0xA62B1F,
+        blue: 0x003CAB, gray: 0x4E5969, yellow: 0x854D0E
+    )
     /// 描金：**仅礼谱 PDF 与印章等静态成品专用**，App 视图禁止引用（v3 起退出 UI）
     public static let gold = dyn(0xB98A2F, 0xC9A24D)
     /// 描边线：系统 separator（发丝线本就是它的职责）

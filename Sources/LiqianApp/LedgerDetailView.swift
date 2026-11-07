@@ -121,6 +121,12 @@ struct LedgerDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    // 批量补录原在底部行动栏，v2.4 随行动栏取消移入「更多」
+                    Button {
+                        showBatch = true
+                    } label: {
+                        Label("批量补录", systemImage: "list.bullet.rectangle")
+                    }
                     // 礼谱 v3：导出走 sheet（确认落款姓名、选谱序文体后现生成）
                     Button {
                         showExport = true
@@ -138,28 +144,11 @@ struct LedgerDetailView: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom) {
-            GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
-                HStack(spacing: LiqianMetrics.spacingSM) {
-                    Button {
-                        showRecordForm = true
-                    } label: {
-                        Label("记一笔", systemImage: "plus")
-                            .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(isBai ? Palette.baiPrimary : Palette.primary)
-
-                    Button {
-                        showBatch = true
-                    } label: {
-                        Label("批量补录", systemImage: "list.bullet.rectangle")
-                            .frame(minHeight: LiqianMetrics.minTapTarget)
-                    }
-                    .buttonStyle(.glass)
-                }
-                .padding(.horizontal, LiqianMetrics.spacingM)
-                .padding(.vertical, LiqianMetrics.spacingS)
+        // 记账动作收敛到右下角 FAB（v2.4 定版，替代原底部行动栏；
+        // 本页已隐藏 Tab 栏，FAB 用常规底部间距）
+        .overlay(alignment: .bottomTrailing) {
+            AddFloatingButton(label: "记一笔", bottomPadding: LiqianMetrics.spacingL) {
+                showRecordForm = true
             }
         }
         .sheet(isPresented: $showRecordForm) {
@@ -309,25 +298,25 @@ struct LedgerDetailView: View {
                             PendingTag(bai: isBai)
                         }
                     }
-                    // 副行分列（PRO-AUDIT-2 §3.3）：关系·方式在左、日期在右，不再四段一串
-                    HStack(spacing: LiqianMetrics.spacingS) {
-                        Text("\(r.relation) · \(r.method)")
-                        Spacer()
-                        Text(LiqianDate.displayString(for: r.date))
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(Palette.stone)
-                    if !r.note.isEmpty {
-                        Text(r.note)
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                            .lineLimit(1)
-                    }
+                    // 副行只留关系·方式（·备注）（v2.4 定版）：日期移入右列，
+                    // 不再挤在副行中段把一行拆成两截
+                    Text(r.note.isEmpty
+                        ? "\(r.relation) · \(r.method)"
+                        : "\(r.relation) · \(r.method) · \(r.note)")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                        .lineLimit(1)
                 }
                 Spacer()
-                Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                    .font(.liqianMoney(.title3))
-                    .foregroundStyle(Palette.ink)
+                // 右列：金额（上）＋日期（下，右对齐次级色），纵向成列方便扫读
+                VStack(alignment: .trailing, spacing: LiqianMetrics.spacingXS) {
+                    Text(LedgerMath.fmtMoney(cents: r.amountCents))
+                        .font(.liqianMoney(.title3))
+                        .foregroundStyle(Palette.ink)
+                    Text(LiqianDate.displayString(for: r.date))
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                }
             }
             .contentShape(Rectangle())
         }

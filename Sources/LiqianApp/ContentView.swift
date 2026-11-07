@@ -9,6 +9,7 @@ import LiqianDesign
 /// v2：启动清理最近删除的过期条目、回前台刷新小组件速览、承接小组件深链与快捷指令的「记一笔」。
 struct ContentView: View {
     @AppStorage("privacyLock") private var privacyLockEnabled = false
+    @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
     @Environment(\.scenePhase) private var scenePhase
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
@@ -20,6 +21,11 @@ struct ContentView: View {
     /// 切到后台/多任务预览时是否要盖模糊遮罩
     private var shieldVisible: Bool {
         privacyLockEnabled && scenePhase != .active
+    }
+
+    /// 当前外观主题（「我的 → 外观」切换，默认白天）
+    private var appTheme: AppTheme {
+        AppTheme(rawValue: appThemeRaw) ?? .day
     }
 
     var body: some View {
@@ -56,6 +62,10 @@ struct ContentView: View {
                 }
             }
         }
+        // 外观主题（v2.4）：强制外观覆盖系统跟随；主题值变化时重挂整棵子树，
+        // 让 Palette 的主题动态色即时重解析（切换无须重启）
+        .preferredColorScheme(appTheme.colorScheme)
+        .id(appThemeRaw)
         .onAppear {
             if privacyLockEnabled {
                 isLocked = true

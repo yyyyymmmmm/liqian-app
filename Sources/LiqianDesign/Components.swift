@@ -247,6 +247,47 @@ public struct SealStampOverlay: View {
     }
 }
 
+// MARK: - 右下角浮动添加按钮（FAB，v2.4 添加模型定版）
+// 全 App 新增动作收敛到这一个入口：圆形 56pt、强调填充底、白「+」、带投影。
+// 用法：挂在页面根视图的 .overlay(alignment: .bottomTrailing)，
+// bottomPadding 由调用方按场景传——Tab 页须避让浮动 Tab 栏（传 tabBarClearance），
+// 已隐藏 Tab 栏的详情页传常规间距即可。
+
+public struct AddFloatingButton: View {
+    /// 无障碍与提示文案，如「新建礼簿」「记一笔」
+    public let label: String
+    public let bottomPadding: CGFloat
+    public let action: () -> Void
+
+    /// Tab 栏避让量：iOS 26 浮动 Tab 栏（高约 64 + 底部留白）占位约 92pt
+    public static let tabBarClearance: CGFloat = 92
+
+    public init(
+        label: String,
+        bottomPadding: CGFloat = LiqianMetrics.spacingM,
+        action: @escaping () -> Void
+    ) {
+        self.label = label
+        self.bottomPadding = bottomPadding
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(Palette.primaryFill, in: Circle())
+                .shadow(color: .black.opacity(0.20), radius: 10, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .padding(.trailing, LiqianMetrics.spacingM)
+        .padding(.bottom, bottomPadding)
+    }
+}
+
 // MARK: - 按压反馈按钮样式：按下缩放 0.98（弹簧），减动效开启时不缩放
 
 public struct ScaleOnPressButtonStyle: ButtonStyle {

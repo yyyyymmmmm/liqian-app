@@ -193,8 +193,13 @@ struct RecordFormView: View {
                 }
 
                 Section {
-                    TextField("姓名 / 称呼", text: $person, prompt: Text("如：大舅、二姨、张三"))
-                        .focused($focus, equals: .person)
+                    // 姓名行（v2.4 原生化）：行首标签＋输入框，与礼簿表单同形态
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("姓名")
+                            .foregroundStyle(Palette.ink)
+                        TextField("姓名", text: $person, prompt: Text("如：大舅、二姨、张三"))
+                            .focused($focus, equals: .person)
+                    }
                     if let personError {
                         Text(personError)
                             .font(.footnote)
@@ -252,7 +257,11 @@ struct RecordFormView: View {
                         }
                     }
                     DatePicker("日期", selection: $date, displayedComponents: .date)
-                    TextField("备注（选填）", text: $note, prompt: Text("实物礼写这里，如：两瓶酒"))
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Text("备注")
+                            .foregroundStyle(Palette.ink)
+                        TextField("备注", text: $note, prompt: Text("选填，实物礼写这里，如：两瓶酒"))
+                    }
                 }
 
                 if existing == nil {

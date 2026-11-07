@@ -27,6 +27,7 @@ struct MeView: View {
     @State private var importTrigger = 0
     @AppStorage("privacyLock") private var privacyLock = false
     @AppStorage("hostName") private var hostName = ""
+    @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
 
     /// 当前存在的示例账本 ID（统计隔离与示例状态都按它判定）
     private var sampleIDs: Set<UUID> { SampleData.sampleIDs(ledgers: ledgers) }
@@ -116,7 +117,7 @@ struct MeView: View {
                     } header: {
                         Text("待回礼")
                     } footer: {
-                        Text("按最近一笔收礼之后是否已送出自动计算，无需手动标记。")
+                        Text("收礼多于随礼的差额即待回金额，自动计算，无需手动标记。")
                     }
                 }
 
@@ -211,6 +212,23 @@ struct MeView: View {
                     }
                 } header: {
                     Text("AI 智能助手")
+                }
+
+                Section {
+                    NavigationLink {
+                        AppearanceView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "paintbrush", title: "主题")
+                            Spacer()
+                            Text((AppTheme(rawValue: appThemeRaw) ?? .day).displayName)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                } header: {
+                    Text("外观")
+                } footer: {
+                    Text("主题只影响 App 界面，导出的礼谱不变。")
                 }
 
                 Section {
