@@ -4,13 +4,19 @@ import LiqianCore
 
 @main
 struct LiqianApp: App {
+    /// 容器与 iCloud 同步状态统一由 CloudSyncManager 持有：
+    /// 容器在此一次性按「开关 + CloudKit 可用性」选定（CloudKit 失败回退本地），
+    /// 全 App 共用同一个容器，降级路径见 CloudSync.swift。
+    @StateObject private var cloudSync = CloudSyncManager()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 // 全 App 固定中文区域：DatePicker 等系统控件跟随显示中文日期
                 // （v2.4 必修：此前日期选择器显示 "Nov 7, 2026" 英文格式）
                 .environment(\.locale, Locale(identifier: "zh_CN"))
+                .environmentObject(cloudSync)
         }
-        .modelContainer(for: [Ledger.self, GiftRecord.self, ReminderDay.self])
+        .modelContainer(cloudSync.container)
     }
 }

@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import LiqianCore
 import LiqianDesign
@@ -12,6 +13,8 @@ import LiqianDesign
 /// 确认（覆盖恢复在数据组），不与普通入口混排无标识。全部汇总口径排除示例账本。
 struct MeView: View {
     @Environment(\.modelContext) private var modelContext
+    /// iCloud 同步状态（容器在启动时选定，开关改动下次启动生效，见 CloudSync.swift）
+    @EnvironmentObject private var cloudSync: CloudSyncManager
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
@@ -199,6 +202,27 @@ struct MeView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $cloudSync.syncEnabled) {
+                        entryLabel(
+                            icon: "icloud",
+                            title: "iCloud 同步",
+                            subtitle: cloudSync.statusSubtitle
+                        )
+                    }
+                    .task { await cloudSync.refreshAccountStatus() }
+                    if cloudSync.showsSettingsShortcut {
+                        Button {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            entryLabel(
+                                icon: "gearshape",
+                                title: "打开系统设置",
+                                subtitle: "在「设置」顶部登录 iCloud 后，同步会自动开始"
+                            )
+                        }
+                    }
                     csvEntryRow
                     Button {
                         exportDocument = JSONBackupDocument(
@@ -225,6 +249,8 @@ struct MeView: View {
                     }
                 } header: {
                     Text("数据")
+                } footer: {
+                    Text("iCloud 同步通过你的 iCloud 账号同步礼簿、记录与提醒，换手机或重装 App 后自动回来；导出备份是另一条手动恢复线，两条线互不影响。")
                 }
 
                 Section {
@@ -601,7 +627,7 @@ struct AboutView: View {
                 Text("礼钱账本记亲友红白事的往来礼钱，方便日后回礼。")
                     .foregroundStyle(Palette.ink)
             } footer: {
-                Text("数据仅保存在本机，不联网、不上传。换手机或重装前，请先导出备份。备份与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
+                Text("开启 iCloud 同步时，数据通过你自己的 iCloud 账号在你的设备间同步，换手机或重装后自动回来；未开启时数据仅保存在本机。导出备份可手动保存一份到任意位置，与旧版（Flutter 版）互通：两边导出的 JSON 备份可以互相恢复。")
             }
         }
         .listStyle(.insetGrouped)

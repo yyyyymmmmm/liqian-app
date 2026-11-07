@@ -48,12 +48,24 @@ let project = Project(
                 "NSSpeechRecognitionUsageDescription": "用于将语音转写为记账文字",
                 "NSMicrophoneUsageDescription": "用于语音记账，把你说的话转成文字",
                 "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
+                // CloudKit 静默推送：数据在其他设备变更时系统唤醒同步（feat/icloud）
+                "UIBackgroundModes": ["remote-notification"],
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],
             entitlements: .dictionary([
                 "com.apple.security.application-groups": .array([
                     .string("group.site.didichou.liqian"),
+                ]),
+                // iCloud 同步（feat/icloud）：CloudKit 私有数据库，容器 = iCloud. + bundle id。
+                // 只用 CloudKit，不用 iCloud Documents（无需 ubiquity 容器 entitlement）。
+                // 侧载重签通常会剥掉这组 entitlement——代码侧有本地回退，不崩不丢（见 CloudSync.swift）。
+                "aps-environment": .string("development"),
+                "com.apple.developer.icloud-container-identifiers": .array([
+                    .string("iCloud.site.didichou.liqian"),
+                ]),
+                "com.apple.developer.icloud-services": .array([
+                    .string("CloudKit"),
                 ]),
             ]),
             dependencies: [
