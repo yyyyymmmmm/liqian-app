@@ -127,7 +127,7 @@ final class ReminderTests: XCTestCase {
         XCTAssertEqual(fire.day, 13) // 十月初八（11-16）提前 3 天
         XCTAssertEqual(fire.hour, 9)
         XCTAssertEqual(fire.minute, 0)
-        XCTAssertEqual(item.title, "礼钱账本")
+        XCTAssertEqual(item.title, "礼记")
         XCTAssertEqual(item.body, "3 天后是 大舅 的生日（农历十月初八）。")
         XCTAssertTrue(item.identifier.hasPrefix(ReminderPlanner.dayIdentifierPrefix))
     }
