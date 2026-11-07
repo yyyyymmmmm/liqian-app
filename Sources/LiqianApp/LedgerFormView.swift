@@ -10,8 +10,12 @@ struct LedgerFormView: View {
 
     let existing: Ledger?
 
+    /// 事由 Picker 里的「自定义」选项值（预置事由之外的自填事由）
+    private static let customTypeOption = "自定义"
+
     @State private var title: String
     @State private var type: String
+    @State private var customType: String
     @State private var date: Date
     @State private var note: String
     @State private var titleError: String?
@@ -21,9 +25,23 @@ struct LedgerFormView: View {
     init(existing: Ledger? = nil) {
         self.existing = existing
         _title = State(initialValue: existing?.title ?? "")
-        _type = State(initialValue: existing?.type ?? LiqianConstants.ledgerTypes[0])
+        // 已有礼簿若用的是预置外的事由（历史自定义），进表单时落到「自定义」并把原值带入输入框
+        let existingIsCustom = existing.map { !LiqianConstants.ledgerTypes.contains($0.type) } ?? false
+        _type = State(
+            initialValue: existingIsCustom
+                ? Self.customTypeOption
+                : (existing?.type ?? LiqianConstants.ledgerTypes[0])
+        )
+        _customType = State(initialValue: existingIsCustom ? (existing?.type ?? "") : "")
         _date = State(initialValue: existing.map { LiqianDate.date(from: $0.date) } ?? Date())
         _note = State(initialValue: existing?.note ?? "")
+    }
+
+    /// 实际保存的事由：选了「自定义」就用输入值，没填则回退「其他」
+    private var finalType: String {
+        guard type == Self.customTypeOption else { return type }
+        let trimmed = customType.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "其他" : trimmed
     }
 
     var body: some View {
@@ -39,9 +57,12 @@ struct LedgerFormView: View {
                 }
                 Section {
                     Picker("事由", selection: $type) {
-                        ForEach(LiqianConstants.ledgerTypes, id: \.self) { t in
+                        ForEach(LiqianConstants.ledgerTypes + [Self.customTypeOption], id: \.self) { t in
                             Text(t).tag(t)
                         }
+                    }
+                    if type == Self.customTypeOption {
+                        TextField("事由名称", text: $customType, prompt: Text("如：店铺开业 / 孩子升学"))
                     }
                     DatePicker("日期", selection: $date, displayedComponents: .date)
                     TextField("备注（可选）", text: $note)
@@ -72,14 +93,14 @@ struct LedgerFormView: View {
         titleError = nil
         if let existing {
             existing.title = trimmed
-            existing.type = type
+            existing.type = finalType
             existing.date = LiqianDate.string(from: date)
             existing.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
             modelContext.insert(
                 Ledger(
                     title: trimmed,
-                    type: type,
+                    type: finalType,
                     date: LiqianDate.string(from: date),
                     note: note.trimmingCharacters(in: .whitespacesAndNewlines)
                 )

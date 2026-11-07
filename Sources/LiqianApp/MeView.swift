@@ -1,3 +1,4 @@
+import Charts
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -20,6 +21,7 @@ struct MeView: View {
     @State private var infoMessage = ""
     @State private var showInfo = false
     @State private var importTrigger = 0
+    @AppStorage("privacyLock") private var privacyLock = false
 
     private var year: String { LiqianDate.currentYearString() }
 
@@ -39,6 +41,16 @@ struct MeView: View {
         LedgerMath.typeSummary(from: snapshots).filter { $0.count > 0 }
     }
 
+    /// 往来排行：按收+随总额倒序（v1.1）
+    private var rankedPeople: [PersonSummary] {
+        LedgerMath.people(from: snapshots)
+            .sorted { ($0.received + $0.given) > ($1.received + $1.given) }
+    }
+
+    private var relationSummaries: [RelationSummary] {
+        LedgerMath.relationSummary(from: snapshots).filter { $0.count > 0 }
+    }
+
     private var csvFingerprint: String {
         "\(records.count)-\(ledgers.count)-\(records.reduce(0) { $0 + $1.amountCents })"
     }
@@ -46,27 +58,24 @@ struct MeView: View {
     var body: some View {
         NavigationStack {
             List {
-                Text("我的")
-                    .font(.liqianBigTitle)
-                    .foregroundStyle(Palette.ink)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
-
                 asCardRow(yearCard)
                 asCardRow(pendingCard)
                 asCardRow(typeCard)
+                asCardRow(rankingCard)
+                asCardRow(relationCard)
 
                 asCardRow(csvRow)
                 asCardRow(jsonExportRow)
                 asCardRow(jsonImportRow)
 
+                asCardRow(privacyCard)
                 asCardRow(aboutCard)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Palette.paper.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("我的")
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(item: $personRoute) { route in
                 PersonDetailView(name: route.name)
             }
@@ -200,6 +209,107 @@ struct MeView: View {
                     .padding(.vertical, 3)
                 }
             }
+        }
+        .cardSurface()
+    }
+
+    /// 往来排行 Top5：往来总额最大的几位，差额小字辅助判断
+    private var rankingCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("往来排行")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            if rankedPeople.isEmpty {
+                Text("还没有记录")
+                    .foregroundStyle(Palette.stone)
+            } else {
+                ForEach(Array(rankedPeople.prefix(5).enumerated()), id: \.element.id) { idx, p in
+                    Button {
+                        personRoute = PeopleView.NameRoute(name: p.name)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text("\(idx + 1)")
+                                .font(.liqianSerif(size: 15))
+                                .foregroundStyle(Palette.stone)
+                                .frame(width: 18, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.name)
+                                    .foregroundStyle(Palette.ink)
+                                Text(p.relation)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.stone)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(LedgerMath.fmtMoney(cents: p.received + p.given))
+                                    .font(.liqianMoney(size: 15))
+                                    .foregroundStyle(Palette.ink)
+                                Text(balanceSmallText(p))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(p.balance > 0 ? Palette.primary : Palette.stone)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Palette.stone)
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .cardSurface()
+    }
+
+    private func balanceSmallText(_ p: PersonSummary) -> String {
+        if p.balance == 0 { return "两清" }
+        return p.balance > 0
+            ? "他多给 \(LedgerMath.fmtMoney(cents: p.balance))"
+            : "我多给 \(LedgerMath.fmtMoney(cents: -p.balance))"
+    }
+
+    /// 关系分布：按关系聚合往来总额的横向条形图
+    private var relationCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("关系分布")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            if relationSummaries.isEmpty {
+                Text("还没有记录")
+                    .foregroundStyle(Palette.stone)
+            } else {
+                Chart(relationSummaries) { s in
+                    BarMark(
+                        x: .value("金额（元）", Double(s.total) / 100.0),
+                        y: .value("关系", s.relation)
+                    )
+                    .foregroundStyle(Palette.primary)
+                    .cornerRadius(4)
+                }
+                .frame(height: CGFloat(relationSummaries.count) * 36 + 12)
+            }
+        }
+        .cardSurface()
+    }
+
+    /// 隐私：开启后冷启动与回前台（>30 秒）要先解锁，后台预览模糊（逻辑在 ContentView）
+    private var privacyCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("隐私")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            Toggle(isOn: $privacyLock) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("隐私锁")
+                        .foregroundStyle(Palette.ink)
+                    Text("打开 App、从后台回来超过半分钟，都要先用 Face ID 或密码解锁；切到后台时内容会模糊。")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+            .tint(Palette.primary)
+            .frame(minHeight: LiqianMetrics.minTapTarget)
         }
         .cardSurface()
     }

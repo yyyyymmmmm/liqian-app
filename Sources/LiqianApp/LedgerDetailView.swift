@@ -54,7 +54,12 @@ struct LedgerDetailView: View {
     var body: some View {
         List {
             Section {
-                statsCard
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(ledger.date) · \(LiqianDate.lunarString(for: ledger.date))")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    statsCard
+                }
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

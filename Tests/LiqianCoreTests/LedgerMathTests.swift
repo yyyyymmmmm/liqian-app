@@ -192,4 +192,42 @@ final class LedgerMathTests: XCTestCase {
         XCTAssertEqual(parsed.records.first?.method, "现金")
         XCTAssertNil(parsed.records.first?.idUUID) // 时间戳 id 不是 UUID，导入时新发
     }
+
+    // MARK: 关系分布（v1.1）
+
+    func testRelationSummaryAggregatesAndExcludesPending() {
+        let entries = [
+            entry("张三", "收礼", 1000_00, "2025-01-01", relation: "亲戚"),
+            entry("张三", "随礼", 500_00, "2025-02-01", relation: "亲戚"),
+            entry("李四", "收礼", 300_00, "2025-03-01", relation: "朋友"),
+            // 待送出不计入关系分布（金额与笔数都不算）
+            entry("李四", "随礼", 900_00, "2025-04-01", status: "待送出", relation: "朋友"),
+        ]
+        let rels = LedgerMath.relationSummary(from: entries)
+        XCTAssertEqual(rels.count, 2)
+        // 按往来总额倒序：亲戚 1500 在前，朋友 300 在后
+        XCTAssertEqual(rels[0].relation, "亲戚")
+        XCTAssertEqual(rels[0].received, 1000_00)
+        XCTAssertEqual(rels[0].given, 500_00)
+        XCTAssertEqual(rels[0].total, 1500_00)
+        XCTAssertEqual(rels[0].count, 2)
+        XCTAssertEqual(rels[1].relation, "朋友")
+        XCTAssertEqual(rels[1].total, 300_00)
+        XCTAssertEqual(rels[1].count, 1)
+    }
+
+    func testRelationSummaryEmpty() {
+        XCTAssertTrue(LedgerMath.relationSummary(from: []).isEmpty)
+    }
+
+    // MARK: 农历（v1.1）
+
+    func testLunarString() {
+        // 2026-11-16 是用户婚礼日，请柬口径：农历十月初八
+        XCTAssertEqual(LiqianDate.lunarString(for: "2026-11-16"), "农历十月初八")
+        // 2025 年春节：公历 1 月 29 日 = 正月初一
+        XCTAssertEqual(LiqianDate.lunarString(for: "2025-01-29"), "农历正月初一")
+        // 廿日名：2025-02-17 = 正月二十
+        XCTAssertEqual(LiqianDate.lunarString(for: "2025-02-17"), "农历正月二十")
+    }
 }

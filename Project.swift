@@ -44,6 +44,7 @@ let project = Project(
                 "LSSupportsOpeningDocumentsInPlace": true,
                 "ITSAppUsesNonExemptEncryption": false,
                 "UILaunchScreen": ["UIColorName": "LaunchBackground"],
+                "NSFaceIDUsageDescription": "用 Face ID 保护你的人情账本不被旁人看到",
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],

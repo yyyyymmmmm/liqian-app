@@ -195,18 +195,17 @@ struct RecordFormView: View {
                 }
 
                 Section {
-                    HStack(spacing: 8) {
-                        Text("¥")
-                            .foregroundStyle(Palette.stone)
-                        TextField("金额（元）", text: $amountText, prompt: Text("如：500"))
-                            .keyboardType(.decimalPad)
-                            .focused($focus, equals: .amount)
-                    }
+                    amountDisplay
+                    amountChips
+                    amountKeypad
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     if let amountError {
                         Text(amountError)
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
+                } header: {
+                    Text("金额（元）")
                 }
 
                 Section {
@@ -254,6 +253,7 @@ struct RecordFormView: View {
                     Button("保存") { save() }
                 }
             }
+            .sensoryFeedback(.impact(weight: .light, intensity: 0.5), trigger: amountText)
             .sensoryFeedback(.success, trigger: saveTrigger)
             .sensoryFeedback(.warning, trigger: errorTrigger)
             .sensoryFeedback(.warning, trigger: deleteTrigger)
@@ -274,6 +274,119 @@ struct RecordFormView: View {
                 }
             }
         }
+    }
+
+    // MARK: - 金额区：大号显示 + 常用金额 + 自定义大字键盘（三秒记账，不用系统键盘）
+
+    private var amountDisplay: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("¥")
+                .font(.liqianSerif(size: 26))
+                .foregroundStyle(Palette.stone)
+            Text(amountText.isEmpty ? "0" : amountText)
+                .font(.liqianMoney(size: 40))
+                .foregroundStyle(amountText.isEmpty ? Palette.stone : Palette.ink)
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var amountChips: some View {
+        HStack(spacing: 8) {
+            ForEach([100, 200, 300, 500, 800, 1000], id: \.self) { v in
+                Button {
+                    amountText = "\(v)"
+                    amountError = nil
+                } label: {
+                    Text("\(v)")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Palette.primary)
+                        .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
+                        .background(Palette.primaryTint, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var amountKeypad: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+            spacing: 8
+        ) {
+            ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9"], id: \.self) { k in
+                keypadKey(k)
+            }
+            keypadKey(".")
+            keypadKey("0")
+            keypadDeleteKey
+        }
+    }
+
+    private func keypadKey(_ label: String) -> some View {
+        Button {
+            keypadInput(label)
+        } label: {
+            Text(label)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(Palette.ink)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Palette.hairline, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 删除键：点按删一位，长按清空
+    private var keypadDeleteKey: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Palette.card)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Palette.hairline, lineWidth: 1)
+            Image(systemName: "delete.left")
+                .font(.system(size: 22))
+                .foregroundStyle(Palette.ink)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 56)
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture { keypadInput("delete") }
+        .onLongPressGesture(minimumDuration: 0.45) { keypadInput("clear") }
+    }
+
+    /// 键盘输入走字符串拼接并做合法性约束：
+    /// 最多两位小数；首位是 0 时再输数字直接替换（不出现 05、00）；
+    /// 整数部分上限 7 位（¥9,999,999），现场记账足够。
+    private func keypadInput(_ key: String) {
+        switch key {
+        case "delete":
+            if !amountText.isEmpty { amountText.removeLast() }
+        case "clear":
+            amountText = ""
+        case ".":
+            if amountText.contains(".") { return }
+            amountText = amountText.isEmpty ? "0." : amountText + "."
+        default:
+            if let dot = amountText.firstIndex(of: ".") {
+                let fracCount = amountText[amountText.index(after: dot)...].count
+                if fracCount >= 2 { return }
+                amountText += key
+            } else if amountText == "0" {
+                amountText = key
+            } else if amountText.count >= 7 {
+                return
+            } else {
+                amountText += key
+            }
+        }
+        amountError = nil
     }
 
     private func save() {

@@ -20,6 +20,13 @@ struct PeopleView: View {
         LedgerMath.people(from: AppSupport.snapshots(records: records, ledgers: ledgers))
     }
 
+    /// 备礼清单数据源：全部待送出记录，按计划日期（记录 date）升序
+    private var pendingSends: [GiftRecord] {
+        records
+            .filter { $0.isPendingSend }
+            .sorted { $0.date < $1.date }
+    }
+
     private var searching: Bool { !query.isEmpty }
 
     private var filteredPeople: [PersonSummary] {
@@ -33,12 +40,12 @@ struct PeopleView: View {
     var body: some View {
         NavigationStack {
             List {
-                Text("人情往来")
-                    .font(.liqianBigTitle)
-                    .foregroundStyle(Palette.ink)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                if !searching && !pendingSends.isEmpty {
+                    prepListCard
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
 
                 if searching {
                     Section("人物") {
@@ -71,7 +78,8 @@ struct PeopleView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Palette.paper.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("人情往来")
+            .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "搜姓名，或者搜礼簿、事由")
             .navigationDestination(item: $personRoute) { route in
                 PersonDetailView(name: route.name)
@@ -80,6 +88,52 @@ struct PeopleView: View {
                 LedgerDetailView(ledger: ledger)
             }
         }
+    }
+
+    /// 备礼清单卡：待送出的礼集中展示，点行进人物详情去处理
+    private var prepListCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("备礼清单")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            Text("记下了还没送出去的礼，送出后把那笔改成「已送出」。")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.stone)
+                .padding(.bottom, 4)
+            ForEach(pendingSends) { r in
+                Button {
+                    personRoute = NameRoute(name: r.person)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(r.person)
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(r.date)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Palette.stone)
+                        Text(LedgerMath.fmtMoney(cents: r.amountCents))
+                            .font(.liqianMoney(size: 15))
+                            .foregroundStyle(Palette.ink)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.stone)
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(LiqianMetrics.cardPadding)
+        .background(
+            Palette.card,
+            in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+                .stroke(Palette.hairline, lineWidth: 1)
+        )
     }
 
     private func emptyRow(_ text: String) -> some View {

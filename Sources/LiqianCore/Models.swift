@@ -34,6 +34,50 @@ public enum LiqianDate {
 
     public static func todayString() -> String { string(from: Date()) }
 
+    // MARK: - 农历
+
+    private static let lunarMonthNames = [
+        "正月", "二月", "三月", "四月", "五月", "六月",
+        "七月", "八月", "九月", "十月", "冬月", "腊月",
+    ]
+
+    /// 农历日名：初一…初十、十一…十九、二十、廿一…廿九、三十
+    private static func lunarDayName(_ day: Int) -> String {
+        let digits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        switch day {
+        case 1...9:
+            return "初" + digits[day]
+        case 10:
+            return "初十"
+        case 11...19:
+            return "十" + digits[day - 10]
+        case 20:
+            return "二十"
+        case 21...29:
+            return "廿" + digits[day - 20]
+        case 30:
+            return "三十"
+        default:
+            return "\(day)日"
+        }
+    }
+
+    /// 农历文本，如「农历十月初八」「农历闰四月廿三」。
+    /// 用农历（.chinese）日历取月/日分量，再按传统月名/日名拼中文数字，
+    /// 不依赖 DateFormatter 的区域化输出，保证各系统版本结果一致。
+    /// （DateFormatter 配 .chinese 日历的标准输出样例即此形态：「十月初八」。）
+    public static func lunarString(for dateString: String) -> String {
+        let date = date(from: dateString)
+        let cal = Calendar(identifier: .chinese)
+        let comps = cal.dateComponents([.month, .day], from: date)
+        let month = comps.month ?? 1
+        let monthName = lunarMonthNames.indices.contains(month - 1)
+            ? lunarMonthNames[month - 1]
+            : "\(month)月"
+        let leap = comps.isLeapMonth == true ? "闰" : ""
+        return "农历" + leap + monthName + lunarDayName(comps.day ?? 1)
+    }
+
     public static func currentYearString() -> String {
         String(Calendar.current.component(.year, from: Date()))
     }

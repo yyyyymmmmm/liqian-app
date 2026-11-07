@@ -1,3 +1,4 @@
+import Charts
 import SwiftData
 import SwiftUI
 import LiqianCore
@@ -7,6 +8,8 @@ struct LedgersView: View {
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var records: [GiftRecord]
     @State private var showNewLedger = false
+    @State private var personRoute: PeopleView.NameRoute?
+    @State private var ledgerRoute: Ledger?
     @Namespace private var zoomSpace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -20,14 +23,47 @@ struct LedgersView: View {
             .reduce(0) { $0 + $1.amountCents }
     }
 
+    // MARK: 首页即报表（v1.1）
+
+    private var snapshots: [EntrySnapshot] {
+        AppSupport.snapshots(records: records, ledgers: ledgers)
+    }
+
+    private var pendingPeople: [PersonSummary] {
+        LedgerMath.people(from: snapshots).filter { $0.hasPending }
+    }
+
+    private var pendingTotal: Int {
+        pendingPeople.reduce(0) { $0 + $1.pendingCents }
+    }
+
+    private var thisYearSummary: YearSummary {
+        LedgerMath.yearSummary(from: snapshots, year: LiqianDate.currentYearString())
+    }
+
+    /// 最近往来：按日期倒序 5 条（同日保持 @Query 原序的相对顺序）
+    private var recentRecords: [GiftRecord] {
+        Array(records.sorted { $0.date > $1.date }.prefix(5))
+    }
+
+    private func ledger(of r: GiftRecord) -> Ledger? {
+        ledgers.first { $0.id == r.ledgerID }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
-                    Text("礼簿")
-                        .font(.liqianBigTitle)
-                        .foregroundStyle(Palette.ink)
                     summaryCard
+                    if !pendingPeople.isEmpty {
+                        pendingCard
+                    }
+                    if thisYearSummary.count > 0 {
+                        yearChartCard
+                    }
+                    if !recentRecords.isEmpty {
+                        recentCard
+                    }
                     if ledgers.isEmpty {
                         emptyState
                     } else {
@@ -54,7 +90,8 @@ struct LedgersView: View {
                 .padding(LiqianMetrics.spacingM)
             }
             .background(Palette.paper.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("礼簿")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -63,6 +100,12 @@ struct LedgersView: View {
                         Label("新建礼簿", systemImage: "plus")
                     }
                 }
+            }
+            .navigationDestination(item: $personRoute) { route in
+                PersonDetailView(name: route.name)
+            }
+            .navigationDestination(item: $ledgerRoute) { ledger in
+                LedgerDetailView(ledger: ledger)
             }
             .sheet(isPresented: $showNewLedger) {
                 LedgerFormView()
@@ -98,6 +141,125 @@ struct LedgersView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.stone)
         }
+    }
+
+    /// 待回礼卡：有人没回才出现，最多列 3 人，点行进人物详情
+    private var pendingCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("待回礼")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                Text("共 \(pendingPeople.count) 人 · \(LedgerMath.fmtMoney(cents: pendingTotal))")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.stone)
+            }
+            .padding(.bottom, 4)
+            ForEach(pendingPeople.prefix(3)) { p in
+                Button {
+                    personRoute = PeopleView.NameRoute(name: p.name)
+                } label: {
+                    HStack {
+                        Text(p.name)
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Text(LedgerMath.fmtMoney(cents: p.pendingCents))
+                            .font(.liqianMoney(size: 15))
+                            .foregroundStyle(Palette.primary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Palette.stone)
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if pendingPeople.count > 3 {
+                Text("还有 \(pendingPeople.count - 3) 人没回，去「人情」页看全部。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.stone)
+                    .padding(.top, 4)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    /// 本年收/随迷你柱状图：数据稀疏（低频应用，全年可能就几笔），
+    /// 按月拆柱会只剩一两根孤柱误导人，直接用年度总量两根柱更诚实。
+    private var yearChartCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(LiqianDate.currentYearString()) 年往来")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            Chart {
+                BarMark(
+                    x: .value("方向", "收礼"),
+                    y: .value("金额（元）", Double(thisYearSummary.recv) / 100.0)
+                )
+                .foregroundStyle(Palette.primary)
+                .cornerRadius(6)
+                .annotation(position: .top, alignment: .center) {
+                    Text(LedgerMath.fmtMoney(cents: thisYearSummary.recv))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.stone)
+                }
+                BarMark(
+                    x: .value("方向", "随礼"),
+                    y: .value("金额（元）", Double(thisYearSummary.given) / 100.0)
+                )
+                .foregroundStyle(Palette.ink)
+                .cornerRadius(6)
+                .annotation(position: .top, alignment: .center) {
+                    Text(LedgerMath.fmtMoney(cents: thisYearSummary.given))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+            .chartYAxis(.hidden)
+            .frame(height: 120)
+        }
+        .liqianCardSurface()
+    }
+
+    /// 最近往来 5 条：人名 + 事由 + 方向签，金额按方向着色，点行进所属礼簿
+    private var recentCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("最近往来")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Palette.ink)
+                .padding(.bottom, 4)
+            ForEach(recentRecords) { r in
+                Button {
+                    if let l = ledger(of: r) { ledgerRoute = l }
+                } label: {
+                    HStack(spacing: 8) {
+                        DirectionTag(direction: r.direction, bai: ledger(of: r)?.isBai ?? false)
+                        Text(r.person)
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Text(ledger(of: r)?.type ?? "")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Palette.stone)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(String(r.date.dropFirst(5)))
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Palette.stone)
+                        Text(LedgerMath.fmtMoney(cents: r.amountCents))
+                            .font(.liqianMoney(size: 15))
+                            .foregroundStyle(
+                                r.direction == LiqianConstants.received ? Palette.primary : Palette.ink
+                            )
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .liqianCardSurface()
     }
 
     private var emptyState: some View {

@@ -117,7 +117,9 @@ public struct LedgerCoverCard: View {
     }
 
     private var subtitle: String {
-        ledger.note.isEmpty ? ledger.date : "\(ledger.date) · \(ledger.note)"
+        // 公历 + 农历（婚丧嫁娶看农历是刚需）；有备注时排在最后，超长由 lineLimit 截断
+        let base = "\(ledger.date) · \(LiqianDate.lunarString(for: ledger.date))"
+        return ledger.note.isEmpty ? base : "\(base) · \(ledger.note)"
     }
 
     private var coverBlock: some View {
@@ -158,6 +160,24 @@ public struct LedgerCoverCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isBai ? Palette.baiLine : Palette.gold, lineWidth: 1)
         )
+    }
+}
+
+// MARK: - 统一卡片表面：卡面色 + hairline 描边 + 18 圆角（白事传 bai: true 换白事令牌）
+
+public extension View {
+    func liqianCardSurface(bai: Bool = false, padding: CGFloat = LiqianMetrics.cardPadding) -> some View {
+        self
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                bai ? Palette.baiCard : Palette.card,
+                in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+                    .stroke(bai ? Palette.baiLine : Palette.hairline, lineWidth: 1)
+            )
     }
 }
 

@@ -74,6 +74,24 @@ public struct PersonSummary: Sendable, Equatable, Identifiable {
     }
 }
 
+public struct RelationSummary: Sendable, Equatable, Identifiable {
+    public var relation: String
+    public var received: Int
+    public var given: Int
+    public var count: Int
+
+    public var id: String { relation }
+    /// 往来总额（收+随），关系分布与排行的排序依据
+    public var total: Int { received + given }
+
+    public init(relation: String, received: Int = 0, given: Int = 0, count: Int = 0) {
+        self.relation = relation
+        self.received = received
+        self.given = given
+        self.count = count
+    }
+}
+
 public struct YearSummary: Sendable, Equatable {
     public var recv: Int
     public var given: Int
@@ -196,6 +214,22 @@ public enum LedgerMath {
             map[e.ledgerType]?.count += 1
         }
         return map.values.sorted { ($0.received + $0.given) > ($1.received + $1.given) }
+    }
+
+    /// 按关系分布（待送出不计），按往来总额倒序。给「我的」页关系分布图用。
+    public static func relationSummary(from entries: [EntrySnapshot]) -> [RelationSummary] {
+        var map: [String: RelationSummary] = [:]
+        for e in entries {
+            if map[e.relation] == nil { map[e.relation] = RelationSummary(relation: e.relation) }
+            if e.isPendingSend { continue }
+            if e.direction == LiqianConstants.received {
+                map[e.relation]?.received += e.amountCents
+            } else {
+                map[e.relation]?.given += e.amountCents
+            }
+            map[e.relation]?.count += 1
+        }
+        return map.values.sorted { $0.total > $1.total }
     }
 }
 
