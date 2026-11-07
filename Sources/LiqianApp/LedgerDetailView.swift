@@ -59,6 +59,24 @@ struct LedgerDetailView: View {
                 headerRow
             }
 
+            // 礼谱是护城河功能，入口不藏菜单：一眼可见的行动区（菜单里保留同入口）
+            Section {
+                Button {
+                    showExport = true
+                } label: {
+                    Label("导出礼谱 PDF", systemImage: "doc.richtext")
+                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                }
+                Button {
+                    showGreeting = true
+                } label: {
+                    Label("生成贺词", systemImage: "text.quote")
+                        .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                }
+            }
+
             Section {
                 if records.isEmpty {
                     emptyState
