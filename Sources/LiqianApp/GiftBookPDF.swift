@@ -17,6 +17,9 @@ import LiqianCore
 /// （汇总页落款区三行、封面信息列缀地点）；姓名列按 3 字位归一
 /// （双字名间字）；白事大写不缀「整」；汇总后、補記前加答谢辞页
 /// （红事「答謝」/白事「銘謝」）。
+/// v3.1（docs/V31-NOTES.md）：内页按关系分段登记——段段换页另起，
+/// 段首出题签（繁体关系名＋汉字笔数）；只有一段时不出题签。随礼与
+/// 收礼同册（逐笔注「隨禮」），无独立随礼卷，分段统一作用于全册。
 /// 免费版每页地脚带「礼钱账本 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -118,20 +121,40 @@ enum GiftBookPDF {
                         text: prefaceText, hostName: host
                     )
                 }
-                let chunks = stride(from: 0, to: counted.count, by: columnsPerPage).map {
-                    Array(counted[$0..<min($0 + columnsPerPage, counted.count)])
-                }
-                if chunks.isEmpty {
+                // 内页分段（v3.1）：按关系分段、段段换页另起，段首出题签；
+                // 只有一段（或空册）时不出题签，与汇总小计的单组口径一致。
+                // 页码全册连续。分组与保序走 Core 的 LibuSections。
+                let sections = LibuSections.groupByRelation(counted) { $0.relation }
+                let showSectionTitles = sections.count > 1
+                if sections.isEmpty {
                     drawContentPage(
                         context: context, ledger: ledger, bai: bai,
-                        pageRecords: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs
+                        pageRecords: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs,
+                        sectionTitle: nil
                     )
                 } else {
-                    for (i, chunk) in chunks.enumerated() {
-                        drawContentPage(
-                            context: context, ledger: ledger, bai: bai,
-                            pageRecords: chunk, pageIndex: i + 1, firstOfDayIDs: firstOfDayIDs
-                        )
+                    var pageIndex = 0
+                    for section in sections {
+                        let title = showSectionTitles
+                            ? sectionTitleText(
+                                relation: section.relation,
+                                count: section.records.count
+                            )
+                            : nil
+                        let chunks = stride(
+                            from: 0, to: section.records.count, by: columnsPerPage
+                        ).map {
+                            Array(section.records[$0..<min($0 + columnsPerPage, section.records.count)])
+                        }
+                        for (ci, chunk) in chunks.enumerated() {
+                            pageIndex += 1
+                            drawContentPage(
+                                context: context, ledger: ledger, bai: bai,
+                                pageRecords: chunk, pageIndex: pageIndex,
+                                firstOfDayIDs: firstOfDayIDs,
+                                sectionTitle: ci == 0 ? title : nil
+                            )
+                        }
                     }
                 }
                 drawSummary(
@@ -379,7 +402,8 @@ enum GiftBookPDF {
         context: UIGraphicsPDFRendererContext,
         ledger: Ledger, bai: Bool,
         pageRecords: [GiftRecord], pageIndex: Int,
-        firstOfDayIDs: Set<UUID>
+        firstOfDayIDs: Set<UUID>,
+        sectionTitle: String?
     ) {
         context.beginPage()
         drawPaperBase(bai: bai)
@@ -398,12 +422,19 @@ enum GiftBookPDF {
         let titleSize = titleAttr.size()
         titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
 
-        // 列间朱砂（白事素蓝）细线（自欄題下方起）
+        // 段题签（v3.1）：只在段首页、欄題之下出（续页不重复，老谱规矩）。
+        // 出题签的页，列线与记录列整体下移让位。
+        let recordsTop = contentTop + (sectionTitle != nil ? 36 : 0)
+        if let sectionTitle {
+            drawSectionTitle(sectionTitle, bai: bai, topY: 126)
+        }
+
+        // 列间朱砂（白事素蓝）细线（自欄題/题签下方起）
         main.withAlphaComponent(0.45).setStroke()
         for i in 1..<columnsPerPage {
             let x = contentRight - colW * CGFloat(i)
             let line = UIBezierPath()
-            line.move(to: CGPoint(x: x, y: contentTop + 6))
+            line.move(to: CGPoint(x: x, y: recordsTop + 6))
             line.addLine(to: CGPoint(x: x, y: contentBottom))
             line.lineWidth = 0.75
             line.stroke()
@@ -412,7 +443,7 @@ enum GiftBookPDF {
         for (i, r) in pageRecords.enumerated() {
             // 右起：第 0 列在最右
             let centerX = contentRight - colW * (CGFloat(i) + 0.5)
-            var y = contentTop
+            var y = recordsTop
             // 姓名：楷体大字，限 4 字高（用户数据原样）；按 3 字位归一排版
             y = drawNameColumn(
                 r.person,
@@ -444,6 +475,47 @@ enum GiftBookPDF {
                     font: kaitiFont(10.5), color: sub, step: 14
                 )
             }
+        }
+    }
+
+    // MARK: - 段题签（v3.1）
+
+    /// 关系名的繁体字面（仅系统词表内的值）：关系是 Picker 选的系统词，
+    /// 不是用户自由文本，换繁体与欄題/汇总固定串同口径；词表外的关系
+    /// （历史数据原文）不映射、照原样出（见 traditionalRelation）。
+    private static let traditionalRelations: [String: String] = [
+        "亲戚": "親戚", "朋友": "朋友", "同事": "同事",
+        "同学": "同學", "邻居": "鄰居", "其他": "其他",
+    ]
+
+    private static func traditionalRelation(_ relation: String) -> String {
+        traditionalRelations[relation] ?? relation
+    }
+
+    /// 段题签文案：繁体关系名 · 汉字笔数（如「親戚 · 拾貳筆」）
+    private static func sectionTitleText(relation: String, count: Int) -> String {
+        "\(traditionalRelation(relation)) · \(LibuText.chineseCount(count))筆"
+    }
+
+    /// 段题签绘制：楷体 13（小于欄題 15，不抢层级）、主色，水平居中于版心；
+    /// 题文两侧各缀一段 30pt 主色细线，与版框线语言一致。
+    private static func drawSectionTitle(_ text: String, bai: Bool, topY: CGFloat) {
+        let main = bai ? baiPrimary : cinnabar
+        let attr = NSAttributedString(
+            string: text,
+            attributes: [.font: kaitiFont(13), .foregroundColor: main]
+        )
+        let size = attr.size()
+        let x = (pageW - size.width) / 2
+        attr.draw(at: CGPoint(x: x, y: topY))
+        main.withAlphaComponent(0.6).setStroke()
+        let midY = topY + size.height / 2
+        for (x1, x2) in [(x - 42, x - 12), (x + size.width + 12, x + size.width + 42)] {
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: x1, y: midY))
+            line.addLine(to: CGPoint(x: x2, y: midY))
+            line.lineWidth = 0.75
+            line.stroke()
         }
     }
 

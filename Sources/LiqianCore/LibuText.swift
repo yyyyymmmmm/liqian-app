@@ -22,4 +22,62 @@ public enum LibuText {
     public static func traditionalGenerated(_ s: String) -> String {
         String(s.map { generatedCharMap[$0] ?? $0 })
     }
+
+    /// 笔数 → 汉字数字（v3.1 段题签用，如「拾貳筆」）。字表用财务大写数字
+    /// （壹貳參肆伍陸柒捌玖，繁简同形偏繁式），读法同 MoneyText 的整数读法
+    /// （按节读、节内零只读一个、节间补零）；唯账簿计数式起头省「壹」：
+    /// 全串以「壹拾」起头时省去首字（12 → 拾貳、10 → 拾、100000 → 拾萬）。
+    /// n ≤ 0 返回「零」（题签不会出现，防御性兜底）。
+    public static func chineseCount(_ n: Int) -> String {
+        guard n > 0 else { return "零" }
+        let digits: [Character] = ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"]
+        let smallUnits: [Character?] = [nil, "拾", "佰", "仟"] // 下标＝节内位权（个/拾/佰/仟）
+        let sectionUnits = ["", "萬", "億", "兆"]
+
+        var sections: [Int] = []
+        var rest = n
+        while rest > 0 {
+            sections.append(rest % 10000)
+            rest /= 10000
+        }
+
+        var out = ""
+        var higherRendered = false
+        for idx in stride(from: sections.count - 1, through: 0, by: -1) {
+            let v = sections[idx]
+            if v == 0 { continue }
+            // 低节不足仟位（有前导零）且高节已读出 → 节间补零（壹萬零壹拾貳）
+            if higherRendered && v < 1000 && !out.hasSuffix("零") {
+                out.append("零")
+            }
+            var d = [Int](repeating: 0, count: 4)
+            var t = v
+            for i in 0..<4 {
+                d[i] = t % 10
+                t /= 10
+            }
+            var started = false
+            var zeroPending = false
+            for pos in stride(from: 3, through: 0, by: -1) {
+                let digit = d[pos]
+                if digit == 0 {
+                    if started { zeroPending = true }
+                } else {
+                    if zeroPending {
+                        out.append("零")
+                        zeroPending = false
+                    }
+                    out.append(digits[digit])
+                    if let unit = smallUnits[pos] { out.append(unit) }
+                    started = true
+                }
+            }
+            if idx < sectionUnits.count {
+                out += sectionUnits[idx]
+            }
+            higherRendered = true
+        }
+        if out.hasPrefix("壹拾") { out.removeFirst() }
+        return out
+    }
 }
