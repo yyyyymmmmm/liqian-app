@@ -103,15 +103,18 @@ struct LibuExportView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .safeAreaInset(edge: .bottom) {
+            // v5 设计一期：行动条迁 safeAreaBar，分享钮改玻璃主按钮
+            // （Mat.tinted），撤掉旧 ultraThinMaterial 底板——玻璃纪律
+            // 「二选一」取玻璃钮＋系统滚动边缘，不再手搭材质底。
+            .safeAreaBar(edge: .bottom) {
                 if let pdfURL, !generating {
                     ShareLink(item: pdfURL) {
                         Label("分享 / 保存礼谱", systemImage: "square.and.arrow.up")
                             .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
                     }
+                    .liqianGlassButton(.tinted)
                     .padding(.horizontal, LiqianMetrics.spacingL)
                     .padding(.vertical, LiqianMetrics.spacingSM)
-                    .background(.ultraThinMaterial)
                 }
             }
             .onChange(of: style) {

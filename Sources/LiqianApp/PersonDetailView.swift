@@ -158,9 +158,11 @@ struct PersonDetailView: View {
         .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
-        // v2.5 包 4：不再隐藏 Tab 栏（pop 补显动画慢半拍）；底部双按钮是
-        // safeAreaInset，自动落在 Tab 栏上方，不会被遮挡。
-        .safeAreaInset(edge: .bottom) {
+        // v2.5 包 4：不再隐藏 Tab 栏（pop 补显动画慢半拍）；底部双按钮
+        // 自动落在 Tab 栏上方，不会被遮挡。
+        // v5 设计一期：safeAreaInset → safeAreaBar（审计采用清单）——
+        // 内容可滚至行动条之下由系统出滚动边缘效果，玻璃按钮形态不变。
+        .safeAreaBar(edge: .bottom) {
             GlassEffectContainer(spacing: LiqianMetrics.spacingSM) {
                 HStack(spacing: LiqianMetrics.spacingSM) {
                     Button {

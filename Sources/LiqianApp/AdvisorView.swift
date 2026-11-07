@@ -139,6 +139,8 @@ struct AdvisorView: View {
                 } label: {
                     Image(systemName: transcriber.isRecording ? "stop.circle.fill" : "mic")
                         .font(.title3)
+                        // 符号动效枚举点：录音中麦克风 .pulse（审计 §3.5）
+                        .symbolEffect(.pulse, isActive: transcriber.isRecording)
                         .foregroundStyle(transcriber.isRecording ? Palette.danger : Palette.primary)
                         .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
                 }

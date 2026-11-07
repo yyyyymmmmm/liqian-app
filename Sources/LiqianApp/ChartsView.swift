@@ -396,7 +396,8 @@ struct ChartsView: View {
                 ForEach(ChartScope.allCases) { item in
                     Button {
                         if scope != item {
-                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
+                            // v5：指示器滑移曲线对齐 MotionTokens 液体弹簧令牌
+                            withAnimation(MotionTokens.resolved(MotionTokens.liquidSpring, reduceMotion: reduceMotion)) {
                                 scope = item
                             }
                         }

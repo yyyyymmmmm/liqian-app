@@ -221,7 +221,7 @@ struct PeopleView: View {
             Button {
                 markPrepSent(r)
             } label: {
-                Label("已送出", systemImage: "checkmark.circle")
+                Label("已送出", systemImage: "checkmark.circle.fill")
             }
             .tint(Palette.primary)
         }
@@ -423,7 +423,7 @@ struct PrepListView: View {
             Button {
                 markPrepSent(r)
             } label: {
-                Label("已送出", systemImage: "checkmark.circle")
+                Label("已送出", systemImage: "checkmark.circle.fill")
             }
             .tint(Palette.primary)
         }

@@ -154,12 +154,18 @@ public struct LedgerCoverCard: View {
     }
 
     /// 事由小签（PRO-AUDIT #6）：30×64 朱砂窄签、竖排事由、无高光拟物；
-    /// 满块封面移交礼簿详情页头部（LedgerDetailView 自有封面块）
+    /// 满块封面移交礼簿详情页头部（LedgerDetailView 自有封面块）。
+    /// 小签圆角自 v5 走同心推导（容器 coverCorner − 卡内边距），不再手算 4。
     private var coverBlock: some View {
         let base = isBai ? Palette.baiPrimaryFill : Palette.primaryFill
         return ZStack {
-            RoundedRectangle(cornerRadius: LiqianMetrics.tagCorner)
-                .fill(base)
+            RoundedRectangle(
+                cornerRadius: LiqianRadius.concentric(
+                    container: LiqianMetrics.coverCorner,
+                    padding: LiqianMetrics.cardPadding
+                )
+            )
+            .fill(base)
             VStack(spacing: LiqianMetrics.spacingXS) {
                 Text(ledger.type.map { String($0) }.joined(separator: "\n"))
                     .font(.liqianSerifFixed(size: 15))
@@ -280,7 +286,7 @@ public struct SealStampOverlay: View {
                         if reduceMotion {
                             withAnimation(.easeIn(duration: 0.2)) { landed = true }
                         } else {
-                            withAnimation(.bouncy(duration: 0.45)) { landed = true }
+                            withAnimation(MotionTokens.sealIn) { landed = true }
                         }
                     }
             }
@@ -290,8 +296,9 @@ public struct SealStampOverlay: View {
     }
 }
 
-// MARK: - 右下角浮动添加按钮（FAB，v2.4 添加模型定版）
-// 全 App 新增动作收敛到这一个入口：圆形 56pt、强调填充底、白「+」、带投影。
+// MARK: - 右下角浮动添加按钮（FAB，v2.4 添加模型定版；v5 改玻璃主按钮）
+// 全 App 新增动作收敛到这一个入口：圆形 56pt 玻璃钮（Mat.tinted：
+// glassProminent＋主题强调染色），高光与按压形变由系统渲染。
 // 用法：挂在页面根视图的 .overlay(alignment: .bottomTrailing)，
 // bottomPadding 由调用方传 tabBarClearance 避让浮动 Tab 栏——
 // v2.5 包 4 起全 App 不再隐藏 Tab 栏，详情页与列表页同口径。
@@ -317,18 +324,24 @@ public struct AddFloatingButton: View {
         self.action = action
     }
 
+    @State private var tapPulse = 0
+
     public var body: some View {
-        Button(action: action) {
+        Button {
+            tapPulse += 1
+            action()
+        } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(.white)
                 .frame(width: 56, height: 56)
-                .background(Palette.primaryFill, in: Circle())
-                .shadow(color: .black.opacity(0.20), radius: 10, x: 0, y: 4)
+                // 符号动效枚举点：FAB 点按 .bounce 一次（审计 §3.5）
+                .symbolEffect(.bounce, value: tapPulse)
         }
-        // 主操作统一按压反馈（v4.4）：FAB 是全 App 新增动作的收敛入口，
-        // 与首页礼簿卡同走 ScaleOnPress（Reduce Motion 时样式内部自动不缩放）
-        .buttonStyle(ScaleOnPressButtonStyle())
+        // v5 设计一期：玻璃主按钮（Mat.tinted）——系统玻璃自带按压形变，
+        // 取代旧 ScaleOnPress＋自绘投影；Reduce Transparency 时系统自动
+        // 回退实色，Reduce Motion 时符号动效由系统抑制。
+        .liqianGlassButton(.tinted)
+        .buttonBorderShape(.circle)
         .accessibilityLabel(label)
         .padding(.trailing, LiqianMetrics.spacingM)
         .padding(.bottom, bottomPadding)
@@ -351,7 +364,7 @@ public struct ScaleOnPressButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1.0)
-                .animation(.snappy, value: configuration.isPressed)
+                .animation(MotionTokens.press, value: configuration.isPressed)
         }
     }
 }

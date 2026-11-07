@@ -48,24 +48,45 @@ struct ContentView: View {
             TabView(selection: $tabSelection) {
                 // 四栏（v4.6）：首页 0 / 往来 1 / 图表 2 / 我的 3——
                 // 全 App 的 tabSelection 赋值点都按这张表，改索引必全局核对
-                Tab("首页", systemImage: "house.fill", value: 0) {
+                // v5 设计一期（审计 §3.5 枚举点 1）：Tab 图标走 label 闭包——
+                // 选中时符号 .bounce 一次，未选/选中用线面形变区分状态
+                // （往来 person.2↔.fill、我的 crop.circle↔.fill；首页与图表
+                // 本就是 .fill 定版，只吃 bounce）。动效由系统在 Reduce
+                // Motion 时自动抑制。
+                Tab(value: 0) {
                     // v4.7：首页改总览台 HomeView（倒计时/待回/本月/快捷动作/
                     // 最近动态/我的礼簿）；待回行与本月卡经这两个绑定回本视图
                     // 走既有通道切 Tab——personDeepLinkName 与 liqian://person
                     // 深链共用同一绑定，tabSelection 即本 TabView 的选择值。
                     HomeView(deepLinkPerson: $personDeepLinkName, tabSelection: $tabSelection)
+                } label: {
+                    Label("首页", systemImage: "house.fill")
+                        .symbolEffect(.bounce, value: tabSelection == 0)
                 }
-                Tab("往来", systemImage: "person.2", value: 1) {
+                Tab(value: 1) {
                     PeopleView(deepLinkPerson: $personDeepLinkName)
+                } label: {
+                    Label("往来", systemImage: tabSelection == 1 ? "person.2.fill" : "person.2")
+                        .symbolEffect(.bounce, value: tabSelection == 1)
                 }
-                Tab("图表", systemImage: "chart.bar.fill", value: 2) {
+                Tab(value: 2) {
                     ChartsView()
+                } label: {
+                    Label("图表", systemImage: "chart.bar.fill")
+                        .symbolEffect(.bounce, value: tabSelection == 2)
                 }
-                Tab("我的", systemImage: "person.crop.circle", value: 3) {
+                Tab(value: 3) {
                     MeView()
+                } label: {
+                    Label("我的", systemImage: tabSelection == 3 ? "person.crop.circle.fill" : "person.crop.circle")
+                        .symbolEffect(.bounce, value: tabSelection == 3)
                 }
             }
             .tint(Palette.primary)
+            // v5 设计一期外壳：下滑时标签栏最小化、顶部滚动边缘改柔边
+            // （系统渲染，禁止手工渐变模仿——DESIGN 附录定版）
+            .tabBarMinimizeBehavior(.onScrollDown)
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if cloudSync.isEmergencyStorage {
                     Text("数据存储异常：现在记的内容不会被保存，请先到「我的 → 数据」导出备份。")
