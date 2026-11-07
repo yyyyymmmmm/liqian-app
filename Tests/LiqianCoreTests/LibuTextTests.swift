@@ -53,6 +53,30 @@ final class MoneyTextTraditionalTests: XCTestCase {
     }
 }
 
+// MARK: - 金额大写·白事奠儀（v2.10：不缀「整」字）
+
+final class MoneyTextTraditionalBaiTests: XCTestCase {
+    func testNoZhengSuffix() {
+        XCTAssertEqual(MoneyText.chineseUppercaseTraditionalBai(cents: 50000), "伍佰圓")
+        XCTAssertEqual(MoneyText.chineseUppercaseTraditionalBai(cents: 1000000), "壹萬圓")
+        XCTAssertEqual(MoneyText.chineseUppercaseTraditionalBai(cents: 0), "零圓")
+    }
+
+    func testWithJiaoFenUnchanged() {
+        // 带角分本就不收「整」，与红事版一致
+        XCTAssertEqual(
+            MoneyText.chineseUppercaseTraditionalBai(cents: 166655),
+            "壹仟陸佰陸拾陸圓伍角伍分"
+        )
+        XCTAssertEqual(MoneyText.chineseUppercaseTraditionalBai(cents: 105), "壹圓零伍分")
+    }
+
+    /// 红事版仍缀「整」，两版互不污染
+    func testRedVersionKeepsZheng() {
+        XCTAssertEqual(MoneyText.chineseUppercaseTraditional(cents: 50000), "伍佰圓整")
+    }
+}
+
 // MARK: - 农历月日（v2.8 礼谱逐笔日期）
 
 final class LunarMonthDayTests: XCTestCase {

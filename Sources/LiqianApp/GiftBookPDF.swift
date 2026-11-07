@@ -13,6 +13,10 @@ import LiqianCore
 /// （红事「賀儀」/白事「奠儀」）、固定文字全繁体、金额大写走正式财务繁体
 /// （MoneyText.chineseUppercaseTraditional）、汇总页加按日/按關係小計、
 /// 卷末補記页。人名/簿名/事由等用户数据照原样，严禁繁简转换。
+/// v2.10（docs/V210-NOTES.md）：主家/书记/核实人/地点改读礼簿属性
+/// （汇总页落款区三行、封面信息列缀地点）；姓名列按 3 字位归一
+/// （双字名间字）；白事大写不缀「整」；汇总后、補記前加答谢辞页
+/// （红事「答謝」/白事「銘謝」）。
 /// 免费版每页地脚带「礼钱账本 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -69,7 +73,9 @@ enum GiftBookPDF {
     // MARK: - 入口
 
     /// 生成礼谱并写到临时目录，返回文件 URL（失败返回 nil）。
-    /// hostName：礼谱落款姓名（导出 sheet 传入，缺省读「礼谱落款姓名」设置）；
+    /// 主家/书记/核实人/地点是礼簿自身属性（v2.10），直接读 Ledger；
+    /// hostName 参数只是兜底：礼簿没设主家时用它（缺省读全局「礼谱落款姓名」
+    /// 设置），再空回退「主家」字面（colophonName）。
     /// prefaceText：非空时在封面后插入谱序页（文本由导出 sheet 备好：AI 或模板）。
     static func makePDF(
         ledger: Ledger,
@@ -78,7 +84,11 @@ enum GiftBookPDF {
         prefaceText: String? = nil
     ) -> URL? {
         let bai = ledger.isBai
-        let host = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ledgerHost = (ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = ledgerHost.isEmpty
+            ? hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ledgerHost
+        let location = (ledger.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // 成册口径：排除待送出；按日期升序（登记先后），同日按姓名定序
         let counted = records
             .filter { !$0.isPendingSend }
@@ -101,7 +111,7 @@ enum GiftBookPDF {
 
         do {
             try renderer.writePDF(to: url) { context in
-                drawCover(context: context, ledger: ledger, bai: bai, hostName: host)
+                drawCover(context: context, ledger: ledger, bai: bai, hostName: host, location: location)
                 if let prefaceText, !prefaceText.isEmpty {
                     drawPreface(
                         context: context, ledger: ledger, bai: bai,
@@ -128,6 +138,7 @@ enum GiftBookPDF {
                     context: context, ledger: ledger, bai: bai,
                     counted: counted, pendingCount: pendingCount, hostName: host
                 )
+                drawThanksPage(context: context, ledger: ledger, bai: bai, hostName: host)
                 drawSupplementPage(context: context, ledger: ledger, bai: bai)
             }
             return url
@@ -158,7 +169,8 @@ enum GiftBookPDF {
     // MARK: - 封面
 
     private static func drawCover(
-        context: UIGraphicsPDFRendererContext, ledger: Ledger, bai: Bool, hostName: String
+        context: UIGraphicsPDFRendererContext, ledger: Ledger, bai: Bool,
+        hostName: String, location: String = ""
     ) {
         context.beginPage()
         let main = bai ? baiPrimary : cinnabar
@@ -189,8 +201,10 @@ enum GiftBookPDF {
             centerX: pageW / 2, topY: 168,
             font: kaitiFont(titleSize), color: .white, step: titleStep
         )
-        // 题字左列：事由（用户数据原样） + 公历 + 干支全日期（生成串转繁体，全谱统一写法）
-        let info = "\(ledger.type) · \(ledger.date) · \(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)))"
+        // 题字左列：事由（用户数据原样） + 公历 + 干支全日期（生成串转繁体，全谱统一写法）；
+        // 地点非空时缀于末（固定词「於」繁体＋地点原文，地点是用户数据不转繁体）
+        var info = "\(ledger.type) · \(ledger.date) · \(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)))"
+        if !location.isEmpty { info += " · 於\(location)" }
         _ = drawVertical(
             info,
             centerX: pageW / 2 - 76, topY: 176,
@@ -258,13 +272,31 @@ enum GiftBookPDF {
             (LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)), serifFont(10.5), sub, 15),
         ]))
 
+        drawColumnPages(
+            context: context, ledger: ledger, bai: bai,
+            columns: columns, pageLabel: "譜序",
+            colophonIndex: colophonIndex, hostName: hostName
+        )
+    }
+
+    /// 竖排文本页的分页绘制（谱序、答谢辞共用）：列自右起排、满 8 列续页，
+    /// 落款列（colophonIndex）下方钤主家印。
+    private static func drawColumnPages(
+        context: UIGraphicsPDFRendererContext,
+        ledger: Ledger, bai: Bool,
+        columns: [PrefaceColumn], pageLabel: String,
+        colophonIndex: Int, hostName: String
+    ) {
         let pageChunks = stride(from: 0, to: columns.count, by: columnsPerPage).map {
             Array(columns[$0..<min($0 + columnsPerPage, columns.count)])
         }
         for (pi, pageCols) in pageChunks.enumerated() {
             context.beginPage()
             drawPaperBase(bai: bai)
-            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: pi == 0 ? "譜序" : "譜序（續）")
+            drawHeaderFooter(
+                ledger: ledger, bai: bai,
+                pageLabel: pi == 0 ? pageLabel : "\(pageLabel)（續）"
+            )
             for (ci, col) in pageCols.enumerated() {
                 let centerX = contentRight - colW * (CGFloat(ci) + 0.5)
                 var y = contentTop
@@ -287,6 +319,58 @@ enum GiftBookPDF {
                 }
             }
         }
+    }
+
+    // MARK: - 答谢辞页（汇总之后、補記之前；红事「答謝」/白事「銘謝」）
+
+    /// 答谢辞正文（繁体固定模板，写死在 PDF 层）：只插值主家名与事由原文
+    /// （均为用户数据，照原样、不转繁体）。白事版素语，全篇不用「賀/喜」字眼。
+    private static func thanksText(ledger: Ledger, bai: Bool, hostName: String) -> String {
+        let host = colophonName(hostName: hostName)
+        if bai {
+            return "諸位親朋，於家中有故之時，親臨弔唁，扶持相助，\(host)銘感五內。"
+                + "哀痛之際，賴諸位慰藉，方得稍安。此恩此德，無以為報，唯銘諸心版。"
+                + "謹彙此譜，非徒記數，實誌厚誼。他年展卷，當念今日諸位之情。"
+        }
+        return "諸位親朋，遠道而來，厚禮隆情，\(host)銘感於心。"
+            + "\(ledger.type)之日，蓬蓽生輝，笑語盈堂；所記者非簿上之數，乃平生之厚誼也。"
+            + "謹彙此譜，藏之箱篋，傳之子孫。他年展卷，猶見今日之盛；"
+            + "諸位有用得著主家之處，但憑吩咐，必當竭誠以報。"
+    }
+
+    private static func drawThanksPage(
+        context: UIGraphicsPDFRendererContext,
+        ledger: Ledger, bai: Bool, hostName: String
+    ) {
+        let ink = bai ? baiInk : cardInk
+        let sub = bai ? baiPrimary : stone
+        let bodyFont = kaitiFont(15)
+        let bodyStep: CGFloat = 20
+        let charsPerColumn = max(1, Int((contentBottom - contentTop) / bodyStep))
+
+        var columns: [PrefaceColumn] = []
+        let chars = Array(thanksText(ledger: ledger, bai: bai, hostName: hostName).filter { !$0.isNewline })
+        var idx = 0
+        while idx < chars.count {
+            let end = min(idx + charsPerColumn, chars.count)
+            columns.append(PrefaceColumn(runs: [
+                (String(chars[idx..<end]), bodyFont, ink, bodyStep),
+            ]))
+            idx = end
+        }
+        // 落款另起一列（先空一列再落款，与谱序同式）
+        columns.append(PrefaceColumn())
+        let colophonIndex = columns.count
+        columns.append(PrefaceColumn(runs: [
+            ("\(colophonName(hostName: hostName)) 謹謝", kaitiFont(15), ink, 20),
+            (LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)), serifFont(10.5), sub, 15),
+        ]))
+
+        drawColumnPages(
+            context: context, ledger: ledger, bai: bai,
+            columns: columns, pageLabel: bai ? "銘謝" : "答謝",
+            colophonIndex: colophonIndex, hostName: hostName
+        )
     }
 
     // MARK: - 内页
@@ -329,16 +413,16 @@ enum GiftBookPDF {
             // 右起：第 0 列在最右
             let centerX = contentRight - colW * (CGFloat(i) + 0.5)
             var y = contentTop
-            // 姓名：楷体大字，限 4 字高（用户数据原样）
-            y = drawVertical(
-                String(r.person.prefix(4)),
+            // 姓名：楷体大字，限 4 字高（用户数据原样）；按 3 字位归一排版
+            y = drawNameColumn(
+                r.person,
                 centerX: centerX, topY: y,
                 font: kaitiFont(20), color: ink, step: 27
             )
             y += 14
-            // 金额大写（正式财务繁体，PDF 专用）
+            // 金额大写（正式财务繁体，PDF 专用；白事奠儀不缀「整」）
             y = drawVertical(
-                MoneyText.chineseUppercaseTraditional(cents: r.amountCents),
+                upperAmount(cents: r.amountCents, bai: bai),
                 centerX: centerX, topY: y,
                 font: kaitiFont(13), color: main, step: 18
             )
@@ -361,6 +445,44 @@ enum GiftBookPDF {
                 )
             }
         }
+    }
+
+    /// 姓名列（v2.10 双字名间字）：竖排按 3 字位归一——3 字及以上自然排；
+    /// 恰 2 字时两字间让出一个字距（总跨度＝3 字位，与三字名底边齐）；
+    /// 1 字名居中于中间字位。返回姓名列底边 y，金额列自此往下接（口径同旧）。
+    @discardableResult
+    private static func drawNameColumn(
+        _ name: String,
+        centerX: CGFloat, topY: CGFloat,
+        font: UIFont, color: UIColor, step: CGFloat
+    ) -> CGFloat {
+        let chars = Array(name.prefix(4))
+        guard !chars.isEmpty else { return topY }
+        let slots: [Int]
+        switch chars.count {
+        case 1: slots = [1]
+        case 2: slots = [0, 2]
+        default: slots = Array(0..<chars.count)
+        }
+        for (ch, slot) in zip(chars, slots) {
+            let attr = NSAttributedString(
+                string: String(ch),
+                attributes: [.font: font, .foregroundColor: color]
+            )
+            let size = attr.size()
+            attr.draw(at: CGPoint(
+                x: centerX - size.width / 2,
+                y: topY + CGFloat(slot) * step
+            ))
+        }
+        return topY + CGFloat(max(3, chars.count)) * step
+    }
+
+    /// 金额大写分派：红事走正式财务繁体（圓整），白事走奠儀版（不缀整）
+    private static func upperAmount(cents: Int, bai: Bool) -> String {
+        bai
+            ? MoneyText.chineseUppercaseTraditionalBai(cents: cents)
+            : MoneyText.chineseUppercaseTraditional(cents: cents)
     }
 
     // MARK: - 汇总页（封底）
@@ -397,11 +519,11 @@ enum GiftBookPDF {
         add("總人數 \(peopleCount) 人 · 總筆數 \(counted.count) 筆")
         if !receivedList.isEmpty {
             add("收禮合計 \(LedgerMath.fmtMoney(cents: totalReceived))")
-            add("大寫：\(MoneyText.chineseUppercaseTraditional(cents: totalReceived))", dy: 40)
+            add("大寫：\(upperAmount(cents: totalReceived, bai: bai))", dy: 40)
         }
         if !givenList.isEmpty {
             add("隨禮合計 \(LedgerMath.fmtMoney(cents: totalGiven))")
-            add("大寫：\(MoneyText.chineseUppercaseTraditional(cents: totalGiven))", dy: 40)
+            add("大寫：\(upperAmount(cents: totalGiven, bai: bai))", dy: 40)
         }
         if pendingCount > 0 {
             add("另有待送出 \(pendingCount) 筆，未計入本譜。", dy: 40)
@@ -532,6 +654,29 @@ enum GiftBookPDF {
         underline.addLine(to: CGPoint(x: contentLeft + 232, y: checkY + 22))
         underline.lineWidth = 0.75
         underline.stroke()
+
+        // 書記 / 核實（v2.10）：礼簿属性里的记账人与核实人，与主家落款同处
+        // 汇总页落款区（左下），各一行小字＋姓名首字小方印位；姓名是用户数据
+        // 照原样。未设则整行不出；两行皆无时落款区即现状（仅主家落款与印）。
+        var staffY = checkY + 44
+        for (label, person) in [("書記", ledger.scribe), ("核實", ledger.verifier)] {
+            let name = (person ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            let lineText = "\(label) \(name)"
+            let attr = NSAttributedString(
+                string: lineText,
+                attributes: [.font: kaitiFont(13.5), .foregroundColor: ink]
+            )
+            attr.draw(at: CGPoint(x: contentLeft, y: staffY))
+            drawSeal(
+                center: CGPoint(x: contentLeft + attr.size().width + 19, y: staffY + 10),
+                size: 25, text: String(name.prefix(1)),
+                fill: main,
+                stroke: bai ? nil : gold,
+                speck: bai ? baiPaper : paper
+            )
+            staffY += 40
+        }
 
         // 落款 + 主家印 + 纪年印（干支年 + 月雅称，如「丙午冬月」，生成串转繁体）
         _ = drawVertical(

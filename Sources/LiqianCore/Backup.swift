@@ -11,13 +11,27 @@ public struct BackupLedger: Codable, Sendable, Equatable {
     public var type: String
     public var date: String
     public var note: String
+    // v2.10 礼谱属性（可选键）：旧备份无此四键 → 解码为 nil；新备份带键时
+    // 值为 null 或缺席都不影响旧版 App 解码（旧版按未知键忽略）。
+    public var hostName: String?
+    public var scribe: String?
+    public var verifier: String?
+    public var location: String?
 
-    public init(id: String, title: String, type: String, date: String, note: String = "") {
+    public init(
+        id: String, title: String, type: String, date: String, note: String = "",
+        hostName: String? = nil, scribe: String? = nil,
+        verifier: String? = nil, location: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.type = type
         self.date = date
         self.note = note
+        self.hostName = hostName
+        self.scribe = scribe
+        self.verifier = verifier
+        self.location = location
     }
 
     /// 原生备份里 id 是 UUID 字符串；Flutter 旧备份是时间戳字符串，返回 nil
@@ -32,6 +46,10 @@ extension BackupLedger {
         type = try c.decode(String.self, forKey: .type)
         date = try c.decode(String.self, forKey: .date)
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        hostName = try c.decodeIfPresent(String.self, forKey: .hostName)
+        scribe = try c.decodeIfPresent(String.self, forKey: .scribe)
+        verifier = try c.decodeIfPresent(String.self, forKey: .verifier)
+        location = try c.decodeIfPresent(String.self, forKey: .location)
     }
 }
 
@@ -111,7 +129,12 @@ public enum LiqianBackup {
     public static func makeBackup(ledgers: [Ledger], records: [GiftRecord]) -> Data {
         let file = BackupFile(
             ledgers: ledgers.map {
-                BackupLedger(id: $0.id.uuidString, title: $0.title, type: $0.type, date: $0.date, note: $0.note)
+                BackupLedger(
+                    id: $0.id.uuidString, title: $0.title, type: $0.type,
+                    date: $0.date, note: $0.note,
+                    hostName: $0.hostName, scribe: $0.scribe,
+                    verifier: $0.verifier, location: $0.location
+                )
             },
             records: records.map {
                 BackupRecord(

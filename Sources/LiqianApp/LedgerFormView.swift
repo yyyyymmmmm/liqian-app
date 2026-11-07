@@ -18,6 +18,11 @@ struct LedgerFormView: View {
     @State private var customType: String
     @State private var date: Date
     @State private var note: String
+    // 礼谱信息（v2.10：礼簿自身属性，导出时直接读礼簿，不在导出 sheet 里填）
+    @State private var hostName: String
+    @State private var scribe: String
+    @State private var verifier: String
+    @State private var location: String
     @State private var titleError: String?
     @State private var saveTrigger = 0
     @State private var errorTrigger = 0
@@ -35,6 +40,14 @@ struct LedgerFormView: View {
         _customType = State(initialValue: existingIsCustom ? (existing?.type ?? "") : "")
         _date = State(initialValue: existing.map { LiqianDate.date(from: $0.date) } ?? Date())
         _note = State(initialValue: existing?.note ?? "")
+        // 主家：编辑用礼簿自带值；新建时以全局「礼谱落款姓名」设置预填（可在表单里改）
+        _hostName = State(
+            initialValue: existing?.hostName
+                ?? (existing == nil ? (UserDefaults.standard.string(forKey: "hostName") ?? "") : "")
+        )
+        _scribe = State(initialValue: existing?.scribe ?? "")
+        _verifier = State(initialValue: existing?.verifier ?? "")
+        _location = State(initialValue: existing?.location ?? "")
     }
 
     /// 实际保存的事由：选了「自定义」就用输入值，没填则回退「其他」
@@ -77,6 +90,18 @@ struct LedgerFormView: View {
                         TextField("备注", text: $note, prompt: Text("选填"))
                     }
                 }
+                // 礼谱信息（v2.10）：导出礼谱时直接读这本礼簿的属性——
+                // 主家落款与印、书记/核实人落款、举办地点入封面与谱序。皆选填。
+                Section {
+                    libuField("主家", text: $hostName, prompt: "如：杨敏杰")
+                    libuField("书记", text: $scribe, prompt: "记账人姓名，选填")
+                    libuField("核实人", text: $verifier, prompt: "选填")
+                    libuField("举办地点", text: $location, prompt: "如：西故现村，选填")
+                } header: {
+                    Text("礼谱信息")
+                } footer: {
+                    Text("导出礼谱时用：主家落款钤印，书记、核实人列在汇总页落款处，地点写进封面与谱序。")
+                }
             }
             .scrollContentBackground(.hidden)
             .background(Palette.pageBG.ignoresSafeArea())
@@ -95,6 +120,21 @@ struct LedgerFormView: View {
         }
     }
 
+    /// 礼谱信息行：与本表单一致的行首标签样式
+    private func libuField(_ label: String, text: Binding<String>, prompt: String) -> some View {
+        HStack(spacing: LiqianMetrics.spacingSM) {
+            Text(label)
+                .foregroundStyle(Palette.ink)
+            TextField(label, text: text, prompt: Text(prompt))
+        }
+    }
+
+    /// 礼谱属性存法：去首尾空白，空串存 nil（未设）
+    private func nilIfEmpty(_ s: String) -> String? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
     private func save() {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -108,13 +148,21 @@ struct LedgerFormView: View {
             existing.type = finalType
             existing.date = LiqianDate.string(from: date)
             existing.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            existing.hostName = nilIfEmpty(hostName)
+            existing.scribe = nilIfEmpty(scribe)
+            existing.verifier = nilIfEmpty(verifier)
+            existing.location = nilIfEmpty(location)
         } else {
             modelContext.insert(
                 Ledger(
                     title: trimmed,
                     type: finalType,
                     date: LiqianDate.string(from: date),
-                    note: note.trimmingCharacters(in: .whitespacesAndNewlines)
+                    note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+                    hostName: nilIfEmpty(hostName),
+                    scribe: nilIfEmpty(scribe),
+                    verifier: nilIfEmpty(verifier),
+                    location: nilIfEmpty(location)
                 )
             )
         }

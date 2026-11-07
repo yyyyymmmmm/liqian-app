@@ -156,16 +156,31 @@ public final class Ledger {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var type: String
-    /// yyyy-MM-dd
+    /// yyyy-MM-dd（即婚期/办事日子口径，礼谱封面、谱序、纪年都用它）
     public var date: String
     public var note: String
+    // v2.10 礼谱属性（用户拍板：这些是礼簿自身的属性，在建簿/编辑时设置，
+    // 不是导出时临时填）：主家、书记（记账人）、核实人、举办地点。
+    // 全部可选，nil/空表示未设；SwiftData 可选新增属性走轻量迁移，老库自动兼容。
+    public var hostName: String?
+    public var scribe: String?
+    public var verifier: String?
+    public var location: String?
 
-    public init(id: UUID = UUID(), title: String, type: String, date: String, note: String = "") {
+    public init(
+        id: UUID = UUID(), title: String, type: String, date: String, note: String = "",
+        hostName: String? = nil, scribe: String? = nil,
+        verifier: String? = nil, location: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.type = type
         self.date = date
         self.note = note
+        self.hostName = hostName
+        self.scribe = scribe
+        self.verifier = verifier
+        self.location = location
     }
 
     public var isBai: Bool { type == LiqianConstants.baiType }

@@ -31,6 +31,15 @@ public enum MoneyText {
         yuan: "圓", jiao: "角", fen: "分", zheng: "整", negative: "負"
     )
 
+    /// 白事奠儀版（v2.10 礼制）：字表同繁体正式版，唯不缀「整」字
+    /// （奠儀金额写「伍佰圓」不写「伍佰圓整」，零额作「零圓」）。
+    private static let traditionalBaiTables = Tables(
+        digits: ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"],
+        sectionUnits: ["", "萬", "億", "兆"],
+        innerUnits: ["", "拾", "佰", "仟"],
+        yuan: "圓", jiao: "角", fen: "分", zheng: "", negative: "負"
+    )
+
     /// 分 → 金融大写（简体）。口径（银行写法）：
     /// - 整数部分按 4 位分节读，节内零只读一个、节尾零不读；
     ///   低节不足仟位（有前导零）且高节已读时，节间补一个「零」
@@ -48,6 +57,11 @@ public enum MoneyText {
     /// 读法规则与简体版完全一致，只换字表；App 内显示仍用简体版，互不影响。
     public static func chineseUppercaseTraditional(cents: Int) -> String {
         uppercase(cents: cents, tables: traditionalTables)
+    }
+
+    /// 分 → 白事奠儀繁体大写（礼谱 PDF 白事专用）：读法同上，唯不缀「整」字。
+    public static func chineseUppercaseTraditionalBai(cents: Int) -> String {
+        uppercase(cents: cents, tables: traditionalBaiTables)
     }
 
     private static func uppercase(cents: Int, tables: Tables) -> String {

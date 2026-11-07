@@ -83,7 +83,11 @@ enum TrashStore {
                     title: ledger.title,
                     type: ledger.type,
                     date: ledger.date,
-                    note: ledger.note
+                    note: ledger.note,
+                    hostName: ledger.hostName,
+                    scribe: ledger.scribe,
+                    verifier: ledger.verifier,
+                    location: ledger.location
                 ),
                 ledgerRecords: records.map { backupRecord(from: $0) }
             )
@@ -143,7 +147,11 @@ enum TrashStore {
         let ledgers = (try? context.fetch(FetchDescriptor<Ledger>())) ?? []
         if !ledgers.contains(where: { $0.id == lid }) {
             context.insert(
-                Ledger(id: lid, title: bl.title, type: bl.type, date: bl.date, note: bl.note)
+                Ledger(
+                    id: lid, title: bl.title, type: bl.type, date: bl.date, note: bl.note,
+                    hostName: bl.hostName, scribe: bl.scribe,
+                    verifier: bl.verifier, location: bl.location
+                )
             )
         }
         let records = (try? context.fetch(FetchDescriptor<GiftRecord>())) ?? []

@@ -383,7 +383,11 @@ struct MeView: View {
             let newID = bl.idUUID ?? UUID()
             idMap[bl.id] = newID
             modelContext.insert(
-                Ledger(id: newID, title: bl.title, type: bl.type, date: bl.date, note: bl.note)
+                Ledger(
+                    id: newID, title: bl.title, type: bl.type, date: bl.date, note: bl.note,
+                    hostName: bl.hostName, scribe: bl.scribe,
+                    verifier: bl.verifier, location: bl.location
+                )
             )
         }
         var importedRecords = 0
@@ -422,8 +426,9 @@ struct MeView: View {
     }
 }
 
-/// 礼谱落款姓名编辑页：与导出 sheet 共用 @AppStorage("hostName")，
-/// 礼谱的封面落款、谱序落款、主家印都读它；空 = 回退「主家谨识」。
+/// 礼谱落款姓名编辑页（全局默认，@AppStorage("hostName")）：v2.10 起主家是
+/// 礼簿自身属性，本设置只作两件事——新建礼簿时预填其「主家」字段；
+/// 礼簿没设主家时，导出礼谱的落款回退链第二级读它（再空回退「主家谨识」）。
 struct HostNameEditView: View {
     @AppStorage("hostName") private var hostName = ""
     @Environment(\.dismiss) private var dismiss
