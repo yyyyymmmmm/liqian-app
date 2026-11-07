@@ -43,6 +43,7 @@ let project = Project(
                 "UIFileSharingEnabled": true,
                 "LSSupportsOpeningDocumentsInPlace": true,
                 "ITSAppUsesNonExemptEncryption": false,
+                "UILaunchScreen": ["UIColorName": "LaunchBackground"],
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],
