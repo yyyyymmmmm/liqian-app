@@ -24,6 +24,10 @@ struct BatchEntryView: View {
     @State private var saveTrigger = 0
     @State private var errorTrigger = 0
 
+    // 拍照识别（v2.9）：本页顶部入口，与详情「更多」打开同一个识别 flow
+    @State private var showPhotoOCR = false
+    @State private var ocrMessage: String?
+
     // 粘贴导入（v2）：整段文字粘贴 → Core 解析预览 → 成功行入库
     private enum Mode { case rows, paste, ai }
     @State private var mode: Mode = .rows
@@ -71,6 +75,26 @@ struct BatchEntryView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // 拍照识别入口置顶（v2.9）：纸质礼单一拍导入，与下方三种录入方式并列；
+                // 大字模式下入口字号同步放大（现场登记场景一致）
+                Section {
+                    Button {
+                        showPhotoOCR = true
+                    } label: {
+                        Label("拍照识别礼单", systemImage: "camera.viewfinder")
+                            .font(bigMode ? .system(size: 20) : nil)
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    Text("纸质礼单拍一张，自动认出姓名和金额，核对后导入（按收礼记）。")
+                        .font(.footnote)
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                    if let ocrMessage {
+                        Text(ocrMessage)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+
                 Section {
                     Picker("录入方式", selection: $mode) {
                         Text("逐个录入").tag(Mode.rows)
@@ -173,6 +197,11 @@ struct BatchEntryView: View {
                 Button("好", role: .cancel) {}
             } message: {
                 Text(AIAccess.readiness().guideMessage)
+            }
+            .sheet(isPresented: $showPhotoOCR) {
+                PhotoOCRView(ledger: ledger) { n in
+                    ocrMessage = "已通过拍照识别导入 \(n) 笔收礼。"
+                }
             }
         }
     }

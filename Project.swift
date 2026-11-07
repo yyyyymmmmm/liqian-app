@@ -47,6 +47,7 @@ let project = Project(
                 "NSFaceIDUsageDescription": "用 Face ID 保护你的人情账本不被旁人看到",
                 "NSSpeechRecognitionUsageDescription": "用于将语音转写为记账文字",
                 "NSMicrophoneUsageDescription": "用于语音记账，把你说的话转成文字",
+                "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],

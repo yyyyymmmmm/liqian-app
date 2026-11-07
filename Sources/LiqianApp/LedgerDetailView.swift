@@ -22,6 +22,9 @@ struct LedgerDetailView: View {
     @State private var deleteTrigger = 0
     @State private var showExport = false
     @State private var showGreeting = false
+    @State private var showPhotoOCR = false
+    @State private var ocrResultText = ""
+    @State private var showOCRResult = false
 
     private var isBai: Bool { ledger.isBai }
 
@@ -90,7 +93,8 @@ struct LedgerDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // 「更多」是本页唯一管理入口（v2.5 包 1/2 定版）：顺序固定为
-                // 批量补录／导出礼谱 PDF／生成贺词／编辑礼簿／删除礼簿，
+                // 批量补录／拍照识别礼单（v2.9 紧随批量补录，同为成批录入）／
+                // 导出礼谱 PDF／生成贺词／编辑礼簿／删除礼簿，
                 // 删除垫底并标 destructive；原页内行动区与页尾删除区已删，
                 // 编辑礼簿的工具栏铅笔按钮一并收进本菜单，全页只剩这一个入口。
                 Menu {
@@ -99,6 +103,11 @@ struct LedgerDetailView: View {
                         showBatch = true
                     } label: {
                         Label("批量补录", systemImage: "list.bullet.rectangle")
+                    }
+                    Button {
+                        showPhotoOCR = true
+                    } label: {
+                        Label("拍照识别礼单", systemImage: "camera.viewfinder")
                     }
                     // 礼谱 v3：导出走 sheet（确认落款姓名、选谱序文体后现生成）
                     Button {
@@ -155,10 +164,21 @@ struct LedgerDetailView: View {
         .sheet(isPresented: $showExport) {
             LibuExportView(ledger: ledger, records: records)
         }
+        .sheet(isPresented: $showPhotoOCR) {
+            PhotoOCRView(ledger: ledger) { n in
+                ocrResultText = "共导入 \(n) 笔收礼"
+                showOCRResult = true
+            }
+        }
         .alert("批量补录完成", isPresented: $showBatchResult) {
             Button("好") {}
         } message: {
             Text(batchResultText)
+        }
+        .alert("识别导入完成", isPresented: $showOCRResult) {
+            Button("好") {}
+        } message: {
+            Text(ocrResultText)
         }
         .alert(
             "删除这笔记录？",
