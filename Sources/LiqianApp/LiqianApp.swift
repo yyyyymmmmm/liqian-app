@@ -12,6 +12,9 @@ struct LiqianApp: App {
     /// 全 App 共用同一个容器，降级路径见 CloudSync.swift。
     @StateObject private var cloudSync = CloudSyncManager()
 
+    /// Pro 权益单点（v5）：全 App 共用一个实例，各门控面只问它
+    @StateObject private var entitlements = EntitlementCenter()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -19,6 +22,7 @@ struct LiqianApp: App {
                 // （v2.4 必修：此前日期选择器显示 "Nov 7, 2026" 英文格式）
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environmentObject(cloudSync)
+                .environmentObject(entitlements)
         }
         .modelContainer(cloudSync.container)
     }

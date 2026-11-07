@@ -15,6 +15,9 @@ struct MeView: View {
     @Environment(\.modelContext) private var modelContext
     /// iCloud 同步状态（容器在启动时选定，开关改动下次启动生效，见 CloudSync.swift）
     @EnvironmentObject private var cloudSync: CloudSyncManager
+    /// Pro 权益单点（v5）：本页只问它，不直接碰 StoreKit
+    @EnvironmentObject private var entitlements: EntitlementCenter
+    @State private var showPaywall = false
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
@@ -241,6 +244,24 @@ struct MeView: View {
 
                 Section {
                     NavigationLink {
+                        PaywallView()
+                    } label: {
+                        entryLabel(
+                            icon: "seal",
+                            title: "礼记 Pro",
+                            subtitle: entitlements.isPro
+                                ? "已开通 · 全部导出权益可用"
+                                : "买断开通 Excel、纪念版礼谱、家族汇册与印刷版礼谱"
+                        )
+                    }
+                } header: {
+                    Text("礼记 Pro")
+                } footer: {
+                    Text("一次买断、不自动续费。基础礼谱 PDF 与完整备份始终免费。")
+                }
+
+                Section {
+                    NavigationLink {
                         AppearanceView()
                     } label: {
                         HStack(spacing: LiqianMetrics.spacingSM) {
@@ -403,6 +424,9 @@ struct MeView: View {
             } message: {
                 Text(infoMessage)
             }
+            .sheet(isPresented: $showPaywall) {
+                NavigationStack { PaywallView() }
+            }
             .sensoryFeedback(.success, trigger: importTrigger)
         }
     }
@@ -431,9 +455,29 @@ struct MeView: View {
         .contentShape(Rectangle())
     }
 
+    /// CSV 表格导出（v5 起为 Pro 门控面之一）：未开通时整行改走付费墙，
+    /// CSV 文件照常在后台生成（生成不等于导出，分享动作才受门控）；
+    /// 全量 JSON 备份（机器可读、能带走）不在门控内，见数据组备份行。
     private var csvEntryRow: some View {
         Group {
-            if let csvURL {
+            if !entitlements.canUse(.excelExport) {
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        entryLabel(
+                            icon: "tablecells",
+                            title: "导出 CSV",
+                            subtitle: "导出为 CSV 表格，可用 Excel 打开"
+                        )
+                        Spacer()
+                        Text("Pro")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+            } else if let csvURL {
                 ShareLink(item: csvURL) {
                     entryLabel(
                         icon: "tablecells",

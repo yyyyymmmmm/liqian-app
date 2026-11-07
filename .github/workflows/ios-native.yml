@@ -30,9 +30,15 @@ jobs:
       - name: SwiftLint
         run: swiftlint lint --quiet || true
 
+      # 侧载机主旗（v5）：本 CI 产物是机主自用侧载包，构建时注入
+      # LIQIAN_OWNER_BUILD，EntitlementCenter 据此放行全部 Pro 权益
+      # （机主自己的纪念版/汇册/印刷版导出不能被自己的付费墙拦住）。
+      # ⚠️ 上架前必须移除：App Store 构建绝不能带此旗，移除步骤见
+      # docs/V5-NOTES.md「LIQIAN_OWNER_BUILD」节。
       - name: Build (no codesign)
         run: |
           set -o pipefail
+          echo "LIQIAN_OWNER_BUILD=ON (sideload owner build; must NOT ship to App Store)"
           xcodebuild build \
             -project Liqian.xcodeproj \
             -scheme LiqianApp \
@@ -40,6 +46,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS=LIQIAN_OWNER_BUILD \
             | tee build-full.log
           grep -E "error:|warning: .*deprecated|BUILD" build-full.log | head -60 || true
 

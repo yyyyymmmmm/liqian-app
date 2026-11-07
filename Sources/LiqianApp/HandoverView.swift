@@ -15,6 +15,9 @@ struct HandoverView: View {
     let records: [GiftRecord]
     let members: [LedgerMember]
 
+    /// Pro 权益单点（v5）：纪念版礼谱是门控面，传承包本身保持免费
+    @EnvironmentObject private var entitlements: EntitlementCenter
+    @State private var showPaywall = false
     @State private var packageURL: URL?
     @State private var noteURL: URL?
     @State private var memorialURL: URL?
@@ -89,10 +92,23 @@ struct HandoverView: View {
 
             Section {
                 Button {
-                    makeMemorial()
+                    // v5 门控：未开通 Pro 点按直达付费墙，不先生成再拦截
+                    if entitlements.canUse(.memorialBook) {
+                        makeMemorial()
+                    } else {
+                        showPaywall = true
+                    }
                 } label: {
-                    Label("生成纪念版礼谱", systemImage: "book.closed")
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        Label("生成纪念版礼谱", systemImage: "book.closed")
+                        Spacer()
+                        if !entitlements.canUse(.memorialBook) {
+                            Text("Pro")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Palette.primary)
+                        }
+                    }
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
                 }
                 if generating {
                     HStack(spacing: LiqianMetrics.spacingSM) {
@@ -125,6 +141,9 @@ struct HandoverView: View {
         .background(Palette.pageBG.ignoresSafeArea())
         .sensoryFeedback(.success, trigger: generateTrigger)
         .sensoryFeedback(.warning, trigger: generateErrorTrigger)
+        .sheet(isPresented: $showPaywall) {
+            NavigationStack { PaywallView() }
+        }
         .navigationTitle("交接与纪念版")
         .navigationBarTitleDisplayMode(.inline)
     }

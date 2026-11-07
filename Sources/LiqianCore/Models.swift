@@ -24,6 +24,10 @@ public enum LiqianConstants {
     public static let calendarLunar = "农历"
     /// 提前天数可选值（天）：当天 / 提前 1 天 / 提前 3 天 / 提前 7 天
     public static let reminderLeadOptions = [0, 1, 3, 7]
+
+    // 买断（v5）：Pro 一次性买断的 App Store 产品 id（价格在 App Store
+    // Connect 侧维护，代码只认 id、价格文案一律读 Product.displayPrice）
+    public static let proProductID = "site.didichou.liqian.pro"
 }
 
 // MARK: - 日期（存储一律 String yyyy-MM-dd，与 Flutter 版一致）
