@@ -52,7 +52,7 @@ enum TrashStore {
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(items) else { return }
-        try? data.write(to: fileURL, atomically: true)
+        try? data.write(to: fileURL, options: [.atomic])
     }
 
     // MARK: - 归档（删除前调用）

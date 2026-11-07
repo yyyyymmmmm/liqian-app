@@ -6,9 +6,9 @@ import Foundation
 /// openAppWhenRun = true：perform 在 App 进程外先跑，只落一个标记，
 /// ContentView 在 scenePhase 变 .active 时读标记弹出记一笔表单。
 struct QuickRecordIntent: AppIntent {
-    static var title: LocalizedStringResource = "记一笔礼钱"
-    static var description = IntentDescription("打开礼钱账本，记一笔新的人情往来。")
-    static var openAppWhenRun = true
+    static let title: LocalizedStringResource = "记一笔礼钱"
+    static let description = IntentDescription("打开礼钱账本，记一笔新的人情往来。")
+    static let openAppWhenRun = true
 
     @MainActor
     func perform() async throws -> some IntentResult {
