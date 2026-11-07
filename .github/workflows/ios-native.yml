@@ -40,7 +40,8 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            | tee build-full.log | grep -E "error:|warning: .*deprecated|BUILD" | head -60
+            | tee build-full.log
+          grep -E "error:|warning: .*deprecated|BUILD" build-full.log | head -60 || true
 
       - name: Unit tests (LiqianCore)
         run: |
@@ -51,7 +52,8 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             -only-testing:LiqianCoreTests \
             CODE_SIGNING_ALLOWED=NO \
-            | tee test-full.log | grep -E "error:|Test Case|Executed|TEST" | head -60
+            | tee test-full.log
+          grep -E "error:|Test Case|Executed|TEST" test-full.log | head -60 || true
 
       - name: Package unsigned IPA
         run: |
