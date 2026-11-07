@@ -68,6 +68,10 @@ struct RecordBlessingsView: View {
                 if recorder.isRecording { recorder.cancel() }
             }
         }
+        // 录音起停触感（v4.7 审计补齐）：现场吵闹看不清状态时，手上有一下确认
+        .sensoryFeedback(trigger: recorder.isRecording) { _, isRecording in
+            isRecording ? .start : .stop
+        }
     }
 
     private func blessingRow(_ blessing: VoiceBlessing) -> some View {

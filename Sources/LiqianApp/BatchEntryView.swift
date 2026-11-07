@@ -30,6 +30,15 @@ struct BatchEntryView: View {
     @State private var saveTrigger = 0
     @State private var errorTrigger = 0
 
+    /// 逐行录入焦点链（v4.7 审计补齐）：姓名格按回车直达本行金额格，
+    /// 照着纸礼簿录入时少抬手点一轮。金额格是数字键盘（无回车键），
+    /// 到下一行的跳转仍靠点按——整链方案列入打磨 backlog。
+    private enum EntryField: Hashable {
+        case person(Int)
+        case amount(Int)
+    }
+    @FocusState private var focusedField: EntryField?
+
     // 拍照识别（v2.9）：本页顶部入口，与详情「更多」打开同一个识别 flow
     @State private var showPhotoOCR = false
     @State private var ocrMessage: String?
@@ -142,8 +151,12 @@ struct BatchEntryView: View {
                                     .frame(width: 24)
                                 TextField("姓名 / 称呼", text: $rows[i].person)
                                     .font(bigMode ? .system(size: 20) : nil)
+                                    .focused($focusedField, equals: .person(i))
+                                    .submitLabel(.next)
+                                    .onSubmit { focusedField = .amount(i) }
                                 TextField("金额（元）", text: $rows[i].amount, prompt: Text("金额"))
                                     .keyboardType(.decimalPad)
+                                    .focused($focusedField, equals: .amount(i))
                                     .font(bigMode ? .system(size: 34, weight: .semibold).monospacedDigit() : nil)
                                     .frame(width: bigMode ? 150 : 96)
                                 Button(role: .destructive) {

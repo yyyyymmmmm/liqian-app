@@ -193,7 +193,7 @@ struct LedgersView: View {
             .alert("示例数据已生成", isPresented: $showSampleDone) {
                 Button("好") {}
             } message: {
-                Text("「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
+                Text("「首页」多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
             }
         }
     }

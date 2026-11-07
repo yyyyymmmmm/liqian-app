@@ -308,8 +308,8 @@ struct RecordFormView: View {
                 .font(.footnote)
                 .foregroundStyle(Palette.sub)
         } else {
-            labeledRow("账本") {
-                Picker("账本", selection: $selectedLedgerID) {
+            labeledRow("礼簿") {
+                Picker("礼簿", selection: $selectedLedgerID) {
                     ForEach(allLedgers) { l in
                         Text(l.title).tag(l.id as UUID?)
                     }
@@ -516,7 +516,7 @@ struct RecordFormView: View {
             if showSupplements {
                 VStack(spacing: LiqianMetrics.spacingSM) {
                     if !needsLedgerPicker, let l = effectiveLedger {
-                        labeledRow("账本") {
+                        labeledRow("礼簿") {
                             Text(l.title)
                                 .foregroundStyle(Palette.sub)
                         }

@@ -200,7 +200,7 @@ struct RemindersView: View {
                     Text(day.kind)
                         .font(.caption)
                         .foregroundStyle(Palette.primary)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, LiqianMetrics.spacingS)
                         .padding(.vertical, 2)
                         .background(Palette.primaryTint, in: Capsule())
                 }
@@ -347,8 +347,8 @@ struct ReminderDayFormView: View {
                                         Text(p.name)
                                             .font(.subheadline)
                                             .foregroundStyle(Palette.primary)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 5)
+                                            .padding(.horizontal, LiqianMetrics.spacingSM)
+                                            .padding(.vertical, LiqianMetrics.spacingXS)
                                             .background(Palette.primaryTint, in: Capsule())
                                     }
                                     .buttonStyle(.plain)

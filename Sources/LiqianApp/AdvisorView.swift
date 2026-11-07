@@ -17,6 +17,8 @@ struct AdvisorView: View {
     @State private var messages: [Message] = []
     @State private var input = ""
     @State private var isAsking = false
+    /// 答案落定触感（v4.7 审计补齐）：提问全程原无任何触感，答案 append 时 +1
+    @State private var answerTrigger = 0
     @State private var personRoute: PeopleView.NameRoute?
 
     private struct Message: Identifiable {
@@ -75,6 +77,7 @@ struct AdvisorView: View {
             composer
         }
         .background(Palette.pageBG.ignoresSafeArea())
+        .sensoryFeedback(.success, trigger: answerTrigger)
         .navigationTitle("问账")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $personRoute) { route in
@@ -144,6 +147,7 @@ struct AdvisorView: View {
                 .accessibilityLabel(transcriber.isRecording ? "停止录音" : "语音输入")
 
                 TextField("问一句，如：我和大舅谁欠谁", text: $input)
+                    .submitLabel(.send)
                     .onSubmit { ask(input) }
 
                 Button {
@@ -478,6 +482,7 @@ struct AdvisorView: View {
             } else {
                 messages.append(Message(kind: .result(.unsupported)))
             }
+            answerTrigger += 1
         }
     }
 

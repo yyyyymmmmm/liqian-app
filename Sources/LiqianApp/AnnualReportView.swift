@@ -13,6 +13,8 @@ struct AnnualReportView: View {
     @State private var selectedYear: String = ""
     @State private var shareImage: Image?
     @State private var shareError: String?
+    /// 图卡生成成功触感（v4.7 审计补齐）：原来生成完只有图出现、无确认反馈
+    @State private var shareTrigger = 0
 
     /// 统计隔离（PRO-AUDIT-2 第 2 项）：示例账本的记录不计入年度报告
     private var snapshots: [EntrySnapshot] {
@@ -91,6 +93,7 @@ struct AnnualReportView: View {
             .padding(LiqianMetrics.spacingM)
         }
         .background(Palette.groupedBackground.ignoresSafeArea())
+        .sensoryFeedback(.success, trigger: shareTrigger)
         .navigationTitle("人情年度报告")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -292,6 +295,7 @@ struct AnnualReportView: View {
         if let ui = renderer.uiImage {
             shareImage = Image(uiImage: ui)
             shareError = nil
+            shareTrigger += 1
         } else {
             // 生成失败必须有反馈，不许静默（F5）
             shareError = "图卡生成失败，请重试"

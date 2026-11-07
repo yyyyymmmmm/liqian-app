@@ -19,6 +19,8 @@ struct SignatureCaptureView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var drawing = PKDrawing()
     @State private var canvas = PKCanvasView()
+    /// 保存成功触感（v4.7 审计补齐）：原来点「完成」只有页面消失、无任何确认感
+    @State private var saveTrigger = 0
 
     private var isEmpty: Bool { drawing.strokes.isEmpty }
 
@@ -61,6 +63,7 @@ struct SignatureCaptureView: View {
                 }
             }
         }
+        .sensoryFeedback(.success, trigger: saveTrigger)
     }
 
     private func save() {
@@ -69,6 +72,7 @@ struct SignatureCaptureView: View {
         let rect = drawing.bounds.insetBy(dx: -16, dy: -16)
         let image = drawing.image(from: rect, scale: 2.0)
         guard let png = image.pngData() else { return }
+        saveTrigger += 1
         onSave(png)
         dismiss()
     }

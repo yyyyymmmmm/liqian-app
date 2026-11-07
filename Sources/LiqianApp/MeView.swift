@@ -461,7 +461,7 @@ struct MeView: View {
             showInfo(title: "示例数据已清除", message: "示例数据已删除，你的数据未受影响。")
         } else {
             SampleData.generate(into: modelContext)
-            showInfo(title: "示例数据已生成", message: "「礼簿」页多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
+            showInfo(title: "示例数据已生成", message: "「首页」多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
         }
     }
 
