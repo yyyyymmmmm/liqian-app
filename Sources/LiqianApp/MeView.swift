@@ -18,6 +18,8 @@ struct MeView: View {
     /// Pro 权益单点（v5）：本页只问它，不直接碰 StoreKit
     @EnvironmentObject private var entitlements: EntitlementCenter
     @State private var showPaywall = false
+    /// 重看引导（v5 追加）：与首开同一 OnboardingView、同一呈现模式
+    @State private var showOnboardingReplay = false
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
@@ -362,6 +364,19 @@ struct MeView: View {
                                 .foregroundStyle(Palette.stone)
                         }
                     }
+                    // 重看引导（v5 追加定版）：覆盖安装后数据与标记都在，
+                    // 首开自动呈现不会再触发——留这个手动入口随时重看
+                    // 三页引导（与首开同一实现、同一全屏呈现、可跳过）。
+                    Button {
+                        showOnboardingReplay = true
+                    } label: {
+                        entryLabel(
+                            icon: "sparkles",
+                            title: "重看引导",
+                            subtitle: "礼谱成书、数据在自己手里、起第一本礼簿"
+                        )
+                    }
+                    .buttonStyle(.plain)
                     Toggle(isOn: $privacyLock) {
                         HStack(spacing: LiqianMetrics.spacingSM) {
                             Image(systemName: "faceid")
@@ -426,6 +441,9 @@ struct MeView: View {
             }
             .sheet(isPresented: $showPaywall) {
                 NavigationStack { PaywallView() }
+            }
+            .fullScreenCover(isPresented: $showOnboardingReplay) {
+                OnboardingView { showOnboardingReplay = false }
             }
             .sensoryFeedback(.success, trigger: importTrigger)
         }

@@ -21,6 +21,10 @@ struct ContentView: View {
     @State private var backgroundedAt: Date?
     @State private var showQuickRecord = false
     @State private var tabSelection = 0
+    /// 首开引导（v5）：一次性标记未置位时呈现；隐私锁未解开前不呈现
+    /// （cover 会盖在锁屏之上）。「我的 → 关于 → 重看引导」走 MeView
+    /// 自己的呈现，不经这里、也不动这个标记。
+    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: OnboardingView.doneKey)
     /// 小组件人物深链（v4.5）：liqian://person/<姓名> 的待达姓名，
     /// 交给 PeopleView 消费（切到往来页后由它置人物路由并清空）
     @State private var personDeepLinkName: String?
@@ -36,6 +40,23 @@ struct ContentView: View {
     /// 切到后台/多任务预览时是否要盖模糊遮罩
     private var shieldVisible: Bool {
         privacyLockEnabled && scenePhase != .active
+    }
+
+    /// 首开呈现绑定（v5）：隐私锁未解开时恒 false（cover 不盖锁屏），
+    /// 解锁后自动接上；被关掉（完成/跳过）即置一次性标记，此后不再
+    /// 自动呈现（重看走「我的 → 关于 → 重看引导」）。
+    private var onboardingPresentation: Binding<Bool> {
+        Binding(
+            get: { showOnboarding && !(privacyLockEnabled && isLocked) },
+            set: { presented in
+                if !presented { finishOnboarding() }
+            }
+        )
+    }
+
+    private func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: OnboardingView.doneKey)
+        showOnboarding = false
     }
 
     /// 当前外观主题（「我的 → 外观」切换，默认白天）
@@ -137,6 +158,9 @@ struct ContentView: View {
             checkShareImport()
             checkShortcutPending()
             calibrateReminders()
+        }
+        .fullScreenCover(isPresented: onboardingPresentation) {
+            OnboardingView { finishOnboarding() }
         }
         .onChange(of: isLocked) { _, locked in
             // 分享导入（v4.5）：锁定状态下暂存不承接，解锁一刻补检，
