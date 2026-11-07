@@ -68,6 +68,8 @@ struct MeView: View {
                 asCardRow(csvRow)
                 asCardRow(jsonExportRow)
                 asCardRow(jsonImportRow)
+                asCardRow(sampleDataRow)
+                asCardRow(trashRow)
 
                 asCardRow(privacyCard)
                 asCardRow(aboutCard)
@@ -378,6 +380,43 @@ struct MeView: View {
                 icon: "tray.and.arrow.down",
                 title: "从备份恢复",
                 subtitle: "选一个备份文件，覆盖现在的数据"
+            )
+        }
+        .buttonStyle(.plain)
+        .cardSurface(padding: 0)
+    }
+
+    private var hasSamples: Bool { SampleData.hasSamples(ledgers: ledgers) }
+
+    /// 示例数据开关：生成两本示例礼簿看效果，看完一键清掉（不碰真实数据）
+    private var sampleDataRow: some View {
+        Button {
+            if hasSamples {
+                SampleData.clearSamples(ledgers: ledgers, records: records, in: modelContext)
+                showInfo(title: "示例数据已清除", message: "两本示例礼簿和里面的记录都清掉了，你自己的数据没动。")
+            } else {
+                SampleData.generate(into: modelContext)
+                showInfo(title: "示例数据已生成", message: "「礼簿」页多了两本示例礼簿，人情页能看到往来差额和备礼清单的效果。")
+            }
+        } label: {
+            actionRow(
+                icon: "sparkles",
+                title: "示例数据",
+                subtitle: hasSamples ? "已生成示例礼簿，点这里清除" : "生成两本示例礼簿，先看看效果"
+            )
+        }
+        .buttonStyle(.plain)
+        .cardSurface(padding: 0)
+    }
+
+    private var trashRow: some View {
+        NavigationLink {
+            TrashView()
+        } label: {
+            actionRow(
+                icon: "trash",
+                title: "回收站",
+                subtitle: "删掉的礼簿和记录，30 天内能恢复"
             )
         }
         .buttonStyle(.plain)

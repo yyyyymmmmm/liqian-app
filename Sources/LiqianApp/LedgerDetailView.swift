@@ -190,13 +190,13 @@ struct LedgerDetailView: View {
             }
             Button("取消", role: .cancel) { recordToDelete = nil }
         } message: {
-            Text("删了恢复不了。")
+            Text("删除后 30 天内可以在「我的 → 回收站」恢复。")
         }
         .confirmationDialog("删除这本礼簿？", isPresented: $confirmDeleteLedger, titleVisibility: .visible) {
             Button("删除", role: .destructive) { deleteLedger() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("礼簿里的记录会一并删除，删了恢复不了。")
+            Text("礼簿里的记录会一并删除，30 天内可以在「我的 → 回收站」恢复。")
         }
         .sensoryFeedback(.warning, trigger: deleteTrigger)
     }
@@ -307,12 +307,14 @@ struct LedgerDetailView: View {
     }
 
     private func deleteRecord(_ r: GiftRecord) {
+        TrashStore.archive(record: r)
         modelContext.delete(r)
         try? modelContext.save()
         deleteTrigger += 1
     }
 
     private func deleteLedger() {
+        TrashStore.archive(ledger: ledger, records: records)
         for r in records {
             modelContext.delete(r)
         }

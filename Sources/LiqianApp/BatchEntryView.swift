@@ -15,6 +15,8 @@ struct BatchEntryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    /// 现场大字模式（办席当天用）：字号与行高放大，持久化记住选择
+    @AppStorage("batchBigMode") private var bigMode = false
     @State private var direction = LiqianConstants.received
     @State private var rows: [Row] = (0..<4).map { _ in Row() }
     @State private var errorRow: Int?
@@ -63,6 +65,8 @@ struct BatchEntryView: View {
                         Text("随礼（我送出去）").tag(LiqianConstants.given)
                     }
                     .pickerStyle(.segmented)
+                    Toggle("现场大字", isOn: $bigMode)
+                        .tint(isBai ? Palette.baiPrimary : Palette.primary)
                     Text("照着旧礼簿一行行填就行。关系先按「朋友」、方式先按「现金」记，日期是今天，记完点开单笔可以再改。")
                         .font(.system(size: 12.5))
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
@@ -81,9 +85,11 @@ struct BatchEntryView: View {
                                     .foregroundStyle(Palette.stone)
                                     .frame(width: 24)
                                 TextField("姓名 / 称呼", text: $rows[i].person)
+                                    .font(bigMode ? .system(size: 20) : nil)
                                 TextField("金额（元）", text: $rows[i].amount, prompt: Text("金额"))
                                     .keyboardType(.decimalPad)
-                                    .frame(width: 96)
+                                    .font(bigMode ? .liqianMoney(size: 34) : nil)
+                                    .frame(width: bigMode ? 150 : 96)
                                 Button(role: .destructive) {
                                     if rows.count > 1 {
                                         rows.remove(at: i)
@@ -101,7 +107,7 @@ struct BatchEntryView: View {
                                     .padding(.leading, 32)
                             }
                         }
-                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .frame(minHeight: bigMode ? 76 : LiqianMetrics.minTapTarget)
                     }
                     Button {
                         rows.append(Row())
@@ -114,6 +120,9 @@ struct BatchEntryView: View {
             }
             .scrollContentBackground(.hidden)
             .background((isBai ? Palette.baiPaper : Palette.paper).ignoresSafeArea())
+            .safeAreaInset(edge: .top, spacing: 0) {
+                liveSummaryBar
+            }
             .navigationTitle("批量补录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -130,6 +139,32 @@ struct BatchEntryView: View {
             .sensoryFeedback(.success, trigger: saveTrigger)
             .sensoryFeedback(.warning, trigger: errorTrigger)
             .sensoryFeedback(.selection, trigger: direction)
+        }
+    }
+
+    /// 实时汇总条（两种录入模式通用）：本簿已记笔数/合计/最近一笔，
+    /// 数据走 @Query，刚录进去的立刻算进来
+    private var liveSummaryBar: some View {
+        let mine = allRecords.filter { $0.ledgerID == ledger.id }
+        let total = mine.reduce(0) { $0 + $1.amountCents }
+        return HStack(spacing: 6) {
+            Text("本簿已记 \(mine.count) 笔 · 合计 \(LedgerMath.fmtMoney(cents: total))")
+            if let latest = mine.last {
+                Text("· 最近：\(latest.person) \(LedgerMath.fmtMoney(cents: latest.amountCents))")
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isBai ? Palette.baiPaper : Palette.paper)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(isBai ? Palette.baiLine : Palette.hairline)
+                .frame(height: 1)
         }
     }
 
@@ -232,6 +267,7 @@ struct BatchEntryView: View {
                     .foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? ""))
+                        .font(bigMode ? .system(size: 17) : nil)
                         .foregroundStyle(Palette.ink)
                     if existingNames.contains(name) {
                         Text("本簿已有此人，导入后并列保存")

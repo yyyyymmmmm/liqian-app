@@ -274,7 +274,7 @@ struct RecordFormView: View {
                 Button("删除", role: .destructive) { deleteExisting() }
                 Button("取消", role: .cancel) {}
             } message: {
-                Text("删了恢复不了。")
+                Text("删除后 30 天内可以在「我的 → 回收站」恢复。")
             }
             .onAppear {
                 if needsLedgerPicker, selectedLedgerID == nil {
@@ -466,6 +466,7 @@ struct RecordFormView: View {
 
     private func deleteExisting() {
         guard let existing else { return }
+        TrashStore.archive(record: existing)
         modelContext.delete(existing)
         try? modelContext.save()
         deleteTrigger += 1

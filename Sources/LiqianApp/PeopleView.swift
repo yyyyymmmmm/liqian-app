@@ -4,6 +4,7 @@ import LiqianCore
 import LiqianDesign
 
 struct PeopleView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @State private var query = ""
@@ -64,12 +65,20 @@ struct PeopleView: View {
                     }
                 } else {
                     if summaries.isEmpty {
-                        Text("还没有往来记录，先去礼簿里记一笔。")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Palette.stone)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .padding(.top, 32)
+                        VStack(spacing: LiqianMetrics.spacingS) {
+                            Text("还没有往来记录，先去礼簿里记一笔。")
+                                .font(.system(size: 15))
+                                .foregroundStyle(Palette.stone)
+                            Button("生成示例数据，先看看效果") {
+                                SampleData.generate(into: modelContext)
+                            }
+                            .foregroundStyle(Palette.primary)
+                            .frame(minHeight: LiqianMetrics.minTapTarget)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .padding(.top, 32)
                     } else {
                         ForEach(summaries) { p in personRow(p) }
                     }

@@ -48,10 +48,35 @@ let project = Project(
             ]),
             sources: ["Sources/LiqianApp/**"],
             resources: ["App/Resources/**"],
+            entitlements: .dictionary([
+                "com.apple.security.application-groups": .array([
+                    .string("group.site.didichou.liqian"),
+                ]),
+            ]),
             dependencies: [
                 .target(name: "LiqianCore"),
                 .target(name: "LiqianDesign"),
+                .target(name: "LiqianWidget"),
             ]
+        ),
+        .target(
+            name: "LiqianWidget",
+            destinations: .iOS,
+            product: .appExtension,
+            bundleId: "site.didichou.liqian.widget",
+            deploymentTargets: iOS26,
+            infoPlist: .extendingDefault(with: [
+                "NSExtension": [
+                    "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
+                ],
+            ]),
+            sources: ["Sources/LiqianWidget/**"],
+            entitlements: .dictionary([
+                "com.apple.security.application-groups": .array([
+                    .string("group.site.didichou.liqian"),
+                ]),
+            ]),
+            dependencies: [.target(name: "LiqianCore")]
         ),
         .target(
             name: "LiqianCoreTests",

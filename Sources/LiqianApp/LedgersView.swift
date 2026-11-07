@@ -5,6 +5,7 @@ import LiqianCore
 import LiqianDesign
 
 struct LedgersView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var records: [GiftRecord]
     @State private var showNewLedger = false
@@ -263,17 +264,22 @@ struct LedgersView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: LiqianMetrics.spacingS) {
-            Text("还没有礼簿，从最近一场事开始记。")
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.stone)
+        ContentUnavailableView {
+            Label("还没有礼簿", systemImage: "book.closed")
+        } description: {
+            Text("从最近一场事开始记。")
+        } actions: {
             Button("新建第一本礼簿") {
                 showNewLedger = true
             }
             .foregroundStyle(Palette.primary)
             .frame(minHeight: LiqianMetrics.minTapTarget)
+            Button("先看看示例数据") {
+                SampleData.generate(into: modelContext)
+            }
+            .foregroundStyle(Palette.stone)
+            .frame(minHeight: LiqianMetrics.minTapTarget)
         }
-        .frame(maxWidth: .infinity)
         .padding(.top, 48)
     }
 
