@@ -5,6 +5,7 @@ import LiqianDesign
 /// 隐私锁的生物/密码验证封装。
 /// 用 .deviceOwnerAuthentication：有 Face ID/Touch ID 先走生物识别，
 /// 没有或多次失败自动落到系统锁屏密码兜底。
+@MainActor
 enum AppLockAuthenticator {
     /// 正在验证中标记，避免冷启动 onAppear 与回前台逻辑叠加弹两次窗
     private static var inFlight = false
@@ -23,7 +24,7 @@ enum AppLockAuthenticator {
             return
         }
         context.evaluatePolicy(policy, localizedReason: "解锁礼钱账本") { success, _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 inFlight = false
                 completion(success)
             }
