@@ -3,11 +3,15 @@
 分支 `feat/v511-report-home`，基线 `feat/v510-stats-relations` 顶端（v5.10）。
 规格来源：docs/V58-AUDIT.md 的 #8、#9 两节与父级定版口径。
 
-## 验收（待回填）
+## 验收（已实测）
 
-- CI：**待回填**
-- 单测：**待回填**（基线 285，新增 AnnualHighlightsTests 8 例）
-- 解包验：**待回填**（目标 5.11.0/71 ×2、无 LiqianShare.appex、AnalyzerFeeder 与 TypewriterMarkdownText 零改动）
+- CI：run **42462809477** success（SwiftLint／Build／单测／预签断言／打包全绿）
+- 单测：**293 个、0 失败**（285 基线＋新增 AnnualHighlightsTests 8 例）
+- 解包验：App 与 Widget 均 **5.11.0/71**；PlugIns 仅 LiqianWidget.appex、
+  **无 LiqianShare.appex**；对基线 diff 确认 AnalyzerFeeder 与
+  AdvisorView（TypewriterMarkdownText 所在）**零改动**
+- IPA：`~/workspace/your_files/liqian-v5.11/liqian-native-unsigned.ipa`
+  （4,459,001 字节，SideStore 覆盖安装、数据不动）
 
 ## #8 年度报告：问题 → 改法对照（审计 9 条）
 
