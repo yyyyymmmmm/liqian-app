@@ -3,10 +3,13 @@ import SwiftUI
 import LiqianCore
 import LiqianDesign
 
-/// 对话管家（v4.4）：自然语言查账。混合架构——
-/// DeepSeek 只把问题解析成意图（类型＋人名/年份/方向/事由），金额一律由
-/// AdvisorEngine 在本机用账目快照计算，模型输出里就算夹带数字也会在解码层被丢弃；
-/// AI 未就绪或解析失败时走 AdvisorRules 关键词兜底。
+/// 对话管家：自然语言查账。
+/// v5.2 主路径（工具问答）：AI 就绪时走 DeepSeek function calling——模型
+/// 决定调哪些本地工具（AdvisorToolEngine 对账目快照现查），只把查到的
+/// 结果回给模型组织语言；数字只出自工具结果，提示词写死查不到就明说。
+/// v4.4 管线（保留为降级）：工具路径失败时，DeepSeek 只解析意图（类型＋
+/// 人名/年份/方向/事由）→ AdvisorEngine 本地算数出结构化卡片；AI 未就绪
+/// 或解析失败再走 AdvisorRules 关键词兜底。
 /// 会话只在本页内存里，离开即散（本期口径，不落库）。
 struct AdvisorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,6 +30,9 @@ struct AdvisorView: View {
         enum Kind {
             case user(String)
             case result(AdvisorResult)
+            /// v5.2 工具问答的文字答复：内容由模型组织语言，
+            /// 数字只许来自工具结果（系统提示词写死，见 toolSystemPrompt）
+            case answer(String)
             /// 纯文案答复（没听懂、没找到人等，文案在 Core 结果之外由本层拼）
             case note(String)
         }
@@ -40,7 +46,16 @@ struct AdvisorView: View {
         LedgerMath.people(from: snapshots).map(\.name)
     }
 
-    private static let examples = ["谁还没回礼", "我和大舅谁欠谁", "今年一共收了多少"]
+    /// 示例问题 chips（v5.2 扩面：查人/对比/趋势/场合/安排各一例，
+    /// 点即问，让用户一眼知道现在能问什么——覆盖表见 V52-NOTES）
+    private static let examples = [
+        "谁还没回礼",
+        "我和大舅谁欠谁",
+        "今年和去年比，收礼哪个多",
+        "婚礼一共收了多少",
+        "最近三个月每月随了多少",
+        "下一场是什么时候，备礼备了吗",
+    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,7 +113,7 @@ struct AdvisorView: View {
             Text("问我一句，我从你的账里查。")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            Text("比如谁还没回礼、和谁谁谁欠谁、今年一共收了多少。金额都是按本机账目现算的。")
+            Text("比如谁还没回礼、和谁欠谁、今年和去年比哪个多、最近几个月的趋势、下一场安排。金额都由工具按本机账目现查现算。")
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
@@ -168,7 +183,7 @@ struct AdvisorView: View {
                 .disabled(inputEmpty || isAsking)
                 .accessibilityLabel("发送问题")
             }
-            Text("问账时只有问题文字会发给 DeepSeek 帮着理解，账目数据只在本机计算，不外发。")
+            Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。")
                 .font(.caption)
                 .foregroundStyle(Palette.stone)
         }
@@ -198,6 +213,12 @@ struct AdvisorView: View {
             }
         case .result(let result):
             resultCard(result)
+        case .answer(let text):
+            Text(text)
+                .font(.body)
+                .foregroundStyle(Palette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .liqianCardSurface()
         case .note(let text):
             Text(text)
                 .font(.footnote)
@@ -474,7 +495,24 @@ struct AdvisorView: View {
         isAsking = true
         let entries = snapshots
         let names = peopleNames
+        let toolContext = AdvisorToolContext(
+            entries: entries,
+            ledgers: ledgers.map {
+                AdvisorToolContext.LedgerInfo(id: $0.id, title: $0.title, type: $0.type, date: $0.date)
+            },
+            today: LiqianDate.todayString()
+        )
         Task {
+            // v5.2 主路径：AI 就绪先走工具问答（模型调本地工具查数、再组织语言）；
+            // 工具路径任何失败（接口不支持 tools/网络/轮数耗尽）落回 v4.4
+            // 意图解析＋结构化卡片管线，卡片能力不回归。
+            if AIAccess.readiness() == .ready,
+               let text = await answerWithTools(question: question, context: toolContext) {
+                isAsking = false
+                messages.append(Message(kind: .answer(text)))
+                answerTrigger += 1
+                return
+            }
             let intent = await resolveIntent(question: question, people: names)
             isAsking = false
             if let intent {
@@ -486,6 +524,59 @@ struct AdvisorView: View {
             }
             answerTrigger += 1
         }
+    }
+
+    /// 工具问答轮数上限：模型最多连查 4 轮工具，防死循环烧额度
+    private static let maxToolRounds = 4
+
+    /// 工具问答主循环：模型决定调什么工具 → 本地 AdvisorToolEngine 执行 →
+    /// 结果回填 → 直到模型给出文字答复。任何异常返回 nil（调用方降级）。
+    private func answerWithTools(question: String, context: AdvisorToolContext) async -> String? {
+        guard let client = try? DeepSeekClient() else { return nil }
+        var thread: [DeepSeekChatMessage] = [
+            DeepSeekChatMessage(role: "system", content: Self.toolSystemPrompt(today: context.today)),
+            DeepSeekChatMessage(role: "user", content: question),
+        ]
+        for _ in 0..<Self.maxToolRounds {
+            let turn: DeepSeekTurn
+            do {
+                turn = try await client.chatTurn(
+                    messages: thread, toolsJSON: AdvisorTools.definitionsJSON()
+                )
+            } catch {
+                return nil
+            }
+            switch turn {
+            case .text(let text):
+                return text
+            case .toolCalls(let calls):
+                thread.append(DeepSeekChatMessage(role: "assistant", toolCalls: calls))
+                for call in calls {
+                    let result = AdvisorToolEngine.execute(
+                        AdvisorToolCall(name: call.name, argumentsJSON: call.arguments),
+                        context: context
+                    )
+                    thread.append(DeepSeekChatMessage(role: "tool", content: result, toolCallID: call.id))
+                }
+            }
+        }
+        return nil // 轮数耗尽还没结论：落回卡片管线，不硬编答案
+    }
+
+    /// 工具问答系统提示词：问答纪律写死——数字只能来自工具结果，
+    /// 查不到就明说，回答带数据口径出处。
+    private static func toolSystemPrompt(today: String) -> String {
+        """
+        你是「礼记」的问账管家，帮用户查他自己的人情礼金账。今天是 \(today)。
+        你有五个本地查账工具：query_person（查某个人）、query_records（按条件筛逐笔）、aggregate（分组汇总与两时段对比）、pending_list（待回名单）、upcoming_events（近期场次与备礼清单）。需要账目数据时必须先调工具查，不许凭印象回答。
+        铁律：
+        1. 回答里的每一个金额、笔数、日期、人名都只能来自工具返回的结果；工具没查到（ok 为 false、名单为空、账上没这个人）就直说「账里查不到」，绝不猜测、绝不编造、绝不拿别的数据凑。
+        2. 相对时间要换算成绝对日期再调工具：如「今年」是 \(today) 所在年份的 1 月 1 日到 12 月 31 日，「最近三个月」按今天往前推三个月。工具返回的金额单位是元。
+        3. 回答简洁口语、先给结论；涉及金额时带上口径出处，如「据你 2026 年的账」「你和大舅的全部往来里」。
+        4. 回礼建议类问题：先用 query_person 查清差额与最近往来，再结合差额给建议，并说明建议依据的数字来自账里哪笔/哪段汇总；建议金额只能引用工具结果里的数字或其明确加减，不要凭空报数。
+        5. 工具返回 ok:false 时，按 error 的意思如实告诉用户，或换个工具/参数再查一次；同一问题最多查 4 轮工具。
+        6. 只回答与人情账目有关的问题；无关问题礼貌说明自己只管查账。
+        """
     }
 
     /// 意图来源顺序：AI 就绪先走 AI 解码 → 解码失败/听不懂/网络错，落规则兜底；

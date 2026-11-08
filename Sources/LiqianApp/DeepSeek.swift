@@ -178,3 +178,122 @@ struct DeepSeekClient {
         return content
     }
 }
+
+// MARK: - 工具调用（v5.2，DeepSeek 官方 function calling 口径）
+//
+// 请求体在 messages 之外多带 tools（AdvisorTools.definitionsJSON 的数组）
+// 与 tool_choice:"auto"；模型要查数据时，返回 message.tool_calls
+// （每条含 id＋function.name＋function.arguments 字符串），App 本地执行
+// 后把结果以 role:"tool"＋tool_call_id 回填，再请求一次，如此往返。
+
+/// 一次工具调用引用（模型给出，App 按 name 在本地执行）
+struct DeepSeekToolCallRef: Equatable {
+    var id: String
+    var name: String
+    /// 参数 JSON 原文（解码在 AdvisorToolEngine 里宽容处理）
+    var arguments: String
+}
+
+/// 工具对话里的一条消息（system/user/assistant/tool 四种角色的多轮拼装）
+struct DeepSeekChatMessage {
+    var role: String
+    var content: String? = nil
+    /// 仅 assistant：模型本轮要调的工具
+    var toolCalls: [DeepSeekToolCallRef]? = nil
+    /// 仅 tool：回填结果对应哪次调用
+    var toolCallID: String? = nil
+
+    func jsonObject() -> [String: Any] {
+        var obj: [String: Any] = ["role": role]
+        if let toolCalls {
+            obj["content"] = content ?? ""
+            obj["tool_calls"] = toolCalls.map { call in
+                [
+                    "id": call.id,
+                    "type": "function",
+                    "function": ["name": call.name, "arguments": call.arguments],
+                ] as [String: Any]
+            }
+        } else if role == "tool" {
+            obj["content"] = content ?? ""
+            obj["tool_call_id"] = toolCallID ?? ""
+        } else {
+            obj["content"] = content ?? ""
+        }
+        return obj
+    }
+}
+
+/// 一轮工具对话的结果：模型直接给了文字，或要求先调工具
+enum DeepSeekTurn {
+    case text(String)
+    case toolCalls([DeepSeekToolCallRef])
+}
+
+extension DeepSeekClient {
+    /// 工具对话一轮：带 tools 定义请求，回来或文字或工具调用。
+    /// 任何协议异常都抛 DeepSeekError，由调用方决定降级路径。
+    func chatTurn(messages: [DeepSeekChatMessage], toolsJSON: String) async throws -> DeepSeekTurn {
+        var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        guard let toolsData = toolsJSON.data(using: .utf8),
+              let tools = try? JSONSerialization.jsonObject(with: toolsData) else {
+            throw DeepSeekError.badResponse("工具定义序列化失败")
+        }
+        let body: [String: Any] = [
+            "model": "deepseek-chat",
+            "temperature": 0.2,
+            "messages": messages.map { $0.jsonObject() },
+            "tools": tools,
+            "tool_choice": "auto",
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let error as URLError {
+            if error.code == .timedOut {
+                throw DeepSeekError.network("请求超时（30 秒）")
+            }
+            throw DeepSeekError.network(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw DeepSeekError.badResponse("没有收到有效的服务器响应")
+        }
+        guard http.statusCode == 200 else {
+            throw DeepSeekError.http(http.statusCode)
+        }
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let choices = root["choices"] as? [[String: Any]],
+            let message = choices.first?["message"] as? [String: Any]
+        else {
+            throw DeepSeekError.badResponse("返回里没有可用的内容")
+        }
+        if let rawCalls = message["tool_calls"] as? [[String: Any]], !rawCalls.isEmpty {
+            let calls = rawCalls.compactMap { raw -> DeepSeekToolCallRef? in
+                guard
+                    let id = raw["id"] as? String,
+                    let function = raw["function"] as? [String: Any],
+                    let name = function["name"] as? String
+                else { return nil }
+                return DeepSeekToolCallRef(
+                    id: id, name: name, arguments: function["arguments"] as? String ?? "{}"
+                )
+            }
+            if !calls.isEmpty { return .toolCalls(calls) }
+        }
+        let content = (message["content"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else {
+            throw DeepSeekError.badResponse("模型既没给回答也没调工具")
+        }
+        return .text(content)
+    }
+}
