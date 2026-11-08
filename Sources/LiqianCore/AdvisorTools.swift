@@ -508,9 +508,14 @@ public enum AdvisorToolEngine {
         return groups
             .map { (k, rows) in (key: k, totals: totals(rows)) }
             .sorted {
-                chronological
-                    ? $0.key < $1.key
-                    : ($0.totals.received + $0.totals.given) > ($1.totals.received + $1.totals.given)
+                if chronological { return $0.key < $1.key }
+                // 量降序；并列必须再按 key 定序——否则顺序由 Dictionary
+                // 迭代序决定，同一问题两次调用能给出不同序的 JSON
+                // （v5.4 CI 实证 testDetailedJSONMatchesExecute 因此 flaky）
+                let volume0 = $0.totals.received + $0.totals.given
+                let volume1 = $1.totals.received + $1.totals.given
+                if volume0 != volume1 { return volume0 > volume1 }
+                return $0.key < $1.key
             }
             .map { (key: $0.key, received: $0.totals.received, given: $0.totals.given, count: $0.totals.count) }
     }

@@ -124,6 +124,13 @@ plist 两条权限文案（麦克风/语音识别）都在位。③–⑦ 均为
 
 页内切换范围导致的值变化走同一规则：与该范围的存档比对，变了才滚。
 
+## 附带修复：aggregate 分组序不确定（CI 实证的既有 flaky）
+
+首轮 CI 单测挂在既有 `testDetailedJSONMatchesExecute`：aggregate 按场合分组时
+「乔迁/满月」总额并列，分组排序只有量降序一个键、并列顺序由 Dictionary 迭代序
+决定，同一问题两次调用可给出不同序的 JSON（v5.3.2 那轮是碰巧同序）。
+修：并列时再按组名定序，输出跨调用确定；数值与口径零变化。
+
 ## 版本与产物
 
 - Project.swift：App/Widget 的 MARKETING_VERSION 与 plist 字面量同步
