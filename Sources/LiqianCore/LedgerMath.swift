@@ -293,7 +293,7 @@ public enum LedgerMath {
     /// 按关系用量（v5.10）：人数（不重名）＋笔数，口径与 relationSummary
     /// 一致（待送出不计）。给关系管理页行内用量与改名/删除确认文案用——
     /// 确认弹窗里的笔数必须与级联真正会改写的范围一致，故笔数按
-    /// 「全部记录（含待送出）」另给一版见 relationReferenceCounts。
+    /// 「全部记录（含待送出）」另由 relationReferenceCount 按原始关系值计。
     public static func relationUsage(from entries: [EntrySnapshot]) -> [RelationUsage] {
         var people: [String: Set<String>] = [:]
         var counts: [String: Int] = [:]
