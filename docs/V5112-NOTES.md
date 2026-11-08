@@ -75,10 +75,21 @@
   （AdvisorView / AdvisorSession / Project.swift 版本字面量）。
 
 ## 验收（实测回填）
-- CI run：待回填
-- 单测：待回填（基线 301，预期不低于 301）
-- 解包验：待回填（预期 App/Widget 均 5.11.2/73、无 LiqianShare.appex）
+- CI run 42468581447：attempt 1 挂在 Install Tuist（GitHub Releases
+  下载 504，基础设施抖动、与代码无关，v5.11.1 首跑同款）；同 run
+  rerun --failed 的 attempt 2 以 API 逐 attempt 实查 completed/
+  success，全步绿（SwiftLint／Build／单测／预签／打包／上传）。
+  注：本轮 run 级视图曾再现假 success（attempt 2 尚在 Build 时
+  run 级先报 completed/success），结论一律以 --attempt 2 实查为准。
+- 单测：日志实测 **Executed 301 tests, 0 failures**、TEST SUCCEEDED
+  ——与 v5.11.1 基线 301 持平（本版改动全在 App 层视图/会话，
+  Core 单测面无增减），0 失败。
+- 解包验：App 与 Widget 均 **5.11.2/73**；PlugIns 仅
+  LiqianWidget.appex、**无 LiqianShare.appex**。
+- 分支 diff 对基线仅 4 文件（AdvisorView／AdvisorSession／
+  Project.swift／本 NOTES），AnalyzerFeeder 零改动。
 - IPA：~/workspace/your_files/liqian-v5.11.2/liqian-native-unsigned.ipa
+  （4,494,042 字节，覆盖安装、数据不动）
 
 ## 真机待验（不宣称已验）
 1. 冷进问账页（首页「问管家」sheet、往来「问账」push 两入口各一次）：
