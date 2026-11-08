@@ -1,4 +1,5 @@
 import SwiftUI
+import LiqianCore
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -36,9 +37,11 @@ private extension UIColor {
 }
 #endif
 
-// MARK: - 外观主题（v2.4，「我的 → 外观」五选一）
+// MARK: - 外观主题（v2.4，「我的 → 外观」五选一；v5.9 加第六位自定义）
 // 白天＝浅色＋朱砂；夜晚＝深色＋朱砂；腾讯蓝＝浅色＋TDesign 蓝 #0052D9；
 // 灰色＝浅色＋石墨灰；黄色＝浅色＋琥珀金。划分由用户点名定版：深色仅夜晚提供。
+// 自定义（v5.9，审计 #1 方案 A）：用户选一个强调基色，令牌由
+// LiqianCore.CustomTheme 程序化派生（对比度护栏＋金额防撞），只做浅色一套。
 // 主题驱动 App 界面整套令牌（v2.5 包 6 起，见下方令牌表）；
 // 礼谱 PDF 与分享图卡是成品，永远朱砂定版，不读主题。
 public enum AppTheme: String, CaseIterable, Identifiable {
@@ -47,11 +50,24 @@ public enum AppTheme: String, CaseIterable, Identifiable {
     case tencentBlue
     case graphite
     case amber
+    case custom
 
     public var id: String { rawValue }
 
     /// @AppStorage 键（ContentView 与外观页共用）
     public static let storageKey = "appTheme"
+
+    /// 自定义主题基色 @AppStorage 键（存 hex 字符串如 "A62B1F"）
+    public static let customBaseStorageKey = "customThemeBaseHex"
+
+    /// 自定义主题当前基色：读 UserDefaults，没存过回朱砂缺省
+    public static var customBaseHex: UInt32 {
+        guard let raw = UserDefaults.standard.string(forKey: customBaseStorageKey),
+              let value = UInt32(raw, radix: 16) else {
+            return CustomTheme.defaultBaseHex
+        }
+        return value
+    }
 
     /// 当前主题：读 UserDefaults（动态色 provider 在解析时调用，切换即时生效）
     public static var current: AppTheme {
@@ -65,21 +81,24 @@ public enum AppTheme: String, CaseIterable, Identifiable {
         case .tencentBlue: return "腾讯蓝"
         case .graphite: return "灰色"
         case .amber: return "黄色"
+        case .custom: return "自定义"
         }
     }
 
-    /// 强制的外观：夜晚深色，其余四主题一律浅色
+    /// 强制的外观：夜晚深色，其余主题（含自定义）一律浅色
     public var colorScheme: ColorScheme {
         self == .night ? .dark : .light
     }
 
-    /// 主题色点（外观页列表的识别色块）：取该主题的强调色浅色值
+    /// 主题色点（外观页列表的识别色块）：取该主题的强调色浅色值；
+    /// 自定义取用户当前基色原色（未经护栏调整，所见即所选）
     public var swatch: Color {
         switch self {
         case .day, .night: return Color(hex: 0xA62B1F)
         case .tencentBlue: return Color(hex: 0x0052D9)
         case .graphite: return Color(hex: 0x4E5969)
         case .amber: return Color(hex: 0xB7791F)
+        case .custom: return Color(hex: AppTheme.customBaseHex)
         }
     }
 }
@@ -168,6 +187,17 @@ public extension AppTheme {
                 primary: 0xA16207, primaryFill: 0x854D0E, primaryTint: 0xF8EED3,
                 ink: 0x221D10, sub: 0x6E6455, line: 0xEAE3D0,
                 moneyGiven: 0x14665A
+            )
+        case .custom:
+            // v5.9：第六主题位——整套令牌由用户基色经 Core 派生引擎生成
+            // （对比度护栏＋金额防撞在 CustomTheme 内，见其注释与单测）
+            let derived = CustomTheme.tokens(baseHex: AppTheme.customBaseHex)
+            return AppThemeTokens(
+                pageBG: derived.pageBG, surface: derived.surface,
+                primary: derived.primary, primaryFill: derived.primaryFill,
+                primaryTint: derived.primaryTint,
+                ink: derived.ink, sub: derived.sub, line: derived.line,
+                moneyGiven: derived.moneyGiven
             )
         }
     }

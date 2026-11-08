@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "5.8.1",
-        "CURRENT_PROJECT_VERSION": "67",
+        "MARKETING_VERSION": "5.9.0",
+        "CURRENT_PROJECT_VERSION": "68",
     ]),
     targets: [
         .target(
@@ -43,8 +43,30 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "5.8.1",
-                "CFBundleVersion": "67",
+                "CFBundleShortVersionString": "5.9.0",
+                "CFBundleVersion": "68",
+                // 备用图标（v5.9，审计 #2）：白底不变、只换礼结色的 8 款
+                // 变体，文件由 scripts/make_alt_icons.py 生成、随资源进包
+                // 根目录（AltIcon-<变体>@2x/@3x.png）。键名与
+                // AppIconVariant.alternateName 逐项一致；主图标仍走资源
+                // 目录 AppIcon（此处主图标条目为结构完整而写，actool
+                // 构建时以资源目录为准合并）。
+                "CFBundleIcons": [
+                    "CFBundlePrimaryIcon": [
+                        "CFBundleIconFiles": ["AppIcon"],
+                        "CFBundleIconName": "AppIcon",
+                    ],
+                    "CFBundleAlternateIcons": [
+                        "AltIcon-night": ["CFBundleIconFiles": ["AltIcon-night"]],
+                        "AltIcon-tencentBlue": ["CFBundleIconFiles": ["AltIcon-tencentBlue"]],
+                        "AltIcon-graphite": ["CFBundleIconFiles": ["AltIcon-graphite"]],
+                        "AltIcon-amber": ["CFBundleIconFiles": ["AltIcon-amber"]],
+                        "AltIcon-jdRed": ["CFBundleIconFiles": ["AltIcon-jdRed"]],
+                        "AltIcon-appleBlue": ["CFBundleIconFiles": ["AltIcon-appleBlue"]],
+                        "AltIcon-black": ["CFBundleIconFiles": ["AltIcon-black"]],
+                        "AltIcon-brightYellow": ["CFBundleIconFiles": ["AltIcon-brightYellow"]],
+                    ],
+                ],
                 // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
                 // 承接在 AppDelegate（冷启动 launchOptions / 运行时 performActionFor）
                 // → ShortcutActions 写标记 → ContentView 消费，与小组件深链同守卫
@@ -150,8 +172,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "5.8.1",
-                "CFBundleVersion": "67",
+                "CFBundleShortVersionString": "5.9.0",
+                "CFBundleVersion": "68",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],

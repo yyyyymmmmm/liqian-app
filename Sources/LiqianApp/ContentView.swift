@@ -10,6 +10,9 @@ import LiqianDesign
 struct ContentView: View {
     @AppStorage("privacyLock") private var privacyLockEnabled = false
     @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
+    /// 自定义主题基色（v5.9）：主题值不变（恒 custom）时基色变化也要
+    /// 触发重挂，故纳入根视图身份键计算
+    @AppStorage(AppTheme.customBaseStorageKey) private var customThemeBaseHex = ""
     @Environment(\.scenePhase) private var scenePhase
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
@@ -140,9 +143,10 @@ struct ContentView: View {
             }
         }
         // 外观主题（v2.4）：强制外观覆盖系统跟随；主题值变化时重挂整棵子树，
-        // 让 Palette 的主题动态色即时重解析（切换无须重启）
+        // 让 Palette 的主题动态色即时重解析（切换无须重启）。
+        // v5.9：自定义主题下身份键拼入基色——只换基色不换主题也要重挂。
         .preferredColorScheme(appTheme.colorScheme)
-        .id(appThemeRaw)
+        .id(appTheme == .custom ? "custom-\(customThemeBaseHex)" : appThemeRaw)
         .onAppear {
             if privacyLockEnabled {
                 isLocked = true
