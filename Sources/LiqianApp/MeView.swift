@@ -238,6 +238,17 @@ struct MeView: View {
                             subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
                         )
                     }
+                    // 小组件数据自检（v5.11.1）：App↔Widget 共享通道的
+                    // 写入/回读/探活/回执全在详情页，入口副标题给一句摘要
+                    NavigationLink {
+                        WidgetDataView()
+                    } label: {
+                        entryLabel(
+                            icon: "square.grid.2x2",
+                            title: "小组件数据",
+                            subtitle: WidgetDiag.status().summaryLine
+                        )
+                    }
                 } header: {
                     Text("数据")
                 } footer: {

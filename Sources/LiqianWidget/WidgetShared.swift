@@ -118,13 +118,26 @@ enum SummaryStore {
     /// suite 名走 AppGroupResolver（v4.6，与 App 侧 WidgetSummaryWriter 同口径）
     static var suiteName: String { AppGroupResolver.groupID }
     static let summaryKey = "pendingSummary"
+    // 回执键：命中哪家就往哪家写回组名＋时间，App 侧自检行据此呈现
+    // 「组件实际读到的组名」；键名与 App 侧 WidgetSummaryWriter 镜像，改键两边同步
+    static let receiptGroupKey = "widgetReceiptGroup"
+    static let receiptAtKey = "widgetReceiptAt"
 
+    /// 多候选读取（v5.11.1）：两侧进程对组名的解析可能不一致（各自 plist
+    /// 的 ALTAppGroups 写入情况不同），逐个候选试 suite＋键，命中哪家用
+    /// 哪家；App 侧仍只往解析名一家写，不多点群发，避免数据分叉。
+    /// 候选首项恒为本进程解析名——通道正常时行为与单组名读完全一致。
     static func load() -> WPendingSummary? {
-        guard let defaults = UserDefaults(suiteName: suiteName),
-              let data = defaults.data(forKey: summaryKey),
-              let summary = try? JSONDecoder().decode(WPendingSummary.self, from: data)
-        else { return nil }
-        return summary
+        for candidate in AppGroupResolver.candidateGroupIDs {
+            guard let defaults = UserDefaults(suiteName: candidate),
+                  let data = defaults.data(forKey: summaryKey),
+                  let summary = try? JSONDecoder().decode(WPendingSummary.self, from: data)
+            else { continue }
+            defaults.set(candidate, forKey: receiptGroupKey)
+            defaults.set(Date().timeIntervalSince1970, forKey: receiptAtKey)
+            return summary
+        }
+        return nil
     }
 
     static func entry(isPreview: Bool) -> SummaryEntry {
