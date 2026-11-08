@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import LiqianCore
+import os
 import Speech
 
 // MARK: - 分析器喂入（v5.5.1 隔离定版：采音整体搬出 @MainActor 隔离区）
