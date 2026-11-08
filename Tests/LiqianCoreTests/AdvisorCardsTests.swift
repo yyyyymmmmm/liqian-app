@@ -46,8 +46,10 @@ final class AdvisorCardsTests: XCTestCase {
         )
     }
 
-    /// JSON 与 v5.2 的 execute 逐字一致（卡片是加挂，不能改模型侧口径）
-    func testDetailedJSONMatchesExecute() {
+    /// JSON 与 v5.2 的 execute 语义一致（卡片是加挂，不能改模型侧口径）。
+    /// 注意比对的是解析后的对象而非原文字符串：JSONSerialization 的键序
+    /// 每次序列化随机，逐字比对必然 flaky——模型消费的是对象语义。
+    func testDetailedJSONMatchesExecute() throws {
         let cases: [(String, String)] = [
             (AdvisorTools.queryPerson, #"{"name":"大舅"}"#),
             (AdvisorTools.queryRecords, #"{"ledgerType":"婚礼"}"#),
@@ -58,11 +60,11 @@ final class AdvisorCardsTests: XCTestCase {
         ]
         for (name, args) in cases {
             let call = AdvisorToolCall(name: name, argumentsJSON: args)
-            XCTAssertEqual(
-                AdvisorToolEngine.executeDetailed(call, context: context()).json,
-                AdvisorToolEngine.execute(call, context: context()),
-                "工具 \(name) 的 JSON 不应因卡片加挂而变化"
-            )
+            let detailed = AdvisorToolEngine.executeDetailed(call, context: context()).json
+            let plain = AdvisorToolEngine.execute(call, context: context())
+            let a = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(detailed.utf8)) as? NSDictionary)
+            let b = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(plain.utf8)) as? NSDictionary)
+            XCTAssertEqual(a, b, "工具 \(name) 的 JSON 不应因卡片加挂而变化")
         }
     }
 
