@@ -61,8 +61,10 @@ public enum AdvisorTools {
     public static let aggregate = "aggregate"
     public static let pendingList = "pending_list"
     public static let upcomingEvents = "upcoming_events"
+    /// v5.4：记账草稿工具（只组装待确认卡，用户点确认才入账，工具本身不写库）
+    public static let draftRecord = "draft_record"
 
-    public static let allNames = [queryPerson, queryRecords, aggregate, pendingList, upcomingEvents]
+    public static let allNames = [queryPerson, queryRecords, aggregate, pendingList, upcomingEvents, draftRecord]
 
     /// 给 DeepSeek 的 tools 参数（官方 function calling 格式）：
     /// [{"type":"function","function":{"name":…,"description":…,"parameters":{JSON Schema}}}]
@@ -127,6 +129,22 @@ public enum AdvisorTools {
                 ],
                 required: []
             ),
+            tool(
+                name: draftRecord,
+                description: "记账草稿：用户说要记一笔账时用（如「张三随礼了 500」「我给大舅回礼 800」「李四结婚我随了 1000」）。它只生成一张待确认记账卡，绝不直接入账——用户在卡上核对并点「确认入账」后才真正记账。方向口径：别人随给用户＝received（「XX 随礼了」「XX 给了 N」多属此类，结合语境判断）；用户送出或回礼给别人＝given（「给 XX 随礼」「回礼了」）。人名或金额有一个没说清就不要调这个工具，先向用户追问。金额只能用用户原话里的数字，单位为元。",
+                properties: [
+                    "name": strProp("人名，照用户原话，如「张三」"),
+                    "direction": [
+                        "type": "string",
+                        "enum": ["received", "given"],
+                        "description": "received=对方随给用户（用户收礼）；given=用户随出或回礼给对方",
+                    ] as [String: Any],
+                    "amountYuan": numProp("金额（元），只能是用户原话里说的数字，如 500、800.5"),
+                    "date": strProp("日期 yyyy-MM-dd，用户没说就不要传（默认今天）；说了相对日期先换算成绝对日期"),
+                    "ledgerType": strProp("场合/事由，只能是 婚礼/满月/周岁/乔迁/寿宴/升学/开业/白事/其他，用户没提就不要传"),
+                ],
+                required: ["name", "direction", "amountYuan"]
+            ),
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: tools),
               let text = String(data: data, encoding: .utf8) else { return "[]" }
@@ -158,6 +176,10 @@ public enum AdvisorTools {
     private static func intProp(_ description: String) -> [String: Any] {
         ["type": "integer", "description": description]
     }
+
+    private static func numProp(_ description: String) -> [String: Any] {
+        ["type": "number", "description": description]
+    }
 }
 
 // MARK: - 参数宽容解码（模型给的参数 JSON 格式飘忽，单字段坏了按缺失落）
@@ -184,6 +206,13 @@ struct AdvisorToolArgs {
     func int(_ key: String) -> Int? {
         if let n = raw[key] as? NSNumber { return n.intValue }
         if let s = raw[key] as? String { return Int(s) }
+        return nil
+    }
+
+    /// 金额参数：元（可带小数）。NSNumber 直读；字符串走 Double 解析。
+    func double(_ key: String) -> Double? {
+        if let n = raw[key] as? NSNumber { return n.doubleValue }
+        if let s = raw[key] as? String { return Double(s) }
         return nil
     }
 
@@ -231,6 +260,8 @@ public enum AdvisorToolEngine {
             payload = pendingList(args: args, context: context)
         case AdvisorTools.upcomingEvents:
             payload = upcomingEvents(args: args, context: context)
+        case AdvisorTools.draftRecord:
+            payload = draftRecord(args: args, context: context)
         default:
             payload = errorPayload("没有叫「\(call.name)」的查账工具")
         }
@@ -574,6 +605,70 @@ public enum AdvisorToolEngine {
             }
         ))
         return (dict, card)
+    }
+
+    // MARK: draft_record（v5.4：只组装待确认草稿，绝不写库）
+
+    /// 记账纪律在本地这一层的落点：人名/方向/金额任一缺失或不合法 →
+    /// ok:false 把话递回模型去追问，绝不猜数、绝不凑草稿。
+    /// 金额只来自参数（＝用户原话经模型解析），本地只做元→分换算。
+    private static func draftRecord(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
+        guard let rawName = args.string("name") else {
+            return errorPayload("draft_record 缺人名：先向用户确认这笔是谁的，不要猜人名")
+        }
+        guard let direction = args.direction("direction") else {
+            return errorPayload("draft_record 缺方向：是对方随给用户的（received）还是用户回礼/随出去的（given）？先向用户确认")
+        }
+        guard let amountYuan = args.double("amountYuan"), amountYuan > 0 else {
+            return errorPayload("draft_record 缺金额或金额不合法：先向用户追问具体金额，只能用他原话里的数字，不要猜")
+        }
+        let amountCents = Int((amountYuan * 100).rounded())
+        guard amountCents > 0 else {
+            return errorPayload("draft_record 金额过小：先向用户确认具体金额")
+        }
+        let date = args.date("date") ?? context.today
+        let ledgerType = args.string("ledgerType").flatMap {
+            LiqianConstants.ledgerTypes.contains($0) ? $0 : nil
+        } ?? ""
+
+        // 人名规范化与关系：与 query_person 同口径匹配（精确 > 包含）
+        let people = LedgerMath.people(from: context.entries)
+        let hit = matchPerson(name: rawName, in: people)
+        let personName = hit?.name ?? rawName
+
+        // 建议目标礼簿：与此人最近一笔往来所在的礼簿（日期倒序第一笔）
+        let recentEntry = context.entries
+            .filter { $0.person == personName && $0.ledgerID != nil }
+            .sorted { $0.date > $1.date }
+            .first
+        let suggestedID = recentEntry?.ledgerID
+        let suggestedTitle = suggestedID.flatMap { id in
+            context.ledgers.first { $0.id == id }?.title
+        } ?? ""
+
+        let card = AdvisorDraftRecordCard(
+            person: personName,
+            relation: hit?.relation ?? "",
+            direction: direction,
+            amountCents: amountCents,
+            date: date,
+            ledgerType: ledgerType,
+            suggestedLedgerID: suggestedID,
+            suggestedLedgerTitle: suggestedTitle
+        )
+        let dict: [String: Any] = [
+            "ok": true,
+            "draft": [
+                "person": personName,
+                "direction": direction == LiqianConstants.received ? "收礼" : "随礼",
+                "amountYuan": yuan(amountCents),
+                "date": date,
+                "ledgerType": ledgerType,
+                "targetLedgerTitle": suggestedTitle,
+            ],
+            "note": "这只是待确认草稿，还没有入账。只有用户在卡片上点「确认入账」才会真正记账。回复时不要说已经记好了，可以说：给你拟了一笔，核对一下、点确认入账就记上。",
+        ]
+        return (dict, .draftRecord(card))
     }
 
     // MARK: - 共用小件

@@ -72,6 +72,11 @@ struct ChartsView: View {
         }
     }
 
+    /// 滚动金额存档的范围键（v5.4）：自然年档带年份，各范围存档互不串扰
+    private var rollScopeKey: String {
+        scope == .year ? "year-\(effectiveYear)" : scope.rawValue
+    }
+
     private var scopedSnapshots: [EntrySnapshot] {
         allSnapshots.filter { inScope($0.date) }
     }
@@ -499,19 +504,19 @@ struct ChartsView: View {
                     label: "累计收",
                     spokenValue: LedgerMath.fmtMoney(cents: totalReceived)
                 ) {
-                    RollingMoneyText(cents: totalReceived, style: .title2)
+                    RollingMoneyText(cents: totalReceived, style: .title2, rollKey: "charts.totalReceived.\(rollScopeKey)")
                 }
                 StatCell(
                     label: "累计送",
                     spokenValue: LedgerMath.fmtMoney(cents: totalGiven)
                 ) {
-                    RollingMoneyText(cents: totalGiven, style: .title2)
+                    RollingMoneyText(cents: totalGiven, style: .title2, rollKey: "charts.totalGiven.\(rollScopeKey)")
                 }
                 StatCell(
                     label: "净往来（收 − 送）",
                     spokenValue: LedgerMath.fmtMoney(cents: totalReceived - totalGiven)
                 ) {
-                    RollingMoneyText(cents: totalReceived - totalGiven, style: .title2)
+                    RollingMoneyText(cents: totalReceived - totalGiven, style: .title2, rollKey: "charts.net.\(rollScopeKey)")
                 }
                 StatCell(
                     label: "待回礼 · \(pendingPeople.count) 人",
@@ -521,7 +526,8 @@ struct ChartsView: View {
                 ) {
                     RollingMoneyText(
                         cents: pendingPeople.reduce(0) { $0 + $1.pendingCents },
-                        style: .title2
+                        style: .title2,
+                        rollKey: "charts.pendingTotal.\(rollScopeKey)"
                     )
                 }
                 StatCell(label: "往来人数", value: "\(people.count)", unit: "人", style: .title2)
@@ -954,7 +960,8 @@ struct ChartsView: View {
                             .foregroundStyle(Palette.stone)
                         RollingMoneyText(
                             cents: relationRows.reduce(0) { $0 + $1.total },
-                            style: .title3
+                            style: .title3,
+                            rollKey: "charts.relationTotal.\(rollScopeKey)"
                         )
                     }
                 }
@@ -1731,16 +1738,20 @@ private struct RelationPeopleList: View {
     }
 }
 
-// MARK: - KPI 滚动金额（入场从 0、切换从旧值，先快后慢 ease-out；
-// Reduce Motion 时瞬时落值；暗色模式字重降一档——质感审计第 2/4 条）
+// MARK: - KPI 滚动金额（滚动策略 v5.4：按「指标＋范围」存档上次显示值，
+// 值真变了才滚、没变静态直出——旧版每次进页都从 0 滚一遍被用户点名。
+// 策略本体在 LiqianCore/RollingMoneyStore（可单测）；Reduce Motion
+// 仍直出终值；暗色模式字重降一档——质感审计第 2/4 条）
 
 private struct RollingMoneyText: View {
     let cents: Int
     var style: Font.TextStyle = .title2
+    /// 存档键的指标部分（同一指标在不同范围各存一份，互不串扰）
+    var rollKey: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    /// 本轮滚动的起点值（入场为 0，切换为当下显示值）
+    /// 本轮滚动的起点值
     @State private var fromValue: Double = 0
     /// 已落定值：无动画进行时显示它（不能直接读 cents——onChange 触发时
     /// cents 已是新值，拿它当「当前显示」会让二次切换失去滚动起点）
@@ -1748,14 +1759,18 @@ private struct RollingMoneyText: View {
     @State private var startDate: Date?
     private let duration: TimeInterval = 0.9
 
+    /// 完整存档键：指标＋当前范围（自然年档带年份）
+    private var storageKey: String { "\(rollKey)" }
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: startDate == nil)) { context in
             Text(LedgerMath.fmtMoney(cents: Int(displayedValue(at: context.date).rounded())))
                 .font(.liqianMoney(style, dark: colorScheme == .dark))
                 .foregroundStyle(Palette.ink)
         }
-        .onAppear { beginRoll(from: 0) }
-        .onChange(of: cents) { _, _ in beginRoll(from: displayedValue(at: Date())) }
+        .onAppear { evaluate() }
+        .onChange(of: cents) { _, _ in evaluate() }
+        .onChange(of: storageKey) { _, _ in evaluate() }
     }
 
     private func displayedValue(at date: Date) -> Double {
@@ -1767,22 +1782,30 @@ private struct RollingMoneyText: View {
         return fromValue + (Double(cents) - fromValue) * eased
     }
 
-    private func beginRoll(from: Double) {
+    /// 按存档决策：没变 → 静态直出；变了 → 从存档值（或正在显示的值）滚起，
+    /// 并立刻把新值落档（中途退出也不重复滚同一变化）
+    private func evaluate() {
+        let plan = RollingMoneyStore.plan(metricKey: storageKey, currentCents: cents)
+        guard plan.rolls else {
+            settledValue = Double(cents)
+            startDate = nil
+            return
+        }
+        RollingMoneyStore.store(cents: cents, metricKey: storageKey)
         if reduceMotion {
             settledValue = Double(cents)
             startDate = nil
-        } else {
-            fromValue = from
-            let start = Date()
-            startDate = start
-            // 滚完落定并停表，避免 TimelineView 长期空转（startDate 被新一轮
-            // 滚动替换时不误停新动画）
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(duration + 0.1))
-                if startDate == start {
-                    settledValue = Double(cents)
-                    startDate = nil
-                }
+            return
+        }
+        // 正在滚的中途又变值：从当下显示值续滚，不跳回存档旧值
+        fromValue = startDate == nil ? Double(plan.fromCents) : displayedValue(at: Date())
+        let start = Date()
+        startDate = start
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration + 0.1))
+            if startDate == start {
+                settledValue = Double(cents)
+                startDate = nil
             }
         }
     }

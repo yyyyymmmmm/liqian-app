@@ -31,7 +31,7 @@ public struct AdvisorToolOutcome: Sendable, Equatable {
 
 /// 工具卡片：一种工具一张卡（aggregate 按有无对比/分组分三形）。
 /// 一次回答可带多卡（多工具/多轮），视图按调用顺序依次呈现。
-public enum AdvisorCard: Sendable, Equatable {
+public enum AdvisorCard: Sendable, Equatable, Codable {
     /// query_person：人物卡（汇总在 summary 里，附最近往来）
     case person(AdvisorPersonCard)
     /// query_records：逐笔流水卡（rows 是限量子集，totalCount 是全量）
@@ -46,12 +46,14 @@ public enum AdvisorCard: Sendable, Equatable {
     case pending(AdvisorPendingCard)
     /// upcoming_events：场次卡（近期场次＋备礼进度）
     case events(AdvisorEventsCard)
+    /// draft_record：待确认记账卡（v5.4；用户点确认才真正入账）
+    case draftRecord(AdvisorDraftRecordCard)
 }
 
 // MARK: - 共用小件
 
 /// 一段时段的收/随/笔数合计（金额单位：分，与 LedgerMath 全线一致）
-public struct AdvisorMoneyTotals: Sendable, Equatable {
+public struct AdvisorMoneyTotals: Sendable, Equatable, Codable {
     /// 时段人话标签（引擎 rangeText 口径，如「2026-01-01 至 2026-12-31」/「全部时段」）
     public var rangeLabel: String
     public var receivedCents: Int
@@ -69,7 +71,7 @@ public struct AdvisorMoneyTotals: Sendable, Equatable {
 }
 
 /// 一行逐笔（流水卡与备礼清单共用）：字段全来自本地快照
-public struct AdvisorRecordRow: Sendable, Equatable, Identifiable {
+public struct AdvisorRecordRow: Sendable, Equatable, Identifiable, Codable {
     public var person: String
     public var relation: String
     /// LiqianConstants.received / .given
@@ -106,7 +108,7 @@ public struct AdvisorRecordRow: Sendable, Equatable, Identifiable {
 
 /// 人物卡：summary 是 LedgerMath 的人物汇总（收/随/差额/待回都在里面），
 /// recent 是最近若干笔（日期倒序，与回给模型的 recentRecords 同一份）
-public struct AdvisorPersonCard: Sendable, Equatable {
+public struct AdvisorPersonCard: Sendable, Equatable, Codable {
     public var summary: PersonSummary
     public var recent: [AdvisorEntryLine]
 
@@ -117,7 +119,7 @@ public struct AdvisorPersonCard: Sendable, Equatable {
 }
 
 /// 逐笔流水卡：rows 为限量返回的子集，totalCount 为符合条件总笔数
-public struct AdvisorRecordsCard: Sendable, Equatable {
+public struct AdvisorRecordsCard: Sendable, Equatable, Codable {
     public var totalCount: Int
     public var rows: [AdvisorRecordRow]
 
@@ -128,7 +130,7 @@ public struct AdvisorRecordsCard: Sendable, Equatable {
 }
 
 /// 对比卡：主时段 vs 对比时段，差值口径＝主 − 对比（与回模型的 delta 同源）
-public struct AdvisorComparisonCard: Sendable, Equatable {
+public struct AdvisorComparisonCard: Sendable, Equatable, Codable {
     public var main: AdvisorMoneyTotals
     public var other: AdvisorMoneyTotals
 
@@ -144,7 +146,7 @@ public struct AdvisorComparisonCard: Sendable, Equatable {
 
 /// 分组条卡：一行一组（收/随/净/笔数），dimension 是 aggregate 的
 /// groupBy 原始值（month/year/type/relation/ledger），中文名由视图映射
-public struct AdvisorGroupsCard: Sendable, Equatable {
+public struct AdvisorGroupsCard: Sendable, Equatable, Codable {
     public var dimension: String
     public var rangeLabel: String
     public var rows: [AdvisorGroupRow]
@@ -156,7 +158,7 @@ public struct AdvisorGroupsCard: Sendable, Equatable {
     }
 }
 
-public struct AdvisorGroupRow: Sendable, Equatable, Identifiable {
+public struct AdvisorGroupRow: Sendable, Equatable, Identifiable, Codable {
     public var key: String
     public var receivedCents: Int
     public var givenCents: Int
@@ -174,7 +176,7 @@ public struct AdvisorGroupRow: Sendable, Equatable, Identifiable {
 }
 
 /// 汇总卡：单时段总计（aggregate 不分组、无对比时）
-public struct AdvisorTotalsCard: Sendable, Equatable {
+public struct AdvisorTotalsCard: Sendable, Equatable, Codable {
     public var totals: AdvisorMoneyTotals
 
     public init(totals: AdvisorMoneyTotals) {
@@ -184,7 +186,7 @@ public struct AdvisorTotalsCard: Sendable, Equatable {
 
 /// 待回名单卡：people 是按待回额降序的限量子集（PersonSummary 原样），
 /// totalPeople/totalPendingCents 是全量口径（与回模型的 JSON 同源）
-public struct AdvisorPendingCard: Sendable, Equatable {
+public struct AdvisorPendingCard: Sendable, Equatable, Codable {
     public var totalPeople: Int
     public var totalPendingCents: Int
     public var people: [PersonSummary]
@@ -197,7 +199,7 @@ public struct AdvisorPendingCard: Sendable, Equatable {
 }
 
 /// 场次卡：近期场次＋备礼清单（prep 是限量子集，prepTotalCount 是全量）
-public struct AdvisorEventsCard: Sendable, Equatable {
+public struct AdvisorEventsCard: Sendable, Equatable, Codable {
     public var events: [AdvisorEventItem]
     public var prepTotalCount: Int
     public var prep: [AdvisorRecordRow]
@@ -209,7 +211,7 @@ public struct AdvisorEventsCard: Sendable, Equatable {
     }
 }
 
-public struct AdvisorEventItem: Sendable, Equatable, Identifiable {
+public struct AdvisorEventItem: Sendable, Equatable, Identifiable, Codable {
     public var title: String
     public var type: String
     /// yyyy-MM-dd
@@ -224,5 +226,68 @@ public struct AdvisorEventItem: Sendable, Equatable, Identifiable {
         self.type = type
         self.date = date
         self.daysUntil = daysUntil
+    }
+}
+
+// MARK: - 待确认记账卡（v5.4 新增：AI 只起草，用户确认才入账）
+
+/// draft_record 组装出的待确认记账草稿：字段全部来自用户原话经模型解析、
+/// 本地校验后的结果（金额只用原话里的数，缺人名/金额在工具层就回 ok:false
+/// 让模型追问，不会走到组卡这一步）。
+/// 卡片自带交互状态（pending/saved/discarded＋选定礼簿＋已存记录 id），
+/// 随对话一起持久化：退出重进，待确认的卡仍可确认、已入账的回执仍在。
+public struct AdvisorDraftRecordCard: Sendable, Equatable, Codable {
+    public enum State: String, Sendable, Equatable, Codable {
+        /// 待用户确认（可改礼簿、点确认入账或算了）
+        case pending
+        /// 已确认并写入账本（savedRecordID 指向那笔 GiftRecord）
+        case saved
+        /// 用户点了「算了」：丢弃不留痕（账本里不会有这笔）
+        case discarded
+    }
+
+    /// 草稿唯一 id（同一回答多张草稿卡时靠它定位回写状态）
+    public var draftID: UUID
+    public var person: String
+    /// 账上已知此人时的关系（查不到给空串，入账时视图回退表单默认「朋友」）
+    public var relation: String
+    /// LiqianConstants.received / .given（随礼、回礼都落 given）
+    public var direction: String
+    public var amountCents: Int
+    /// yyyy-MM-dd（用户没说日期时为今天）
+    public var date: String
+    /// 场合（事由）：参数给了合法值才有，否则空串（视图不展示此行）
+    public var ledgerType: String
+    /// 建议目标礼簿：与此人最近往来的礼簿；无往来时为 nil（视图回退
+    /// 日期最新非示例簿）。只是建议，卡上可改选。
+    public var suggestedLedgerID: UUID?
+    public var suggestedLedgerTitle: String
+
+    public var state: State = .pending
+    /// 用户在卡上选定的礼簿（确认时以它为准；nil 表示用建议/兜底）
+    public var chosenLedgerID: UUID?
+    /// 入账后那笔 GiftRecord 的 id（回执卡据此打开记录详情）
+    public var savedRecordID: UUID?
+
+    public init(
+        draftID: UUID = UUID(),
+        person: String,
+        relation: String = "",
+        direction: String,
+        amountCents: Int,
+        date: String,
+        ledgerType: String = "",
+        suggestedLedgerID: UUID? = nil,
+        suggestedLedgerTitle: String = ""
+    ) {
+        self.draftID = draftID
+        self.person = person
+        self.relation = relation
+        self.direction = direction
+        self.amountCents = amountCents
+        self.date = date
+        self.ledgerType = ledgerType
+        self.suggestedLedgerID = suggestedLedgerID
+        self.suggestedLedgerTitle = suggestedLedgerTitle
     }
 }

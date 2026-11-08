@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import LiqianCore
 
 // MARK: - API Key 钥匙串存取（最小实现，不引第三方库）
 
@@ -84,7 +85,9 @@ enum AIAccess {
 
 enum DeepSeekError: LocalizedError {
     case noKey
-    case http(Int)
+    /// HTTP 状态码＋服务端返回的真实 error message（v5.4：只报状态码
+    /// 定位不了问题——验证 400 假失败就是被这一层吞掉了真实原因）
+    case http(Int, String?)
     case network(String)
     case badResponse(String)
 
@@ -92,12 +95,15 @@ enum DeepSeekError: LocalizedError {
         switch self {
         case .noKey:
             return "还没填 DeepSeek 的 API Key，先到「我的 → AI 管家」里填上。"
-        case .http(let code):
+        case .http(let code, let serverMessage):
             if code == 401 || code == 403 {
                 return "API Key 被拒绝，请检查是否填写正确、账户余额是否充足。"
             }
             if code == 429 {
                 return "请求过于频繁，请稍后重试"
+            }
+            if let serverMessage, !serverMessage.isEmpty {
+                return "DeepSeek 返回异常（\(code)）：\(serverMessage)"
             }
             return "DeepSeek 返回异常，请稍后重试。"
         case .network:
@@ -105,6 +111,22 @@ enum DeepSeekError: LocalizedError {
         case .badResponse(let detail):
             return "AI 返回内容格式异常，无法解析：\(detail)"
         }
+    }
+
+    /// 从错误响应体里挖服务端给的真实原因（DeepSeek 口径：
+    /// {"error":{"message":"…","type":"…","code":"…"}}）；挖不到回 nil
+    static func serverMessage(from data: Data) -> String? {
+        guard
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let error = root["error"] as? [String: Any],
+            let message = error["message"] as? String
+        else { return nil }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func httpError(statusCode: Int, data: Data) -> DeepSeekError {
+        .http(statusCode, serverMessage(from: data))
     }
 }
 
@@ -163,7 +185,7 @@ struct DeepSeekClient {
             throw DeepSeekError.badResponse("没有收到有效的服务器响应")
         }
         guard http.statusCode == 200 else {
-            throw DeepSeekError.http(http.statusCode)
+            throw DeepSeekError.httpError(statusCode: http.statusCode, data: data)
         }
 
         guard
@@ -267,7 +289,7 @@ extension DeepSeekClient {
             throw DeepSeekError.badResponse("没有收到有效的服务器响应")
         }
         guard http.statusCode == 200 else {
-            throw DeepSeekError.http(http.statusCode)
+            throw DeepSeekError.httpError(statusCode: http.statusCode, data: data)
         }
         guard
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -295,5 +317,29 @@ extension DeepSeekClient {
             throw DeepSeekError.badResponse("模型既没给回答也没调工具")
         }
         return .text(content)
+    }
+
+    /// Key 验证探活（v5.4）：走与正式问账完全同一条 chatTurn 路径
+    /// （同端点、同模型、同 tools 形状）发一次极小真实请求。
+    /// v5.2.1 的旧验证走 chatJSON 自造了第二种请求形状（response_format
+    /// json_object＋提示词里没有 "json" 字样），被接口按 400 打回——
+    /// Key 与问账链路其实没事，验证却报失败（用户实锤）。探活只认
+    /// 「链路通没通」：回来文字或工具调用都算通；失败抛 DeepSeekError，
+    /// 其中 http 带服务端真实 error message，设置页原样呈现。
+    func verifyKey() async throws {
+        let turn = try await chatTurn(
+            messages: [
+                DeepSeekChatMessage(
+                    role: "system",
+                    content: "你是「礼记」的问账管家。这是一次连通性确认，用户没有问账目问题，请只回复一个字：好。不要调用任何工具。"
+                ),
+                DeepSeekChatMessage(role: "user", content: "在吗"),
+            ],
+            toolsJSON: AdvisorTools.definitionsJSON()
+        )
+        switch turn {
+        case .text, .toolCalls:
+            return // 能按正式协议应答即链路通、Key 可用
+        }
     }
 }

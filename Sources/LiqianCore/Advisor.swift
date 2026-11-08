@@ -232,7 +232,7 @@ public enum AdvisorRules {
 // MARK: - 执行层（本地计算，金额只出自这里）
 
 /// 一笔明细行（某人往来卡用）：字段全来自本地快照
-public struct AdvisorEntryLine: Equatable, Sendable, Identifiable {
+public struct AdvisorEntryLine: Equatable, Sendable, Identifiable, Codable {
     public var person: String
     public var ledgerType: String
     public var direction: String
@@ -252,7 +252,7 @@ public struct AdvisorEntryLine: Equatable, Sendable, Identifiable {
 }
 
 /// 结构化回答：UI 层按 case 渲染原生卡片，文案与数字都由事实拼
-public enum AdvisorResult: Equatable, Sendable {
+public enum AdvisorResult: Equatable, Sendable, Codable {
     /// 差额卡：命中的人物汇总（收/随/差额都在 PersonSummary 里）
     case balance(PersonSummary)
     /// 某人往来卡：人物小计 + 明细（日期倒序，已排除待送出，与全 App 口径一致）

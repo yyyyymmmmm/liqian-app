@@ -1,6 +1,7 @@
 import AVFoundation
 import Speech
 import SwiftUI
+import os
 import LiqianCore
 import LiqianDesign
 
@@ -308,6 +309,25 @@ struct QuickSentenceView: View {
 // isRecording 在引擎真正启动前一直是 false，用户连点或授权慢时 start() 会重入，
 // 且 stop() 只在引擎运行时摘 tap，启动中途失败残留的 tap 会让下一次启动必崩。
 // 修法：isStarting 重入闸门、装 tap 前校验格式并先摘旧 tap、stop() 无条件摘 tap。
+//
+// 闪退再审（v5.4，用户真机点麦克风仍闪退后的逐行审计，新隐患点）：
+// ③ 授权链没有「作废」机制：stop()/页面消失后，在途的语音→麦克风两段
+//    授权回调仍会继续调 beginSession()，在已离开的页面上启动音频引擎，
+//    甚至与下一个页面的转写器抢同一个 AVAudioSession。修法：代际计数，
+//    stop() 必递增代际，每段异步回调落地前先验代际，过期直接丢弃。
+// ④ tap 回调（音频线程）的 append 与 stop() 的 endAudio 存在竞争窗口：
+//    removeTap 返回时可能仍有一个在途 buffer，endAudio 之后再 append
+//    会抛 NSException（SFSpeech 的经典崩点，do/catch 拦不住）。修法：
+//    原子接受旗——stop() 先关旗、再摘 tap、最后 endAudio；tap 内先验旗。
+// ⑤ setCategory(.record, options: .duckOthers)：该 option 与 record
+//    类别组合不合法会抛 AVAudioSession 错误（虽被 catch 成报错、不算
+//    闪退，但属无谓失败点）。修法：去掉该 option。
+// ⑥ stop() 无条件访问 inputNode：从未启动过也去摘 tap 会凭空创建输入
+//    节点；在无输入路由的极端状态下查节点有抛异常的报告。修法：
+//    tapInstalled 标记，没装过 tap 的 stop 完全不碰引擎。
+// ⑦ recognizer 在 init 时只建一次：系统语音服务中途掉线后 isAvailable
+//    状态可能过期。修法：每次 start 现建实例并判空＋判 isAvailable。
+// 以上 ③–⑦ 为代码审计推定，真机崩溃日志未到手，待真机验（V54-NOTES）。
 
 @MainActor
 final class SpeechTranscriber: ObservableObject {
@@ -317,12 +337,18 @@ final class SpeechTranscriber: ObservableObject {
     @Published var errorText: String?
     var onText: ((String) -> Void)?
 
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     /// 音频会话已由本类激活（stop 时据此 deactivate，不误关他人状态）
     private var sessionActivated = false
+    /// tap 已装标记：stop 只在真装过时才碰 inputNode（隐患 ⑥）
+    private var tapInstalled = false
+    /// 代际计数：stop()/新一轮 start() 都会推进；在途异步回调落地前
+    /// 先验代际，过期回调直接丢弃（隐患 ③）
+    private var generation = 0
+    /// tap 接受旗（音频线程与主线程共享）：false 后 tap 不再 append（隐患 ④）
+    private let bufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     func toggle() {
         if isRecording {
@@ -335,42 +361,49 @@ final class SpeechTranscriber: ObservableObject {
     func start() {
         guard !isRecording, !isStarting else { return }
         errorText = nil
-        guard let recognizer, recognizer.isAvailable else {
+        // 每次现建识别器并判空＋判可用（隐患 ⑦）
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
+              recognizer.isAvailable else {
             errorText = "语音识别暂时不可用，可直接输入文字。"
             return
         }
         isStarting = true
+        generation += 1
+        let gen = generation
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.generation == gen else { return }
                 guard status == .authorized else {
                     self.isStarting = false
                     self.errorText = "语音识别未获得权限，可直接输入文字；如需使用，请在系统设置中开启。"
                     return
                 }
-                AVAudioApplication.requestRecordPermission { granted in
+                AVAudioApplication.requestRecordPermission { [weak self] granted in
                     Task { @MainActor in
+                        guard let self, self.generation == gen else { return }
                         guard granted else {
                             self.isStarting = false
                             self.errorText = "麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。"
                             return
                         }
-                        self.beginSession()
+                        self.beginSession(recognizer: recognizer, generation: gen)
                     }
                 }
             }
         }
     }
 
-    private func beginSession() {
-        guard let recognizer, recognizer.isAvailable else {
+    private func beginSession(recognizer: SFSpeechRecognizer, generation gen: Int) {
+        guard generation == gen else { return }
+        guard recognizer.isAvailable else {
             isStarting = false
             errorText = "语音识别暂时不可用，可直接输入文字。"
             return
         }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            // 隐患 ⑤：.duckOthers 与 .record 组合不合法，去掉该 option
+            try session.setCategory(.record, mode: .measurement)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             sessionActivated = true
 
@@ -388,10 +421,18 @@ final class SpeechTranscriber: ObservableObject {
             self.request = request
 
             // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap，重复装同样是 NSException
-            input.removeTap(onBus: 0)
+            if tapInstalled {
+                input.removeTap(onBus: 0)
+                tapInstalled = false
+            }
+            let gate = bufferGate
+            gate.withLock { $0 = true }
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+                // 隐患 ④：endAudio 之后再 append 会抛异常，先验接受旗
+                guard gate.withLock({ $0 }) else { return }
                 request.append(buffer)
             }
+            tapInstalled = true
             audioEngine.prepare()
             try audioEngine.start()
             isRecording = true
@@ -399,7 +440,7 @@ final class SpeechTranscriber: ObservableObject {
 
             task = recognizer.recognitionTask(with: request) { [weak self] result, error in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.generation == gen else { return }
                     if let result {
                         self.onText?(result.bestTranscription.formattedString)
                     }
@@ -415,11 +456,19 @@ final class SpeechTranscriber: ObservableObject {
     }
 
     func stop() {
+        // 代际推进：在途授权/识别回调自此全部作废（隐患 ③）
+        generation += 1
+        // 先关接受旗，tap 立刻停止 append，再动引擎与请求（隐患 ④ 的顺序）
+        bufferGate.withLock { $0 = false }
         if audioEngine.isRunning {
             audioEngine.stop()
         }
-        // 不管引擎跑没跑都摘 tap，否则中途失败残留的 tap 会让下一次启动必崩
-        audioEngine.inputNode.removeTap(onBus: 0)
+        // 没装过 tap 就完全不碰 inputNode（隐患 ⑥）；装过必摘，
+        // 否则中途失败残留的 tap 会让下一次启动必崩
+        if tapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
         request?.endAudio()
         task?.cancel()
         request = nil

@@ -181,17 +181,15 @@ struct AISettingsView: View {
         status = .noKey
     }
 
-    /// 一次极小接口调用探活：结果无论成败都落盘，失败带人话原因、不静默。
+    /// 一次极小接口调用探活：走正式问账同一条 chatTurn 路径（v5.4，
+    /// 不再自造请求形状）；结果无论成败都落盘，失败带人话原因、不静默。
     private func verifyNow() {
         guard let last4 = savedLast4, !verifying else { return }
         verifying = true
         Task {
             defer { verifying = false }
             do {
-                _ = try await DeepSeekClient().chatJSON(
-                    system: "仅回复 OK",
-                    user: "OK"
-                )
+                try await DeepSeekClient().verifyKey()
                 let record = AIVerificationRecord(
                     outcome: .verified, keyLast4: last4, at: Date()
                 )
@@ -217,7 +215,7 @@ struct AISettingsView: View {
         switch error {
         case .noKey:
             return "还没有保存 API Key。"
-        case .http(let code):
+        case .http(let code, let serverMessage):
             switch code {
             case 401, 403:
                 return "API Key 被拒绝：可能填错了，请核对后重新保存。"
@@ -226,6 +224,10 @@ struct AISettingsView: View {
             case 429:
                 return "请求过于频繁，请稍后再验证。"
             default:
+                // v5.4：带上服务端返回的真实原因，不只报一个状态码
+                if let serverMessage, !serverMessage.isEmpty {
+                    return "DeepSeek 接口返回异常（\(code)）：\(serverMessage)"
+                }
                 return "DeepSeek 接口返回异常（\(code)），请稍后再验证。"
             }
         case .network:

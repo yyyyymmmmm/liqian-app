@@ -4,7 +4,7 @@ import SwiftData
 // MARK: - 纯函数账务规则（不碰 SwiftData，可单测；口径与 Flutter store.dart 一致）
 
 /// 一笔记录的纯值快照。ledgerType 为所属账本的事由（找不到账本时传 ""，typeSummary 会跳过）。
-public struct EntrySnapshot: Sendable, Equatable {
+public struct EntrySnapshot: Sendable, Equatable, Codable {
     public var person: String
     public var relation: String
     public var amountCents: Int
@@ -42,7 +42,7 @@ public struct EntrySnapshot: Sendable, Equatable {
     }
 }
 
-public struct PersonSummary: Sendable, Equatable, Identifiable {
+public struct PersonSummary: Sendable, Equatable, Identifiable, Codable {
     public var name: String
     public var relation: String
     /// 收礼合计（别人给我）
@@ -112,7 +112,7 @@ public struct YearSummary: Sendable, Equatable {
     }
 }
 
-public struct TypeSummary: Sendable, Equatable, Identifiable {
+public struct TypeSummary: Sendable, Equatable, Identifiable, Codable {
     public var type: String
     public var received: Int
     public var given: Int

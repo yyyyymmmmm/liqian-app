@@ -16,14 +16,22 @@ import LiqianDesign
 /// bug）；查账过程有按工具映射的人话状态；气泡/示例签/输入栏走 Mat
 /// 材质＋主题染色令牌；消息入场与卡片依次浮入走 Motion 令牌，
 /// Reduce Motion 全降级。工具集、问答纪律、降级路径未动。
-/// 会话只在本页内存里，离开即散（本期口径，不落库）。
+/// v5.4：对话本地持久化（AdvisorChatStore 落 JSON 文件），退出重进
+/// 历史还在，页面菜单可清空；新增 draft_record 记账工具——AI 只起草
+/// 待确认卡，用户点「确认入账」才走既有记账数据路径真正写库。
 struct AdvisorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var modelContext
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @StateObject private var transcriber = SpeechTranscriber()
 
-    @State private var messages: [Message] = []
+    @State private var messages: [AdvisorChatMessage] = []
+    /// 历史只在首次出现时恢复一次（之后以内存为准、每次变更回写文件）
+    @State private var loadedHistory = false
+    @State private var showClearConfirm = false
+    /// 回执卡点开的记录详情（既有 RecordFormView 编辑形态，与礼簿详情同口径）
+    @State private var editingRecord: GiftRecord?
     @State private var input = ""
     @State private var isAsking = false
     /// 查账过程状态（v5.3）：按当前工具映射的人话文案，nil = 不在查账
@@ -33,20 +41,6 @@ struct AdvisorView: View {
     @State private var personRoute: PeopleView.NameRoute?
     /// 首屏入场（v5.3）：欢迎卡与示例签淡入上浮，Reduce Motion 时直达终态
     @State private var entered = false
-
-    private struct Message: Identifiable {
-        let id = UUID()
-        var kind: Kind
-        enum Kind {
-            case user(String)
-            case result(AdvisorResult)
-            /// v5.2 工具问答的文字答复＋v5.3 结构化卡片：文字是结论引子
-            ///（Markdown 渲染，数字只许来自工具结果），卡片与工具结果同源
-            case answer(text: String, cards: [AdvisorCard])
-            /// 纯文案答复（没听懂、没找到人等，文案在 Core 结果之外由本层拼）
-            case note(String)
-        }
-    }
 
     private var snapshots: [EntrySnapshot] {
         AppSupport.snapshots(records: records, ledgers: ledgers)
@@ -65,6 +59,7 @@ struct AdvisorView: View {
         "婚礼一共收了多少",
         "最近三个月每月随了多少",
         "下一场是什么时候，备礼备了吗",
+        "张三随礼了 500，帮我记上",
     ]
 
     var body: some View {
@@ -112,7 +107,47 @@ struct AdvisorView: View {
         .navigationDestination(item: $personRoute) { route in
             PersonDetailView(name: route.name)
         }
+        .sheet(item: $editingRecord) { record in
+            RecordFormView(existing: record)
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showClearConfirm = true
+                    } label: {
+                        Label("清空对话", systemImage: "trash")
+                    }
+                    .disabled(messages.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("对话菜单")
+            }
+        }
+        .confirmationDialog(
+            "清空全部对话记录？",
+            isPresented: $showClearConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("清空", role: .destructive) {
+                messages = []
+                AdvisorChatStore.clear()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("问答历史会从本机删除，账本记录不受影响。")
+        }
+        .onChange(of: messages) { _, newValue in
+            AdvisorChatStore.save(newValue)
+        }
         .onAppear {
+            if !loadedHistory {
+                loadedHistory = true
+                if messages.isEmpty {
+                    messages = AdvisorChatStore.load()
+                }
+            }
             transcriber.onText = { input = $0 }
             if !entered {
                 if reduceMotion {
@@ -152,8 +187,14 @@ struct AdvisorView: View {
             Text("问我一句，我从你的账里查。")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            Text("比如谁还没回礼、和谁欠谁、今年和去年比哪个多、最近几个月的趋势、下一场安排。金额都由工具按本机账目现查现算。")
+            Text("比如谁还没回礼、和谁欠谁、今年和去年比哪个多、最近几个月的趋势、下一场安排。金额都由工具按本机账目现查现算。也可以直接吩咐我记账，如「张三随礼了 500」——我拟好卡片，你核对点确认才入账。")
                 .font(.footnote)
+                .foregroundStyle(Palette.stone)
+            // v5.4：隐私脚注从输入栈里挪进欢迎卡底部——输入区只剩
+            // 签行＋输入坞，不再有文字夹在两层控件之间。
+            Divider()
+            Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。对话记录只存这台手机，随时可在右上角菜单里清空。")
+                .font(.caption)
                 .foregroundStyle(Palette.stone)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,10 +203,11 @@ struct AdvisorView: View {
         .offset(y: reduceMotion ? 0 : (entered ? 0 : 10))
     }
 
-    // MARK: - 输入区（示例 chips + 语音/文字输入 + 隐私说明）
-    // v5.3：整栏走功能层玻璃（Mat.regular），示例签走 Mat.tinted 染色玻璃，
-    // 麦克风落玻璃圆，发送键三态（空禁用/可发染色/发送中转圈）——
-    // 全页不再残留系统默认控件样式，着色一律 DesignTokens、随主题走。
+    // MARK: - 输入区（示例 chips + 输入坞）
+    // v5.3：示例签走 Mat.tinted 染色玻璃、麦克风落玻璃圆、发送键三态。
+    // v5.4 收拾成一坨：签行贴在坞上方，坞（玻璃圆角容器）内只装
+    // 麦克风/输入框/发送键；隐私脚注已移出输入栈、收进欢迎卡底部，
+    // 输入区与标签栏之间只留令牌间距，不再五层堆叠夹文字。
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
@@ -218,14 +260,16 @@ struct AdvisorView: View {
 
                 sendButton
             }
-            Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。")
-                .font(.caption)
-                .foregroundStyle(Palette.stone)
+            .padding(.horizontal, LiqianMetrics.spacingS)
+            .padding(.vertical, LiqianMetrics.spacingXS)
+            .liqianGlassSurface(
+                .regular,
+                in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
+            )
         }
         .padding(.horizontal, LiqianMetrics.spacingM)
         .padding(.top, LiqianMetrics.spacingS)
         .padding(.bottom, LiqianMetrics.spacingS)
-        .liqianGlassSurface(.regular, in: Rectangle())
     }
 
     /// 发送键三态：空输入＝线色圆＋石色箭头（禁用）；可发＝主题填充＋白箭头；
@@ -261,7 +305,7 @@ struct AdvisorView: View {
     // MARK: - 消息行
 
     @ViewBuilder
-    private func messageRow(_ message: Message, proxy: ScrollViewProxy) -> some View {
+    private func messageRow(_ message: AdvisorChatMessage, proxy: ScrollViewProxy) -> some View {
         switch message.kind {
         case .user(let text):
             HStack {
@@ -291,7 +335,7 @@ struct AdvisorView: View {
     /// 工具问答的回答块（v5.3）：上方结论引子（Markdown 打字机渲染，
     /// 不露标记）＋下方结构化卡片依次浮入（按工具调用顺序）
     private func answerBlock(
-        text: String, cards: [AdvisorCard], messageID: Message.ID, proxy: ScrollViewProxy
+        text: String, cards: [AdvisorCard], messageID: AdvisorChatMessage.ID, proxy: ScrollViewProxy
     ) -> some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             TypewriterMarkdownText(markdown: text) {
@@ -308,7 +352,7 @@ struct AdvisorView: View {
             .liqianCardSurface()
 
             ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
-                toolCard(card)
+                toolCard(card, messageID: messageID)
                     .modifier(CardInModifier(index: index, reduceMotion: reduceMotion))
             }
         }
@@ -320,7 +364,7 @@ struct AdvisorView: View {
     // 与图表系列同口径），条旁数字仍墨色。
 
     @ViewBuilder
-    private func toolCard(_ card: AdvisorCard) -> some View {
+    private func toolCard(_ card: AdvisorCard, messageID: AdvisorChatMessage.ID) -> some View {
         switch card {
         case .person(let payload):
             toolPersonCard(payload)
@@ -336,6 +380,8 @@ struct AdvisorView: View {
             toolPendingCard(payload)
         case .events(let payload):
             eventsCard(payload)
+        case .draftRecord(let payload):
+            draftRecordCard(payload, messageID: messageID)
         }
     }
 
@@ -615,6 +661,229 @@ struct AdvisorView: View {
             }
         }
         .liqianCardSurface()
+    }
+
+    // MARK: - 待确认记账卡（v5.4：AI 只起草，确认才入账）
+
+    /// 候选礼簿：非示例簿（@Query 已按日期倒序）；改选与兜底都从这里取
+    private var draftLedgerCandidates: [Ledger] {
+        let sample = SampleData.sampleIDs(ledgers: ledgers)
+        return ledgers.filter { !sample.contains($0.id) }
+    }
+
+    /// 草稿生效的目标礼簿：卡上已选 ＞ 工具建议（仍在候选内）＞ 日期最新非示例簿
+    private func effectiveDraftLedger(_ draft: AdvisorDraftRecordCard) -> Ledger? {
+        let candidates = draftLedgerCandidates
+        if let wanted = draft.chosenLedgerID ?? draft.suggestedLedgerID,
+           let hit = candidates.first(where: { $0.id == wanted }) {
+            return hit
+        }
+        return candidates.first
+    }
+
+    @ViewBuilder
+    private func draftRecordCard(_ draft: AdvisorDraftRecordCard, messageID: AdvisorChatMessage.ID) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            switch draft.state {
+            case .pending:
+                draftPendingBody(draft, messageID: messageID)
+            case .saved:
+                draftSavedBody(draft)
+            case .discarded:
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    Image(systemName: "xmark.circle")
+                        .foregroundStyle(Palette.stone)
+                    Text("已取消这笔：\(draft.person) \(draft.direction) \(LedgerMath.fmtMoney(cents: draft.amountCents))，没有入账。")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    @ViewBuilder
+    private func draftPendingBody(_ draft: AdvisorDraftRecordCard, messageID: AdvisorChatMessage.ID) -> some View {
+        let target = effectiveDraftLedger(draft)
+        cardTitle("待确认记账", detail: "核对后点确认才入账")
+        draftField(label: "人名", value: draft.relation.isEmpty ? draft.person : "\(draft.person)（\(draft.relation)）")
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Text("金额")
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .frame(width: 56, alignment: .leading)
+            SignedMoneyText(
+                cents: draft.amountCents,
+                direction: draft.direction,
+                bai: draft.ledgerType == LiqianConstants.baiType,
+                style: .title3
+            )
+            Text(draft.direction)
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+        }
+        draftField(label: "日期", value: LiqianDate.displayString(for: draft.date))
+        if !draft.ledgerType.isEmpty {
+            draftField(label: "场合", value: draft.ledgerType)
+        }
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Text("记入")
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .frame(width: 56, alignment: .leading)
+            if draftLedgerCandidates.isEmpty {
+                Text("还没有可记的礼簿，先去新建一本礼簿")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.danger)
+            } else {
+                Menu {
+                    ForEach(draftLedgerCandidates) { ledger in
+                        Button {
+                            updateDraft(messageID: messageID, draftID: draft.draftID) {
+                                $0.chosenLedgerID = ledger.id
+                            }
+                        } label: {
+                            if ledger.id == target?.id {
+                                Label(ledger.title, systemImage: "checkmark")
+                            } else {
+                                Text(ledger.title)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: LiqianMetrics.spacingXS) {
+                        Text(target?.title ?? "")
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+            }
+            Spacer()
+        }
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Button {
+                confirmDraft(draft, messageID: messageID)
+            } label: {
+                Text("确认入账")
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    .padding(.horizontal, LiqianMetrics.spacingSM)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(Palette.primary)
+            .disabled(target == nil)
+            Button {
+                updateDraft(messageID: messageID, draftID: draft.draftID) { $0.state = .discarded }
+            } label: {
+                Text("算了")
+                    .frame(minHeight: LiqianMetrics.minTapTarget)
+                    .padding(.horizontal, LiqianMetrics.spacingSM)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.stone)
+        }
+    }
+
+    /// 回执形态：已入账＋摘要＋查看这笔（打开既有记录详情/编辑页）
+    @ViewBuilder
+    private func draftSavedBody(_ draft: AdvisorDraftRecordCard) -> some View {
+        let saved = draft.savedRecordID.flatMap { id in records.first { $0.id == id } }
+        let ledgerTitle = ledgers.first { $0.id == draft.chosenLedgerID }?.title
+            ?? draft.suggestedLedgerTitle
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Palette.success)
+            Text("已入账")
+                .font(.headline)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+            SignedMoneyText(
+                cents: draft.amountCents,
+                direction: draft.direction,
+                bai: draft.ledgerType == LiqianConstants.baiType,
+                style: .body
+            )
+        }
+        Text("\(draft.person) · \(draft.direction) · \(LiqianDate.displayString(for: draft.date))\(ledgerTitle.isEmpty ? "" : " · 记入《\(ledgerTitle)》")")
+            .font(.footnote)
+            .foregroundStyle(Palette.stone)
+        if let saved {
+            Button {
+                editingRecord = saved
+            } label: {
+                HStack(spacing: LiqianMetrics.spacingXS) {
+                    Text("查看这笔")
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                }
+                .frame(minHeight: LiqianMetrics.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.primary)
+        } else {
+            Text("这笔记录已不在账本里（可能后来被删除）。")
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+        }
+    }
+
+    private func draftField(label: String, value: String) -> some View {
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .frame(width: 56, alignment: .leading)
+            Text(value)
+                .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+            Spacer()
+        }
+    }
+
+    /// 确认入账：与 RecordFormView.save() 同一数据路径——同一个
+    /// GiftRecord 构造＋modelContext.insert/save，字段口径一致
+    /// （随礼/回礼都是已发生的事，status 恒已送出；方式缺省现金与
+    /// 表单默认一致；关系缺失回退表单默认「朋友」）。不另起一套构造。
+    private func confirmDraft(_ draft: AdvisorDraftRecordCard, messageID: AdvisorChatMessage.ID) {
+        guard draft.state == .pending, let ledger = effectiveDraftLedger(draft) else { return }
+        let record = GiftRecord(
+            ledgerID: ledger.id,
+            person: draft.person,
+            relation: draft.relation.isEmpty ? "朋友" : draft.relation,
+            amountCents: draft.amountCents,
+            direction: draft.direction,
+            method: "现金",
+            note: "",
+            date: draft.date,
+            status: LiqianConstants.sentStatus
+        )
+        modelContext.insert(record)
+        try? modelContext.save()
+        updateDraft(messageID: messageID, draftID: draft.draftID) {
+            $0.state = .saved
+            $0.chosenLedgerID = ledger.id
+            $0.savedRecordID = record.id
+        }
+        answerTrigger += 1
+    }
+
+    /// 按 draftID 定位并回写某张草稿卡的状态（改选礼簿/确认/取消共用）；
+    /// messages 变更会经 onChange 自动回写持久化文件
+    private func updateDraft(
+        messageID: AdvisorChatMessage.ID, draftID: UUID,
+        mutate: (inout AdvisorDraftRecordCard) -> Void
+    ) {
+        guard let mi = messages.firstIndex(where: { $0.id == messageID }),
+              case .answer(let text, var cards) = messages[mi].kind else { return }
+        for ci in cards.indices {
+            if case .draftRecord(var draft) = cards[ci], draft.draftID == draftID {
+                mutate(&draft)
+                cards[ci] = .draftRecord(draft)
+            }
+        }
+        messages[mi].kind = .answer(text: text, cards: cards)
     }
 
     /// 卡片标题行（工具卡共用）：标题＋可选弱说明
@@ -928,7 +1197,7 @@ struct AdvisorView: View {
         guard !question.isEmpty, !isAsking else { return }
         transcriber.stop()
         input = ""
-        messages.append(Message(kind: .user(question)))
+        messages.append(AdvisorChatMessage(kind: .user(question)))
         isAsking = true
         activityText = "正在查账…"
         let entries = snapshots
@@ -948,7 +1217,7 @@ struct AdvisorView: View {
                let answer = await answerWithTools(question: question, context: toolContext) {
                 isAsking = false
                 activityText = nil
-                messages.append(Message(kind: .answer(text: answer.text, cards: answer.cards)))
+                messages.append(AdvisorChatMessage(kind: .answer(text: answer.text, cards: answer.cards)))
                 answerTrigger += 1
                 return
             }
@@ -956,11 +1225,11 @@ struct AdvisorView: View {
             isAsking = false
             activityText = nil
             if let intent {
-                messages.append(Message(kind: .result(
+                messages.append(AdvisorChatMessage(kind: .result(
                     AdvisorEngine.execute(intent, entries: entries)
                 )))
             } else {
-                messages.append(Message(kind: .result(.unsupported)))
+                messages.append(AdvisorChatMessage(kind: .result(.unsupported)))
             }
             answerTrigger += 1
         }
@@ -1033,6 +1302,8 @@ struct AdvisorView: View {
             return "正在翻待回名单…"
         case AdvisorTools.upcomingEvents:
             return "正在看近期场次和备礼…"
+        case AdvisorTools.draftRecord:
+            return "正在整理成记账卡…"
         default:
             return "正在查账…"
         }
@@ -1053,13 +1324,14 @@ struct AdvisorView: View {
         """
         你是「礼记」的问账管家，帮用户查他自己的人情礼金账。今天是 \(today)。
         你有五个本地查账工具：query_person（查某个人）、query_records（按条件筛逐笔）、aggregate（分组汇总与两时段对比）、pending_list（待回名单）、upcoming_events（近期场次与备礼清单）。需要账目数据时必须先调工具查，不许凭印象回答。
+        另外有一个记账工具 draft_record：用户说要记一笔账（如「张三随礼了 500」「我给大舅回礼 800」「李四办满月我随了 1000」）时调它生成待确认记账卡。记账纪律：人名和金额有一项没说清，先向用户追问，绝不猜人名、绝不猜金额；金额只能用用户原话里的数字；方向分不清（是收到还是随出）也先问清再调。draft_record 只是草稿——只有用户在卡片上点「确认入账」才会真正记账，你不要说已经记好了。
         铁律：
         1. 回答里的每一个金额、笔数、日期、人名都只能来自工具返回的结果；工具没查到（ok 为 false、名单为空、账上没这个人）就直说「账里查不到」，绝不猜测、绝不编造、绝不拿别的数据凑。
         2. 相对时间要换算成绝对日期再调工具：如「今年」是 \(today) 所在年份的 1 月 1 日到 12 月 31 日，「最近三个月」按今天往前推三个月。工具返回的金额单位是元。
         3. 回答简洁口语、先给结论；涉及金额时带上口径出处，如「据你 2026 年的账」「你和大舅的全部往来里」。
         4. 回礼建议类问题：先用 query_person 查清差额与最近往来，再结合差额给建议，并说明建议依据的数字来自账里哪笔/哪段汇总；建议金额只能引用工具结果里的数字或其明确加减，不要凭空报数。
         5. 工具返回 ok:false 时，按 error 的意思如实告诉用户，或换个工具/参数再查一次；同一问题最多查 4 轮工具。
-        6. 只回答与人情账目有关的问题；无关问题礼貌说明自己只管查账。
+        6. 只处理与人情账目有关的事（查账与记账）；无关问题礼貌说明自己只管人情账目。
         """
     }
 
