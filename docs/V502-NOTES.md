@@ -86,12 +86,17 @@
   生成文本，非逐笔行，未动。
 - 小组件：显示待回计数/总额（汇总），未动。
 
-## 验收（待 CI 完成后回填）
+## 验收（实测）
 
-- CI run：（回填）
-- 单测：（回填，要求 ≥160 且 0 失败）
-- 解包验：（回填，要求 App/Widget 5.0.2/52、无 LiqianShare.appex、
-  预签断言通过）
+- CI：run 42442084478 **success**（Build / Unit tests / 预签断言 /
+  打包全绿）。
+- 单测：**160 个、0 失败**（CI 日志 Executed 160 tests, with 0
+  failures；基线 158＋本版新增 2 组，如数）。
+- 解包验：App 与 Widget 的 Info.plist 均为 **5.0.2/52**；PlugIns
+  只有 LiqianWidget.appex、**无 LiqianShare.appex**；CI 预签断言
+  通过；App 二进制 strings 抽查 SignedMoneyText 符号在包内。
+- IPA：~/workspace/your_files/liqian-v5.0.2/liqian-native-unsigned.ipa
+  （3,568,063 字节）。
 
 ## 真机待验（不宣称已验）
 
