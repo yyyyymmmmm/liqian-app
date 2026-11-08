@@ -96,6 +96,13 @@ extension BlessingPlayer: AVAudioPlayerDelegate {
 }
 
 // MARK: - 录制（AVAudioRecorder，AAC/m4a；权限文案复用既有麦克风说明）
+//
+// v5.4.1 三审同步修：①授权先同步读 recordPermission——已授权直接开录、
+// 已拒绝直接报错，都不发异步回调（与 SpeechTranscriber 隐患 ⑧ 同理，
+// 回调由 TCC 在 XPC 线程投递、@MainActor 隔离闭包有执行者陷阱风险）；
+// ②rec.record() 的 Bool 返回此前被丢弃——返回 false 时界面会假装在录、
+// 计时走字却没声音，如今检查返回值并报错收尾；③全程 MicTrace 面包屑
+// （步号 101 起，与转写链的 1–16 区分来源）。
 
 @MainActor
 final class BlessingRecorder: ObservableObject {
@@ -106,26 +113,49 @@ final class BlessingRecorder: ObservableObject {
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var pendingFileName: String?
+    /// 面包屑会话已武装（start 置位、stop/cancel/失败收尾据此 close）
+    private var traceArmed = false
 
     func start() {
         guard !isRecording else { return }
-        AVAudioApplication.requestRecordPermission { [weak self] granted in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard granted else {
-                    self.errorText = "没有麦克风权限，去系统设置里打开后就能录祝福了。"
-                    return
+        traceArmed = true
+        MicTrace.mark(step: 101, "祝福录音·点录制")
+        // 同步分流（v5.4.1）：已决状态不发请求回调
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            MicTrace.mark(step: 102, "麦克风已授权（同步快路）")
+            beginRecording()
+        case .denied:
+            errorText = "没有麦克风权限，去系统设置里打开后就能录祝福了。"
+            MicTrace.mark(step: 102, "麦克风已拒绝（同步快路）")
+            closeTrace(reason: "麦克风授权被拒")
+        case .undetermined:
+            MicTrace.mark(step: 102, "请求麦克风授权")
+            SpeechTranscriber.requestRecordPermissionBridge { [weak self] granted in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    MicTrace.mark(step: 103, "麦克风授权回调", detail: "granted=\(granted)")
+                    guard granted else {
+                        self.errorText = "没有麦克风权限，去系统设置里打开后就能录祝福了。"
+                        self.closeTrace(reason: "麦克风授权被拒")
+                        return
+                    }
+                    self.beginRecording()
                 }
-                self.beginRecording()
             }
+        @unknown default:
+            errorText = "麦克风暂时不可用，请再试一次。"
+            closeTrace(reason: "麦克风状态未知")
         }
     }
 
     private func beginRecording() {
+        MicTrace.mark(step: 104, "进入 beginRecording")
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default)
             try session.setActive(true)
+            MicTrace.mark(step: 105, "音频会话已激活")
             let fileName = BlessingAudioStore.newFileName()
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -136,7 +166,16 @@ final class BlessingRecorder: ObservableObject {
             let rec = try AVAudioRecorder(
                 url: BlessingAudioStore.url(for: fileName), settings: settings
             )
-            rec.record()
+            MicTrace.mark(step: 106, "录音器已创建")
+            // v5.4.1：record() 返回 false = 没录上，此前丢弃返回值会
+            // 让界面假装在录（计时在走、文件是空的），如今显式收尾
+            guard rec.record() else {
+                errorText = "录音没能开始，请再试一次。"
+                MicTrace.mark(step: 107, "record() 返回 false")
+                closeTrace(reason: "录音器启动失败")
+                return
+            }
+            MicTrace.mark(step: 107, "录音中")
             recorder = rec
             pendingFileName = fileName
             elapsed = 0
@@ -148,7 +187,9 @@ final class BlessingRecorder: ObservableObject {
                 }
             }
         } catch {
+            MicTrace.mark(step: 108, "beginRecording 异常", detail: error.localizedDescription)
             errorText = "录音没能开始，请再试一次。"
+            closeTrace(reason: "录音启动异常")
         }
     }
 
@@ -158,6 +199,7 @@ final class BlessingRecorder: ObservableObject {
         let duration = rec.currentTime
         rec.stop()
         cleanup()
+        closeTrace(reason: "录音正常结束")
         if duration < 0.5 {
             BlessingAudioStore.remove(fileName)
             return nil
@@ -171,6 +213,16 @@ final class BlessingRecorder: ObservableObject {
             BlessingAudioStore.remove(fileName)
         }
         cleanup()
+        closeTrace(reason: "用户取消录音")
+    }
+
+    /// 面包屑收尾（仅武装过的会话）：与 SpeechTranscriber 同口径，
+    /// 没启动过的 cancel 不许抹掉上次闪退的未结束标记
+    private func closeTrace(reason: String) {
+        if traceArmed {
+            traceArmed = false
+            MicTrace.close(reason: reason)
+        }
     }
 
     private func cleanup() {

@@ -13,6 +13,9 @@ struct AISettingsView: View {
     @State private var status: AIVerificationStatus = .noKey
     @State private var verifying = false
     @State private var showDeleteConfirm = false
+    /// 语音诊断摘要（v5.4.1）：上次麦克风流程未正常结束时才有值，
+    /// 平时为 nil、整节不显示——由 MicTrace 面包屑在 onAppear 时读出
+    @State private var micTraceSummary: String?
 
     var body: some View {
         Form {
@@ -98,6 +101,20 @@ struct AISettingsView: View {
             } header: {
                 Text("说明")
             }
+
+            // v5.4.1 语音诊断：仅当上次麦克风会话没正常结束（多半是
+            // 闪退中途）时出现，告诉我们流程停在哪一步；正常时整节不显示
+            if let micTraceSummary {
+                Section {
+                    Text(micTraceSummary)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.warning)
+                } header: {
+                    Text("语音诊断")
+                } footer: {
+                    Text("这是上次打开 App 前自动留下的定位线索：麦克风流程停在哪一步。把这一行截图发给我们，就能对着那一步修。")
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(Palette.pageBG.ignoresSafeArea())
@@ -160,6 +177,7 @@ struct AISettingsView: View {
     private func refreshState() {
         savedLast4 = KeychainStore.read().map { String($0.suffix(4)) }
         status = AIVerificationStore.status(currentKeyLast4: savedLast4)
+        micTraceSummary = MicTrace.unclosedSummary()
     }
 
     private func saveKey() {
