@@ -127,9 +127,23 @@ WidgetKit、ActivityKit）。
   与实际一致（扩展只在本机读 App Group 摘要）。
 - 结论：两份清单与新政策口径一致、无明显错误，**本版不改清单文件**。
 
-## 五、验收实测
+## 五、验收实测（2026-11-08 本机亲验）
 
-（CI 完成后回填。）
+- CI：run 42445841717 **success**（手动 workflow_dispatch 于本分支）。
+  日志含 `** BUILD SUCCEEDED **`、`** TEST SUCCEEDED **`、
+  `presign assertions passed (2 binaries)`。
+- 单测：日志逐条去重计数 **194 个唯一用例全过、0 失败**（与 v5.3
+  基线一例未掉；本版无新增单测，改动面为 Legal.swift 文本与呈现、
+  Project.swift 版本字面量、NOTES）。
+- 解包验：App 与 Widget 均 **5.3.1/57**；PlugIns 只有 LiqianWidget，
+  **无 LiqianShare.appex**；Share target 版本保持 4.6.0/46 未动。
+- 包内关键串（主二进制原始字节按 UTF-8 搜，GNU strings 对中文有
+  提取假阴性、与前版同一现象）：知和数智、版本 v2.0、生效日期
+  2026 年 11 月 16 日、DeepSeek（深度求索）、AI 管家、一次性买断、
+  装订成书内测表述、299–399、inkroot001@gmail.com 全部命中；
+  旧称「AI 智能助手」全包 absent。
+- IPA：`~/workspace/your_files/liqian-v5.3.1/liqian-native-unsigned.ipa`
+  （3,821,474 字节）。
 
 ## 六、真机待验（未验，不宣称已验）
 
