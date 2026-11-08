@@ -5,12 +5,12 @@ import UniformTypeIdentifiers
 import LiqianCore
 import LiqianDesign
 
-/// 「我的」（v2.5 包 5 按大厂设置页重组）：List(.insetGrouped) 原生 Section 与行，
-/// 披露箭头由系统唯一提供（手绘 chevron 已全删）。设置页不放数据看板——
-/// 原页顶总览统计与待回礼大卡改为「记录」组里的一行入口（人情总览进 StatsView、
-/// 待回礼进行内列表页并带总金额值），其余按功能域归档成组：
-/// 记录／礼谱／外观／智能／数据／关于。危险操作只留在所属组内用 destructive
-/// 确认（覆盖恢复在数据组），不与普通入口混排无标识。全部汇总口径排除示例账本。
+/// 「我的」设置页（v5.0.1 按定版 IA 重组）：List(.insetGrouped) 原生
+/// Section 与行，披露箭头由系统唯一提供。分组顺序＝会员卡（顶）→
+/// 总览 → 数据 → 提醒 → 外观与偏好 → AI 管家 → 协作 → 隐私与协议 →
+/// 帮助 → 关于（沉底）；只重组排序、不删入口、不改子页，逐项对照
+/// 见 docs/V501-NOTES.md。危险操作只留在所属组内用 destructive 确认
+/// （覆盖恢复在数据组）。全部汇总口径排除示例账本。
 struct MeView: View {
     @Environment(\.modelContext) private var modelContext
     /// iCloud 同步状态（容器在启动时选定，开关改动下次启动生效，见 CloudSync.swift）
@@ -119,8 +119,27 @@ struct MeView: View {
     var body: some View {
         NavigationStack {
             List {
-                // —— 记录：数据看板不进设置流（v2.5 包 5）——总览与待回礼
-                // 从页顶大卡改为一行入口，明细在各自二级页；按功能域归档。
+                // —— 顶部会员卡（v5.0.1 IA）：单行成卡置顶，点进仍是
+                // v5 付费墙 PaywallView，不新造；副标题即权益状态。
+                Section {
+                    NavigationLink {
+                        PaywallView()
+                    } label: {
+                        entryLabel(
+                            icon: "seal",
+                            title: "礼记 Pro",
+                            subtitle: entitlements.isPro
+                                ? "已开通 · 全部导出权益可用"
+                                : "买断开通 Excel、纪念版礼谱、家族汇册与印刷版礼谱"
+                        )
+                    }
+                } footer: {
+                    Text("一次买断、不自动续费。基础礼谱 PDF 与完整备份始终免费。")
+                }
+
+                // —— 总览：数据查看入口（人情总览/年度报告/待回礼/备礼
+                // 清单经全仓核实仅设置页一处可达，删不得、定版九组无
+                // 对应落位，收敛为一组置于会员卡之下，账见 V501-NOTES）。
                 Section {
                     NavigationLink {
                         StatsView()
@@ -163,136 +182,12 @@ struct MeView: View {
                             }
                         }
                     }
-                    NavigationLink {
-                        RemindersView()
-                    } label: {
-                        HStack(spacing: LiqianMetrics.spacingSM) {
-                            entryLabel(
-                                icon: "bell",
-                                title: "人情提醒",
-                                subtitle: "重要日子与待回礼提醒"
-                            )
-                            Spacer()
-                            if !reminderDays.isEmpty {
-                                Text("\(reminderDays.count) 个日子")
-                                    .foregroundStyle(Palette.stone)
-                            }
-                        }
-                    }
-                    NavigationLink {
-                        RelationsManageView()
-                    } label: {
-                        entryLabel(
-                            icon: "person.2",
-                            title: "关系管理",
-                            subtitle: relationsSubtitle
-                        )
-                    }
-                    NavigationLink {
-                        TrashView()
-                    } label: {
-                        entryLabel(
-                            icon: "trash",
-                            title: "最近删除",
-                            subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
-                        )
-                    }
-                    HStack(spacing: LiqianMetrics.spacingSM) {
-                        entryLabel(
-                            icon: "chart.line.uptrend.xyaxis",
-                            title: "回礼参考年涨幅",
-                            subtitle: "往来越久，回礼参考按年折算的幅度"
-                        )
-                        Spacer()
-                        Picker("回礼参考年涨幅", selection: $annualRatePercent) {
-                            Text("不折算").tag(0)
-                            Text("3% / 年").tag(3)
-                            Text("5% / 年").tag(5)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .tint(Palette.stone)
-                    }
                 } header: {
-                    Text("记录")
+                    Text("总览")
                 }
 
-                Section {
-                    NavigationLink {
-                        HostNameEditView()
-                    } label: {
-                        HStack(spacing: LiqianMetrics.spacingSM) {
-                            entryLabel(icon: "signature", title: "礼谱落款姓名")
-                            Spacer()
-                            Text(hostName.isEmpty ? "未设置" : hostName)
-                                .foregroundStyle(Palette.stone)
-                                .lineLimit(1)
-                        }
-                    }
-                    Button {
-                        toggleSamples()
-                    } label: {
-                        entryLabel(
-                            icon: "sparkles",
-                            title: "示例礼簿",
-                            subtitle: hasSamples ? "已生成示例数据，点按清除" : "生成两本示例礼簿"
-                        )
-                    }
-                } header: {
-                    Text("礼谱")
-                } footer: {
-                    Text("落款姓名用于礼谱封面、谱序落款与主家印，不填时用「主家谨识」。")
-                }
-
-                Section {
-                    NavigationLink {
-                        PaywallView()
-                    } label: {
-                        entryLabel(
-                            icon: "seal",
-                            title: "礼记 Pro",
-                            subtitle: entitlements.isPro
-                                ? "已开通 · 全部导出权益可用"
-                                : "买断开通 Excel、纪念版礼谱、家族汇册与印刷版礼谱"
-                        )
-                    }
-                } header: {
-                    Text("礼记 Pro")
-                } footer: {
-                    Text("一次买断、不自动续费。基础礼谱 PDF 与完整备份始终免费。")
-                }
-
-                Section {
-                    NavigationLink {
-                        AppearanceView()
-                    } label: {
-                        HStack(spacing: LiqianMetrics.spacingSM) {
-                            entryLabel(icon: "paintbrush", title: "主题")
-                            Spacer()
-                            Text((AppTheme(rawValue: appThemeRaw) ?? .day).displayName)
-                                .foregroundStyle(Palette.stone)
-                        }
-                    }
-                } header: {
-                    Text("外观")
-                } footer: {
-                    Text("主题只影响 App 界面，导出的礼谱不变。")
-                }
-
-                Section {
-                    NavigationLink {
-                        AISettingsView()
-                    } label: {
-                        entryLabel(
-                            icon: "wand.and.stars",
-                            title: "AI 智能助手",
-                            subtitle: aiStatusText
-                        )
-                    }
-                } header: {
-                    Text("智能")
-                }
-
+                // —— 数据：同步状态打头、导出/恢复居中、回收站随后、
+                // 示例数据沉底（v5.0.1 IA）；备份提醒行已移「提醒」组。
                 Section {
                     Toggle(isOn: $cloudSync.syncEnabled) {
                         entryLabel(
@@ -315,7 +210,6 @@ struct MeView: View {
                             )
                         }
                     }
-                    csvEntryRow
                     Button {
                         startBackupExport()
                     } label: {
@@ -325,6 +219,7 @@ struct MeView: View {
                             subtitle: "包含全部礼簿、记录、提醒日子与礼簿班子，可用于换机恢复；签名图片与祝福录音不在备份内（保存在本机与 iCloud）"
                         )
                     }
+                    csvEntryRow
                     Button {
                         showImporter = true
                     } label: {
@@ -333,6 +228,48 @@ struct MeView: View {
                             title: "从备份恢复",
                             subtitle: "选一个备份文件，覆盖现在的数据"
                         )
+                    }
+                    NavigationLink {
+                        TrashView()
+                    } label: {
+                        entryLabel(
+                            icon: "trash",
+                            title: "最近删除",
+                            subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
+                        )
+                    }
+                    Button {
+                        toggleSamples()
+                    } label: {
+                        entryLabel(
+                            icon: "sparkles",
+                            title: "示例礼簿",
+                            subtitle: hasSamples ? "示例数据：已生成，点按清除" : "示例数据：生成两本示例礼簿看效果，不影响真实数据"
+                        )
+                    }
+                } header: {
+                    Text("数据")
+                } footer: {
+                    Text("iCloud 同步通过你的 iCloud 账号同步礼簿、记录与提醒，换手机或重装 App 后自动回来；导出备份是另一条手动恢复线，两条线互不影响。")
+                }
+
+                // —— 提醒：人情提醒与备份提醒归一组（v5.0.1 IA）——
+                Section {
+                    NavigationLink {
+                        RemindersView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(
+                                icon: "bell",
+                                title: "人情提醒",
+                                subtitle: "重要日子与待回礼提醒"
+                            )
+                            Spacer()
+                            if !reminderDays.isEmpty {
+                                Text("\(reminderDays.count) 个日子")
+                                    .foregroundStyle(Palette.stone)
+                            }
+                        }
                     }
                     // 备份提醒（v4.5）：从未备份或超过 30 天时才出现，
                     // 点行直接开始导出；备份成功后随 lastBackupStamp 刷新消失
@@ -348,11 +285,148 @@ struct MeView: View {
                         }
                     }
                 } header: {
-                    Text("数据")
-                } footer: {
-                    Text("iCloud 同步通过你的 iCloud 账号同步礼簿、记录与提醒，换手机或重装 App 后自动回来；导出备份是另一条手动恢复线，两条线互不影响。")
+                    Text("提醒")
                 }
 
+                // —— 外观与偏好：主题、落款、关系、年涨幅（v5.0.1 IA）——
+                Section {
+                    NavigationLink {
+                        AppearanceView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "paintbrush", title: "主题")
+                            Spacer()
+                            Text((AppTheme(rawValue: appThemeRaw) ?? .day).displayName)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                    NavigationLink {
+                        HostNameEditView()
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "signature", title: "礼谱落款姓名")
+                            Spacer()
+                            Text(hostName.isEmpty ? "未设置" : hostName)
+                                .foregroundStyle(Palette.stone)
+                                .lineLimit(1)
+                        }
+                    }
+                    NavigationLink {
+                        RelationsManageView()
+                    } label: {
+                        entryLabel(
+                            icon: "person.2",
+                            title: "关系管理",
+                            subtitle: relationsSubtitle
+                        )
+                    }
+                    HStack(spacing: LiqianMetrics.spacingSM) {
+                        entryLabel(
+                            icon: "chart.line.uptrend.xyaxis",
+                            title: "回礼参考年涨幅",
+                            subtitle: "往来越久，回礼参考按年折算的幅度"
+                        )
+                        Spacer()
+                        Picker("回礼参考年涨幅", selection: $annualRatePercent) {
+                            Text("不折算").tag(0)
+                            Text("3% / 年").tag(3)
+                            Text("5% / 年").tag(5)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(Palette.stone)
+                    }
+                } header: {
+                    Text("外观与偏好")
+                } footer: {
+                    Text("主题只影响 App 界面，导出的礼谱不变。落款姓名用于礼谱封面、谱序落款与主家印，不填时用「主家谨识」。")
+                }
+
+                // —— AI 管家：现有 AI 设置页原样接入 ——
+                Section {
+                    NavigationLink {
+                        AISettingsView()
+                    } label: {
+                        entryLabel(
+                            icon: "wand.and.stars",
+                            title: "AI 智能助手",
+                            subtitle: aiStatusText
+                        )
+                    }
+                } header: {
+                    Text("AI 管家")
+                }
+
+                // —— 协作：协作是礼簿级事务（班子在礼簿详情内），
+                // 设置页给一条落点：礼簿列表 → 礼簿详情 → 礼簿班子，
+                // 链上全是现有页面（v5.0.1 IA）。
+                Section {
+                    NavigationLink {
+                        LedgersView()
+                    } label: {
+                        entryLabel(
+                            icon: "person.3",
+                            title: "家庭协作",
+                            subtitle: "选一本礼簿，在详情里管理班子成员与协作"
+                        )
+                    }
+                } header: {
+                    Text("协作")
+                }
+
+                // —— 隐私与协议：隐私锁从「关于」移出、政策与协议
+                // 从 AboutView 子页内升为设置页直达（子页原行保留）。
+                Section {
+                    Toggle(isOn: $privacyLock) {
+                        entryLabel(
+                            icon: "faceid",
+                            title: "隐私锁",
+                            subtitle: "从后台返回超过 30 秒需重新解锁；App 在后台时界面自动模糊。"
+                        )
+                    }
+                    .tint(Palette.primary)
+                    NavigationLink {
+                        LegalView(doc: LegalTexts.privacyPolicy)
+                    } label: {
+                        entryLabel(icon: "hand.raised", title: "隐私政策")
+                    }
+                    NavigationLink {
+                        LegalView(doc: LegalTexts.userAgreement)
+                    } label: {
+                        entryLabel(icon: "doc.text", title: "用户协议")
+                    }
+                } header: {
+                    Text("隐私与协议")
+                }
+
+                // —— 帮助：重看引导与意见反馈（v5.0.1 IA）；不设
+                // 「给个好评」——现版无此入口且 ReviewPrompt 既定
+                // 设计不放常驻评分入口，账见 V501-NOTES。
+                Section {
+                    Button {
+                        showOnboardingReplay = true
+                    } label: {
+                        entryLabel(
+                            icon: "sparkles",
+                            title: "重看引导",
+                            subtitle: "礼谱成书、数据在自己手里、起第一本礼簿"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    Link(destination: FeedbackMail.url) {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            entryLabel(icon: "envelope", title: "意见反馈")
+                            Spacer()
+                            Text(FeedbackMail.address)
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                } header: {
+                    Text("帮助")
+                }
+
+                // —— 关于（沉底）：只留关于入口带版本号 ——
                 Section {
                     NavigationLink {
                         AboutView()
@@ -364,35 +438,6 @@ struct MeView: View {
                                 .foregroundStyle(Palette.stone)
                         }
                     }
-                    // 重看引导（v5 追加定版）：覆盖安装后数据与标记都在，
-                    // 首开自动呈现不会再触发——留这个手动入口随时重看
-                    // 三页引导（与首开同一实现、同一全屏呈现、可跳过）。
-                    Button {
-                        showOnboardingReplay = true
-                    } label: {
-                        entryLabel(
-                            icon: "sparkles",
-                            title: "重看引导",
-                            subtitle: "礼谱成书、数据在自己手里、起第一本礼簿"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    Toggle(isOn: $privacyLock) {
-                        HStack(spacing: LiqianMetrics.spacingSM) {
-                            Image(systemName: "faceid")
-                                .foregroundStyle(Palette.ink)
-                                .frame(width: 24)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                                Text("隐私锁")
-                                    .foregroundStyle(Palette.ink)
-                                Text("从后台返回超过 30 秒需重新解锁；App 在后台时界面自动模糊。")
-                                    .font(.footnote)
-                                    .foregroundStyle(Palette.stone)
-                            }
-                        }
-                    }
-                    .tint(Palette.primary)
                 } header: {
                     Text("关于")
                 }
