@@ -22,6 +22,11 @@ enum WPalette {
     static let primary = dyn(0xA62B1F, 0xD96A5C)
     /// 朱砂实底（记一笔按钮）：深色模式同品牌提亮值，保证白字对比
     static let primaryFill = dyn(0xA62B1F, 0xB8452F)
+    /// 金额语义双色（v5.1，与 App v5.0.2 MoneyTone 镜像）：收＝主题强调令牌
+    /// （默认主题即朱砂，用 primary）；送＝黛青（浅 #14665A / 夜 #4FB3A6，
+    /// v5.0.2 五主题对比度实测 ≥4.5:1 的定值）。组件进程读不到 App 的五主题
+    /// 设置，恒走默认主题这一对——与既有 WPalette 镜像口径一致（见文件尾注）。
+    static let moneyGiven = dyn(0x14665A, 0x4FB3A6)
 }
 
 extension UIColor {
@@ -57,6 +62,8 @@ struct WPendingSummary: Codable {
     var monthReceivedCents: Int?
     var monthGivenCents: Int?
     var nextReminder: WNextReminder?
+    /// 全部往来人数（v5.1，旧快照为 nil）：锁屏圆形环形进度的分母
+    var peopleCount: Int?
 }
 
 /// 两个桌面组件共用同一条时间线条目（都只读同一份快照）。
@@ -66,10 +73,16 @@ struct SummaryEntry: TimelineEntry {
     /// 组件库预览用的示例数据（真实快照缺失且处于预览上下文时才出现，
     /// 视图会打「示例」标，绝不冒充真实数据）
     let isDemo: Bool
+    /// 系统占位（placeholder(in:)）专用：视图渲染骨架屏，不出文字数据
+    var isPlaceholder: Bool = false
 
     var hasData: Bool { summary != nil }
 
     static let empty = SummaryEntry(date: Date(), summary: nil, isDemo: false)
+
+    static let placeholder = SummaryEntry(
+        date: Date(), summary: nil, isDemo: false, isPlaceholder: true
+    )
 
     static var demo: SummaryEntry {
         let cal = Calendar.current
@@ -92,7 +105,8 @@ struct SummaryEntry: TimelineEntry {
                 monthGivenCents: 90_000,
                 nextReminder: WNextReminder(
                     title: "妈妈的生日", person: "妈妈", occurrence: occurrence
-                )
+                ),
+                peopleCount: 8
             ),
             isDemo: true
         )
@@ -128,7 +142,7 @@ enum SummaryStore {
 }
 
 struct PendingProvider: TimelineProvider {
-    func placeholder(in context: Context) -> SummaryEntry { .empty }
+    func placeholder(in context: Context) -> SummaryEntry { .placeholder }
     func getSnapshot(in context: Context, completion: @escaping (SummaryEntry) -> Void) {
         completion(SummaryStore.entry(isPreview: context.isPreview))
     }
@@ -138,7 +152,7 @@ struct PendingProvider: TimelineProvider {
 }
 
 struct ReminderProvider: TimelineProvider {
-    func placeholder(in context: Context) -> SummaryEntry { .empty }
+    func placeholder(in context: Context) -> SummaryEntry { .placeholder }
     func getSnapshot(in context: Context, completion: @escaping (SummaryEntry) -> Void) {
         completion(SummaryStore.entry(isPreview: context.isPreview))
     }
@@ -156,6 +170,56 @@ struct ReminderProvider: TimelineProvider {
 /// 保持一致，改品牌色时两处同改——保留的唯一手工同步点。
 func fmtMoney(cents: Int) -> String {
     LedgerMath.fmtMoney(cents: cents)
+}
+
+/// 带符号金额（v5.1）：直接调 Core 的 signedMoney，与 App 内 SignedMoneyText
+/// 同一口径——收 `+¥N`、送 `−¥N`。组件里的待回金额属收向（对方欠我的人情、
+/// 等着回进来），逐笔呈现按 received 带正号；汇总口径差异见 V51-NOTES。
+func signedMoneyText(cents: Int, direction: String) -> String {
+    LedgerMath.signedMoney(cents: cents, direction: direction)
+}
+
+/// 数据新鲜度文案：快照 updatedAt →「今天 14:30 更新」/「11月3日 09:12 更新」。
+/// 组件是快照不是实时数，把数据时间摆在面上是专业口径（HIG：timely 之外
+/// 还要诚实）——用户一眼能判断这数有多新。
+enum WidgetText {
+    static func freshness(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        if Calendar.current.isDateInToday(date) {
+            f.dateFormat = "HH:mm"
+            return "今天 \(f.string(from: date)) 更新"
+        }
+        f.dateFormat = "M月d日 HH:mm"
+        return "\(f.string(from: date)) 更新"
+    }
+
+    /// 锁屏圆形环形进度的口径（v5.1 定版）：待回人数 ÷ 全部往来人数，
+    /// 即「往来的人里还有几成的人情没回」。分母缺失（旧快照）或为 0 时
+    /// 返回 nil，视图降级为无环版式，绝不编一个比例出来。
+    static func pendingFraction(count: Int, peopleCount: Int?) -> Double? {
+        guard let total = peopleCount, total > 0 else { return nil }
+        return min(1, max(0, Double(count) / Double(total)))
+    }
+}
+
+/// 占位骨架屏（placeholder 专用）：灰块层级与正式版式同构（大数块＋两行），
+/// 系统加载/重签过渡期桌面上不出现空白或假数据。
+struct WidgetSkeletonView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Capsule().frame(width: 44, height: 10)
+            Capsule().frame(width: 108, height: 26)
+            Capsule().frame(width: 72, height: 10)
+            Capsule().frame(width: 88, height: 10)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(WPalette.stone.opacity(0.3))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(4)
+        .redacted(reason: .placeholder)
+        .containerBackground(WPalette.paper, for: .widget)
+    }
 }
 
 /// 示例角标：只在组件库预览的示例数据上出现

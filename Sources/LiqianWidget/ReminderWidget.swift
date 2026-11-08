@@ -26,6 +26,14 @@ enum ReminderText {
         f.dateFormat = "M月d日"
         return f.string(from: date)
     }
+
+    /// 带星期的日期（小组件版面富余处用）：「11月16日 星期一」
+    static func dateWeekdayText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日 EEEE"
+        return f.string(from: date)
+    }
 }
 
 struct ReminderWidget: Widget {
@@ -46,17 +54,22 @@ struct ReminderWidgetView: View {
     private var reminder: WNextReminder? { entry.summary?.nextReminder }
 
     var body: some View {
-        Group {
-            if family == .systemMedium {
-                mediumBody
-            } else {
-                smallBody
+        if entry.isPlaceholder {
+            // 骨架屏自带 containerBackground，不与正式版式的修饰叠用
+            WidgetSkeletonView()
+        } else {
+            Group {
+                if family == .systemMedium {
+                    mediumBody
+                } else {
+                    smallBody
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(4)
+            .widgetURL(personURL)
+            .containerBackground(WPalette.paper, for: .widget)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(4)
-        .widgetURL(personURL)
-        .containerBackground(WPalette.paper, for: .widget)
     }
 
     private var personURL: URL? {
@@ -93,14 +106,22 @@ struct ReminderWidgetView: View {
                             .foregroundStyle(WPalette.stone)
                     }
                 }
-                Text(ReminderText.dateText(r.occurrence))
+                Text(ReminderText.dateWeekdayText(r.occurrence))
                     .font(.caption)
                     .foregroundStyle(WPalette.stone)
             } else {
-                Text("还没有重要日子\n打开礼记添加")
-                    .font(.subheadline)
-                    .foregroundStyle(WPalette.ink)
-                    .lineSpacing(4)
+                VStack(alignment: .leading, spacing: 5) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.title3)
+                        .foregroundStyle(WPalette.primary)
+                    Text("还没有重要日子")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(WPalette.ink)
+                    Text("生日、纪念日，记下来这里会倒数")
+                        .font(.caption)
+                        .foregroundStyle(WPalette.stone)
+                        .lineSpacing(3)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -121,7 +142,7 @@ struct ReminderWidgetView: View {
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(WPalette.ink)
                         .lineLimit(2)
-                    Text("\(ReminderText.dateText(r.occurrence)) · \(ReminderText.daysText(until: r.occurrence))")
+                    Text("\(ReminderText.dateWeekdayText(r.occurrence)) · \(ReminderText.daysText(until: r.occurrence))")
                         .font(.subheadline)
                         .foregroundStyle(WPalette.stone)
                 } else {

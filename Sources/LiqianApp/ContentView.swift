@@ -215,6 +215,14 @@ struct ContentView: View {
                 checkShareImport()
                 return
             }
+            // 小组件待回礼整卡深链（v5.1）：liqian://pending——落点与长按
+            // 快捷菜单「查看待回礼」同处（往来 Tab，待回礼汇总在该页）；
+            // 隐私锁锁着时不承接，与 person 深链锁定口径一致
+            if LiqianDeepLink.isPending(url) {
+                if privacyLockEnabled && isLocked { return }
+                tabSelection = 1
+                return
+            }
             // 小组件人物深链（v4.5）：liqian://person/<姓名>——切到往来页，
             // 姓名经 personDeepLinkName 交 PeopleView 打开该人物详情；
             // 隐私锁锁着时同样不承接（不绕过锁定页）

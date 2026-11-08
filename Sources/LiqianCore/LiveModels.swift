@@ -94,6 +94,18 @@ public enum LiqianDeepLink {
         return UUID(uuidString: raw)
     }
 
+    /// 待回礼页深链（小组件整卡点按落点，v5.1）：liqian://pending
+    /// 落点与长按快捷菜单「查看待回礼」同处——往来 Tab（待回礼汇总在该页），
+    /// App 侧 onOpenURL 承接，隐私锁守卫与 person 深链一致。
+    public static func pendingURL() -> String {
+        "liqian://pending"
+    }
+
+    /// 是否为待回礼页深链；不是则返回 false
+    public static func isPending(_ url: URL) -> Bool {
+        url.scheme == "liqian" && url.host == "pending"
+    }
+
     /// 人物深链（小组件待回礼列表点按直达）：liqian://person/<姓名百分号编码>
     /// 姓名是全 App 的人物主键口径（同名即同人），故路径段直接放姓名。
     public static func personURL(name: String) -> String {

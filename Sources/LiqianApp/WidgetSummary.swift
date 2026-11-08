@@ -66,6 +66,9 @@ enum WidgetSummaryWriter {
         var monthGivenCents: Int?
         /// 下一个重要日子（没有启用中的日子时为 nil）
         var nextReminder: NextReminder?
+        /// 全部往来人数（v5.1）：锁屏圆形组件环形进度的分母——待回人数占
+        /// 全部往来人数之比；旧快照无此字段，Widget 解码为 nil 后降级无环版式
+        var peopleCount: Int?
     }
 
     static func write(
@@ -86,7 +89,8 @@ enum WidgetSummaryWriter {
             },
             monthReceivedCents: monthReceivedCents,
             monthGivenCents: monthGivenCents,
-            nextReminder: nextReminder
+            nextReminder: nextReminder,
+            peopleCount: people.count
         )
         guard let defaults = UserDefaults(suiteName: suiteName),
               let data = try? JSONEncoder().encode(summary) else { return }
