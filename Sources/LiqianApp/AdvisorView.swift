@@ -10,6 +10,12 @@ import LiqianDesign
 /// v4.4 管线（保留为降级）：工具路径失败时，DeepSeek 只解析意图（类型＋
 /// 人名/年份/方向/事由）→ AdvisorEngine 本地算数出结构化卡片；AI 未就绪
 /// 或解析失败再走 AdvisorRules 关键词兜底。
+/// v5.3 呈现重做：工具执行同一路径加挂结构化卡片（AdvisorCard，见
+/// LiqianCore/AdvisorCards.swift）——模型文字退为卡片上方的结论引子并走
+/// Markdown 渲染＋打字机揭示（v5.2 时纯文本直印、星号横杠全露是实锤
+/// bug）；查账过程有按工具映射的人话状态；气泡/示例签/输入栏走 Mat
+/// 材质＋主题染色令牌；消息入场与卡片依次浮入走 Motion 令牌，
+/// Reduce Motion 全降级。工具集、问答纪律、降级路径未动。
 /// 会话只在本页内存里，离开即散（本期口径，不落库）。
 struct AdvisorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,9 +26,13 @@ struct AdvisorView: View {
     @State private var messages: [Message] = []
     @State private var input = ""
     @State private var isAsking = false
+    /// 查账过程状态（v5.3）：按当前工具映射的人话文案，nil = 不在查账
+    @State private var activityText: String?
     /// 答案落定触感（v4.7 审计补齐）：提问全程原无任何触感，答案 append 时 +1
     @State private var answerTrigger = 0
     @State private var personRoute: PeopleView.NameRoute?
+    /// 首屏入场（v5.3）：欢迎卡与示例签淡入上浮，Reduce Motion 时直达终态
+    @State private var entered = false
 
     private struct Message: Identifiable {
         let id = UUID()
@@ -30,9 +40,9 @@ struct AdvisorView: View {
         enum Kind {
             case user(String)
             case result(AdvisorResult)
-            /// v5.2 工具问答的文字答复：内容由模型组织语言，
-            /// 数字只许来自工具结果（系统提示词写死，见 toolSystemPrompt）
-            case answer(String)
+            /// v5.2 工具问答的文字答复＋v5.3 结构化卡片：文字是结论引子
+            ///（Markdown 渲染，数字只许来自工具结果），卡片与工具结果同源
+            case answer(text: String, cards: [AdvisorCard])
             /// 纯文案答复（没听懂、没找到人等，文案在 Core 结果之外由本层拼）
             case note(String)
         }
@@ -64,19 +74,23 @@ struct AdvisorView: View {
                     VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
                         introBlock
                         ForEach(messages) { message in
-                            messageRow(message)
+                            messageRow(message, proxy: proxy)
                                 .id(message.id)
+                                .transition(
+                                    reduceMotion
+                                        ? .identity
+                                        : .opacity.combined(with: .offset(y: 8))
+                                )
                         }
                         if isAsking {
-                            HStack(spacing: LiqianMetrics.spacingS) {
-                                ProgressView()
-                                Text("正在查账…")
-                                    .font(.footnote)
-                                    .foregroundStyle(Palette.stone)
-                            }
+                            activityRow
                         }
                     }
                     .padding(LiqianMetrics.spacingM)
+                    .animation(
+                        MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
+                        value: messages.count
+                    )
                 }
                 .onChange(of: messages.count) {
                     if let last = messages.last {
@@ -100,10 +114,35 @@ struct AdvisorView: View {
         }
         .onAppear {
             transcriber.onText = { input = $0 }
+            if !entered {
+                if reduceMotion {
+                    entered = true
+                } else {
+                    withAnimation(MotionTokens.pageCrossfade) { entered = true }
+                }
+            }
         }
         .onDisappear {
             transcriber.stop()
         }
+    }
+
+    /// 查账过程行（v5.3）：转圈＋当前动作的人话状态（按工具映射），
+    /// 状态切换交叉淡化，不再是黑箱里的一句「正在查账…」到底
+    private var activityRow: some View {
+        HStack(spacing: LiqianMetrics.spacingS) {
+            ProgressView()
+                .controlSize(.small)
+            Text(activityText ?? "正在查账…")
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(
+            MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
+            value: activityText
+        )
+        .transition(reduceMotion ? .identity : .opacity)
     }
 
     // MARK: - 顶部说明与示例
@@ -119,26 +158,35 @@ struct AdvisorView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .liqianCardSurface()
+        .opacity(entered ? 1 : 0)
+        .offset(y: reduceMotion ? 0 : (entered ? 0 : 10))
     }
 
     // MARK: - 输入区（示例 chips + 语音/文字输入 + 隐私说明）
+    // v5.3：整栏走功能层玻璃（Mat.regular），示例签走 Mat.tinted 染色玻璃，
+    // 麦克风落玻璃圆，发送键三态（空禁用/可发染色/发送中转圈）——
+    // 全页不再残留系统默认控件样式，着色一律 DesignTokens、随主题走。
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: LiqianMetrics.spacingS) {
                     ForEach(Self.examples, id: \.self) { example in
-                        Button(example) { ask(example) }
-                            .font(.footnote)
-                            .foregroundStyle(Palette.primary)
-                            .padding(.horizontal, LiqianMetrics.spacingSM)
-                            .padding(.vertical, LiqianMetrics.spacingXS + 2)
-                            .background(Palette.primaryTint, in: Capsule())
-                            .buttonStyle(.plain)
-                            .disabled(isAsking)
+                        Button { ask(example) } label: {
+                            Text(example)
+                                .font(.footnote)
+                                .foregroundStyle(Palette.primary)
+                                .padding(.horizontal, LiqianMetrics.spacingSM)
+                                .padding(.vertical, LiqianMetrics.spacingXS + 2)
+                                .liqianGlassSurface(.tinted, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isAsking)
                     }
                 }
             }
+            .opacity(entered ? 1 : 0)
+            .offset(y: reduceMotion ? 0 : (entered ? 0 : 8))
             if transcriber.isRecording {
                 Text("正在听，说完点停止…")
                     .font(.footnote)
@@ -158,6 +206,7 @@ struct AdvisorView: View {
                         .symbolEffect(.pulse, isActive: transcriber.isRecording)
                         .foregroundStyle(transcriber.isRecording ? Palette.danger : Palette.primary)
                         .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
+                        .liqianGlassSurface(.regular, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(transcriber.isStarting)
@@ -167,21 +216,7 @@ struct AdvisorView: View {
                     .submitLabel(.send)
                     .onSubmit { ask(input) }
 
-                Button {
-                    ask(input)
-                } label: {
-                    Text("问")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
-                        .background(
-                            inputEmpty || isAsking ? Palette.stone : Palette.primaryFill,
-                            in: Circle()
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(inputEmpty || isAsking)
-                .accessibilityLabel("发送问题")
+                sendButton
             }
             Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。")
                 .font(.caption)
@@ -190,7 +225,33 @@ struct AdvisorView: View {
         .padding(.horizontal, LiqianMetrics.spacingM)
         .padding(.top, LiqianMetrics.spacingS)
         .padding(.bottom, LiqianMetrics.spacingS)
-        .background(Palette.surface)
+        .liqianGlassSurface(.regular, in: Rectangle())
+    }
+
+    /// 发送键三态：空输入＝线色圆＋石色箭头（禁用）；可发＝主题填充＋白箭头；
+    /// 发送中＝同填充＋白转圈。不再用「问」字圆钮的默认样式感拼凑。
+    private var sendButton: some View {
+        Button {
+            ask(input)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(isAsking || !inputEmpty ? Palette.primaryFill : Palette.line)
+                if isAsking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(inputEmpty ? Palette.stone : .white)
+                }
+            }
+            .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
+        }
+        .buttonStyle(.plain)
+        .disabled(inputEmpty || isAsking)
+        .accessibilityLabel("发送问题")
     }
 
     private var inputEmpty: Bool {
@@ -200,7 +261,7 @@ struct AdvisorView: View {
     // MARK: - 消息行
 
     @ViewBuilder
-    private func messageRow(_ message: Message) -> some View {
+    private func messageRow(_ message: Message, proxy: ScrollViewProxy) -> some View {
         switch message.kind {
         case .user(let text):
             HStack {
@@ -209,16 +270,15 @@ struct AdvisorView: View {
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, LiqianMetrics.spacingSM)
                     .padding(.vertical, LiqianMetrics.spacingS)
-                    .background(Palette.primaryTint, in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
+                    .liqianGlassSurface(
+                        .tinted,
+                        in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
+                    )
             }
         case .result(let result):
             resultCard(result)
-        case .answer(let text):
-            Text(text)
-                .font(.body)
-                .foregroundStyle(Palette.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .liqianCardSurface()
+        case .answer(let text, let cards):
+            answerBlock(text: text, cards: cards, messageID: message.id, proxy: proxy)
         case .note(let text):
             Text(text)
                 .font(.footnote)
@@ -228,7 +288,402 @@ struct AdvisorView: View {
         }
     }
 
-    // MARK: - 结果卡片（数字全部来自 AdvisorEngine 的本地计算）
+    /// 工具问答的回答块（v5.3）：上方结论引子（Markdown 打字机渲染，
+    /// 不露标记）＋下方结构化卡片依次浮入（按工具调用顺序）
+    private func answerBlock(
+        text: String, cards: [AdvisorCard], messageID: Message.ID, proxy: ScrollViewProxy
+    ) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            TypewriterMarkdownText(markdown: text) {
+                // 打字机揭示期间把本条钉在底部，长回答不用手动追滚
+                if reduceMotion {
+                    proxy.scrollTo(messageID, anchor: .bottom)
+                } else {
+                    withAnimation { proxy.scrollTo(messageID, anchor: .bottom) }
+                }
+            }
+            .font(.body)
+            .foregroundStyle(Palette.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .liqianCardSurface()
+
+            ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
+                toolCard(card)
+                    .modifier(CardInModifier(index: index, reduceMotion: reduceMotion))
+            }
+        }
+    }
+
+    // MARK: - 工具卡片（v5.3 新增；数字全部来自 AdvisorToolEngine 的同次计算）
+    // 金额口径守 v5.0.2 分界：逐笔走 SignedMoneyText（符号＋语义双色），
+    // 差值/合计等「算出来的数」保持墨色；条形只作视觉编码（收随双色
+    // 与图表系列同口径），条旁数字仍墨色。
+
+    @ViewBuilder
+    private func toolCard(_ card: AdvisorCard) -> some View {
+        switch card {
+        case .person(let payload):
+            toolPersonCard(payload)
+        case .records(let payload):
+            recordsCard(payload)
+        case .comparison(let payload):
+            comparisonCard(payload)
+        case .groups(let payload):
+            groupsCard(payload)
+        case .totals(let payload):
+            totalsCard(payload)
+        case .pending(let payload):
+            toolPendingCard(payload)
+        case .events(let payload):
+            eventsCard(payload)
+        }
+    }
+
+    /// 人物卡：复用 v4.4 人物卡外壳（点头像行进人物详情），内容＝差额大字＋最近往来
+    private func toolPersonCard(_ payload: AdvisorPersonCard) -> some View {
+        personCard(summary: payload.summary) {
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                balanceFigure(payload.summary)
+                if !payload.recent.isEmpty {
+                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                        ForEach(payload.recent) { line in
+                            entryLineRow(line)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 逐笔流水卡：限量行＋总数提示（还有更多时在卡尾说明）
+    private func recordsCard(_ payload: AdvisorRecordsCard) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            cardTitle("逐笔记录")
+            ForEach(payload.rows) { row in
+                toolRecordRow(row)
+            }
+            if payload.totalCount > payload.rows.count {
+                Text("共 \(payload.totalCount) 笔，上面是最近 \(payload.rows.count) 笔")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    /// 流水行（流水卡与备礼清单共用）：日期＋人名/簿名＋待送出素签＋逐笔金额（双色语义）
+    private func toolRecordRow(_ row: AdvisorRecordRow) -> some View {
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Text(LiqianDate.displayString(for: row.date))
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .frame(width: 86, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.person)
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                let sub = [row.ledgerTitle, row.ledgerType]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " · ")
+                if !sub.isEmpty {
+                    Text(sub)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if row.isPendingSend {
+                PendingTag(bai: row.ledgerType == LiqianConstants.baiType)
+            }
+            SignedMoneyText(
+                cents: row.amountCents,
+                direction: row.direction,
+                bai: row.ledgerType == LiqianConstants.baiType,
+                style: .body
+            )
+        }
+        .frame(minHeight: LiqianMetrics.minTapTarget)
+    }
+
+    /// 对比卡：两期各一组双条（收/随），底部给三项差值（墨色，主 − 对比）
+    private func comparisonCard(_ payload: AdvisorComparisonCard) -> some View {
+        let scale = max(
+            payload.main.receivedCents, payload.main.givenCents,
+            payload.other.receivedCents, payload.other.givenCents, 1
+        )
+        return VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
+            cardTitle("时段对比")
+            comparisonBlock(totals: payload.main, scale: scale)
+            comparisonBlock(totals: payload.other, scale: scale)
+            HStack(alignment: .top, spacing: LiqianMetrics.spacingM) {
+                deltaItem(label: "收礼差", cents: payload.deltaReceivedCents)
+                deltaItem(label: "随礼差", cents: payload.deltaGivenCents)
+                deltaItem(label: "净差", cents: payload.deltaNetCents)
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private func comparisonBlock(totals: AdvisorMoneyTotals, scale: Int) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                Text(totals.rangeLabel)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(totals.recordCount) 笔")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            }
+            barRow(label: "收", cents: totals.receivedCents, scale: scale, color: Palette.moneyReceived)
+            barRow(label: "随", cents: totals.givenCents, scale: scale, color: Palette.moneyGiven)
+        }
+    }
+
+    /// 分组条卡：一组一小节（组名＋笔数＋收/随双条），条长按全卡最大值归一
+    private func groupsCard(_ payload: AdvisorGroupsCard) -> some View {
+        let scale = max(payload.rows.map { max($0.receivedCents, $0.givenCents) }.max() ?? 1, 1)
+        return VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            cardTitle(groupsTitle(payload.dimension), detail: payload.rangeLabel)
+            if payload.rows.isEmpty {
+                Text("这个范围里还没有记录。")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                ForEach(payload.rows) { row in
+                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                        HStack(spacing: LiqianMetrics.spacingS) {
+                            Text(row.key)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Palette.ink)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("\(row.recordCount) 笔")
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                        }
+                        barRow(label: "收", cents: row.receivedCents, scale: scale, color: Palette.moneyReceived)
+                        barRow(label: "随", cents: row.givenCents, scale: scale, color: Palette.moneyGiven)
+                    }
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    private func groupsTitle(_ dimension: String) -> String {
+        switch dimension {
+        case "month": return "按月汇总"
+        case "year": return "按年汇总"
+        case "type": return "按场合汇总"
+        case "relation": return "按关系汇总"
+        case "ledger": return "按礼簿汇总"
+        default: return "分组汇总"
+        }
+    }
+
+    /// 汇总卡：单时段总计（收/随双大数墨色＋笔数），与时段卡同语汇
+    private func totalsCard(_ payload: AdvisorTotalsCard) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            cardTitle("汇总", detail: payload.totals.rangeLabel)
+            HStack(spacing: LiqianMetrics.spacingL) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    Text("收礼")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                    Text(LedgerMath.fmtMoney(cents: payload.totals.receivedCents))
+                        .font(.liqianMoney(.title2))
+                        .foregroundStyle(Palette.ink)
+                }
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    Text("随礼")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                    Text(LedgerMath.fmtMoney(cents: payload.totals.givenCents))
+                        .font(.liqianMoney(.title2))
+                        .foregroundStyle(Palette.ink)
+                }
+            }
+            Text("共 \(payload.totals.recordCount) 笔")
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+        }
+        .liqianCardSurface()
+    }
+
+    /// 待回名单卡（工具版）：逐行姓名＋待回额（SignedMoney 语义），点行直达人物
+    private func toolPendingCard(_ payload: AdvisorPendingCard) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
+                Text("待回名单")
+                    .font(.headline)
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                if payload.totalPeople > 0 {
+                    Text("共 \(payload.totalPeople) 人 · 合计 \(LedgerMath.fmtMoney(cents: payload.totalPendingCents))")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                        .lineLimit(1)
+                }
+            }
+            if payload.people.isEmpty {
+                Text("没有待回的，都结清了。")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            } else {
+                ForEach(payload.people) { p in
+                    Button {
+                        personRoute = PeopleView.NameRoute(name: p.name)
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingS) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.name)
+                                    .foregroundStyle(Palette.ink)
+                                    .lineLimit(1)
+                                if !p.relation.isEmpty {
+                                    Text(p.relation)
+                                        .font(.footnote)
+                                        .foregroundStyle(Palette.stone)
+                                }
+                            }
+                            Spacer()
+                            SignedMoneyText(
+                                cents: p.pendingCents,
+                                direction: LiqianConstants.received,
+                                style: .title3
+                            )
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Palette.stone)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if payload.totalPeople > payload.people.count {
+                    Text("还有 \(payload.totalPeople - payload.people.count) 人没列全，去「往来」页看完整名单")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    /// 场次卡：近期场次（名称/事由日期/剩余天数）＋备礼进度（待送出逐笔行）
+    private func eventsCard(_ payload: AdvisorEventsCard) -> some View {
+        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            cardTitle("近期场次")
+            if payload.events.isEmpty && payload.prep.isEmpty {
+                Text("近期没有安排，备礼清单也是空的。")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+            }
+            ForEach(payload.events) { event in
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.title)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Text("\(event.type) · \(LiqianDate.displayString(for: event.date))")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                    Spacer()
+                    if event.daysUntil == 0 {
+                        Text("就是今天")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.primary)
+                    } else if event.daysUntil > 0 {
+                        Text("还有 \(event.daysUntil) 天")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.primary)
+                    }
+                }
+                .frame(minHeight: LiqianMetrics.minTapTarget)
+            }
+            if !payload.prep.isEmpty {
+                Text("备礼进度：\(payload.prepTotalCount) 笔待送出")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.ink)
+                    .padding(.top, LiqianMetrics.spacingXS)
+                ForEach(payload.prep) { row in
+                    toolRecordRow(row)
+                }
+            }
+        }
+        .liqianCardSurface()
+    }
+
+    /// 卡片标题行（工具卡共用）：标题＋可选弱说明
+    private func cardTitle(_ title: String, detail: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Palette.ink)
+            if let detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(Palette.stone)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+
+    /// 双色条行：签＋归一条＋墨色金额（条色是视觉编码，数字守汇总墨色口径）
+    private func barRow(label: String, cents: Int, scale: Int, color: Color) -> some View {
+        HStack(spacing: LiqianMetrics.spacingS) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .frame(width: 16, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Palette.line.opacity(0.55))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(color)
+                        .frame(
+                            width: cents > 0
+                                ? max(geo.size.width * CGFloat(cents) / CGFloat(scale), 4)
+                                : 0
+                        )
+                }
+            }
+            .frame(height: 8)
+            Text(LedgerMath.fmtMoney(cents: cents))
+                .font(.liqianMoney(.footnote))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+                .frame(minWidth: 72, alignment: .trailing)
+        }
+    }
+
+    private func deltaItem(label: String, cents: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+            Text(deltaText(cents))
+                .font(.liqianMoney(.body))
+                .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+        }
+    }
+
+    /// 差值文案：带 +/- 号的墨色金额（0 不带号）；减号用数学减号与 signedMoney 同口径
+    private func deltaText(_ cents: Int) -> String {
+        if cents == 0 { return LedgerMath.fmtMoney(cents: 0) }
+        return (cents > 0 ? "+" : "−") + LedgerMath.fmtMoney(cents: abs(cents))
+    }
+
+    // MARK: - 结果卡片（v4.4 降级管线；数字全部来自 AdvisorEngine 的本地计算）
 
     @ViewBuilder
     private func resultCard(_ result: AdvisorResult) -> some View {
@@ -493,6 +948,7 @@ struct AdvisorView: View {
         input = ""
         messages.append(Message(kind: .user(question)))
         isAsking = true
+        activityText = "正在查账…"
         let entries = snapshots
         let names = peopleNames
         let toolContext = AdvisorToolContext(
@@ -507,14 +963,16 @@ struct AdvisorView: View {
             // 工具路径任何失败（接口不支持 tools/网络/轮数耗尽）落回 v4.4
             // 意图解析＋结构化卡片管线，卡片能力不回归。
             if AIAccess.readiness() == .ready,
-               let text = await answerWithTools(question: question, context: toolContext) {
+               let answer = await answerWithTools(question: question, context: toolContext) {
                 isAsking = false
-                messages.append(Message(kind: .answer(text)))
+                activityText = nil
+                messages.append(Message(kind: .answer(text: answer.text, cards: answer.cards)))
                 answerTrigger += 1
                 return
             }
             let intent = await resolveIntent(question: question, people: names)
             isAsking = false
+            activityText = nil
             if let intent {
                 messages.append(Message(kind: .result(
                     AdvisorEngine.execute(intent, entries: entries)
@@ -531,12 +989,18 @@ struct AdvisorView: View {
 
     /// 工具问答主循环：模型决定调什么工具 → 本地 AdvisorToolEngine 执行 →
     /// 结果回填 → 直到模型给出文字答复。任何异常返回 nil（调用方降级）。
-    private func answerWithTools(question: String, context: AdvisorToolContext) async -> String? {
+    /// v5.3：执行走 executeDetailed 同步收集 UI 卡片（同次计算，不另查账），
+    /// 并按当前工具更新过程状态文案；轮数耗尽时卡片随 nil 一起丢弃，
+    /// 整条回答完整落回 v4.4 卡片管线，不拼半成品。
+    private func answerWithTools(
+        question: String, context: AdvisorToolContext
+    ) async -> (text: String, cards: [AdvisorCard])? {
         guard let client = try? DeepSeekClient() else { return nil }
         var thread: [DeepSeekChatMessage] = [
             DeepSeekChatMessage(role: "system", content: Self.toolSystemPrompt(today: context.today)),
             DeepSeekChatMessage(role: "user", content: question),
         ]
+        var cards: [AdvisorCard] = []
         for _ in 0..<Self.maxToolRounds {
             let turn: DeepSeekTurn
             do {
@@ -548,19 +1012,57 @@ struct AdvisorView: View {
             }
             switch turn {
             case .text(let text):
-                return text
+                return (text, cards)
             case .toolCalls(let calls):
+                if let first = calls.first {
+                    activityText = Self.activityLabel(for: first)
+                }
                 thread.append(DeepSeekChatMessage(role: "assistant", toolCalls: calls))
                 for call in calls {
-                    let result = AdvisorToolEngine.execute(
+                    let outcome = AdvisorToolEngine.executeDetailed(
                         AdvisorToolCall(name: call.name, argumentsJSON: call.arguments),
                         context: context
                     )
-                    thread.append(DeepSeekChatMessage(role: "tool", content: result, toolCallID: call.id))
+                    if let card = outcome.card {
+                        cards.append(card)
+                    }
+                    thread.append(DeepSeekChatMessage(role: "tool", content: outcome.json, toolCallID: call.id))
                 }
+                activityText = "正在整理答案…"
             }
         }
         return nil // 轮数耗尽还没结论：落回卡片管线，不硬编答案
+    }
+
+    /// 过程状态文案（按工具映射的人话）：让用户看见它正在翻哪本账，
+    /// 不再黑箱等。query_person 尽量带上人名（参数里解析，失败回通用文案）。
+    private static func activityLabel(for call: DeepSeekToolCallRef) -> String {
+        switch call.name {
+        case AdvisorTools.queryPerson:
+            if let name = toolArgString(call.arguments, key: "name") {
+                return "正在查「\(name)」的账…"
+            }
+            return "正在查这个人的账…"
+        case AdvisorTools.queryRecords:
+            return "正在逐笔翻记录…"
+        case AdvisorTools.aggregate:
+            return "正在汇总对比…"
+        case AdvisorTools.pendingList:
+            return "正在翻待回名单…"
+        case AdvisorTools.upcomingEvents:
+            return "正在看近期场次和备礼…"
+        default:
+            return "正在查账…"
+        }
+    }
+
+    /// 工具参数里取字符串字段（状态文案专用，宽容解析，取不到回 nil）
+    private static func toolArgString(_ argumentsJSON: String, key: String) -> String? {
+        guard let data = argumentsJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = obj[key] as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// 工具问答系统提示词：问答纪律写死——数字只能来自工具结果，
@@ -615,4 +1117,108 @@ struct AdvisorView: View {
         type：事由只能是 婚礼/满月/周岁/乔迁/寿宴/升学/开业/白事/其他 之一，没有就给 null。
         重要：JSON 里只有 intent/person/year/direction/type 五个键，绝对不要添加金额、笔数等任何数字结果——账由 App 在本机计算。
         """
+}
+
+/// 卡片依次浮入（v5.3）：按序号错开淡入＋轻上浮，走 Motion 令牌；
+/// Reduce Motion 时无延迟无位移、直接终态。
+private struct CardInModifier: ViewModifier {
+    let index: Int
+    let reduceMotion: Bool
+
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: reduceMotion ? 0 : (shown ? 0 : 10))
+            .task {
+                if reduceMotion {
+                    shown = true
+                    return
+                }
+                // 首卡 0.12s、其后每张 +0.12s：与结论打字机并行浮入，不抢读
+                try? await Task.sleep(nanoseconds: UInt64(120_000_000 * Double(index + 1)))
+                if Task.isCancelled { return }
+                withAnimation(MotionTokens.pageCrossfade) { shown = true }
+            }
+    }
+}
+
+/// 结论文字（v5.3）：Markdown 渲染＋本地打字机揭示。
+/// 揭示切的是「渲染后」的 AttributedString——先整段解析再按字数裁剪，
+/// 粗体等格式在每一帧都完整，不会打出半个 **；客户端不做流式协议，
+/// 揭示纯在本地。解析失败兜底为去标记纯文本：宁可无格式，也不露星号。
+/// Reduce Motion 时整段直出。
+private struct TypewriterMarkdownText: View {
+    let markdown: String
+    /// 揭示进度回调（节流后触发，父视图据此把本条钉在底部）
+    var onReveal: () -> Void = {}
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var full: AttributedString?
+    @State private var revealed = 0
+
+    var body: some View {
+        Group {
+            if let full {
+                Text(slice(full))
+            }
+        }
+        .task(id: markdown) {
+            let rendered = Self.render(markdown)
+            full = rendered
+            let total = NSAttributedString(rendered).length
+            if reduceMotion {
+                revealed = total
+                return
+            }
+            revealed = 0
+            var count = 0
+            while count < total {
+                count = min(total, count + 3)
+                revealed = count
+                if count % 24 == 0 { onReveal() }
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                if Task.isCancelled { return }
+            }
+            onReveal()
+        }
+    }
+
+    private func slice(_ attributed: AttributedString) -> AttributedString {
+        let ns = NSAttributedString(attributed)
+        guard revealed < ns.length else { return attributed }
+        return AttributedString(
+            ns.attributedSubstring(from: NSRange(location: 0, length: max(revealed, 0)))
+        )
+    }
+
+    /// Markdown → AttributedString（完整语法：粗体/列表/链接）；
+    /// 失败兜底去标记纯文本（见 stripped）
+    static func render(_ markdown: String) -> AttributedString {
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .full
+        if let parsed = try? AttributedString(markdown: markdown, options: options) {
+            return parsed
+        }
+        return AttributedString(stripped(markdown))
+    }
+
+    /// 去标记兜底：剥 ** / __ / ` 与行首的标题符、列表符，
+    /// 保证任何情况下屏幕上不出现 Markdown 源码标记
+    static func stripped(_ markdown: String) -> String {
+        let flat = markdown
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
+        return flat
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                var s = line.trimmingCharacters(in: .whitespaces)
+                while s.hasPrefix("#") { s.removeFirst() }
+                if s.hasPrefix("- ") || s.hasPrefix("* ") { s.removeFirst(2) }
+                return s.trimmingCharacters(in: .whitespaces)
+            }
+            .joined(separator: "\n")
+    }
 }

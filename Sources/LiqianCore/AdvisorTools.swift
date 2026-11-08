@@ -212,39 +212,47 @@ public enum AdvisorToolEngine {
     /// 失败（未知工具、参数缺失、查无此人）也返回 JSON：{"ok":false,"error":"…"}
     /// ——错误信息写成模型能读懂的人话，让它换问法或如实告知用户，不抛异常中断对话。
     public static func execute(_ call: AdvisorToolCall, context: AdvisorToolContext) -> String {
+        executeDetailed(call, context: context).json
+    }
+
+    /// v5.3：同一次执行双产出——JSON 给模型组织语言，AdvisorCard 给视图
+    /// 渲染原生卡片（同一作用域同一次计算，不另查一遍账，口径天然一致）。
+    public static func executeDetailed(_ call: AdvisorToolCall, context: AdvisorToolContext) -> AdvisorToolOutcome {
         let args = AdvisorToolArgs(json: call.argumentsJSON)
+        let payload: (dict: [String: Any], card: AdvisorCard?)
         switch call.name {
         case AdvisorTools.queryPerson:
-            return queryPerson(args: args, context: context)
+            payload = queryPerson(args: args, context: context)
         case AdvisorTools.queryRecords:
-            return queryRecords(args: args, context: context)
+            payload = queryRecords(args: args, context: context)
         case AdvisorTools.aggregate:
-            return aggregate(args: args, context: context)
+            payload = aggregate(args: args, context: context)
         case AdvisorTools.pendingList:
-            return pendingList(args: args, context: context)
+            payload = pendingList(args: args, context: context)
         case AdvisorTools.upcomingEvents:
-            return upcomingEvents(args: args, context: context)
+            payload = upcomingEvents(args: args, context: context)
         default:
-            return errorJSON("没有叫「\(call.name)」的查账工具")
+            payload = errorPayload("没有叫「\(call.name)」的查账工具")
         }
+        return AdvisorToolOutcome(json: json(payload.dict), card: payload.card)
     }
 
     // MARK: query_person
 
-    private static func queryPerson(args: AdvisorToolArgs, context: AdvisorToolContext) -> String {
+    private static func queryPerson(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
         guard let name = args.string("name") else {
-            return errorJSON("query_person 需要人名参数")
+            return errorPayload("query_person 需要人名参数")
         }
         let people = LedgerMath.people(from: context.entries)
         guard let hit = matchPerson(name: name, in: people) else {
-            return json(["ok": false, "found": false, "error": "账上没有叫「\(name)」的人"])
+            return (["ok": false, "found": false, "error": "账上没有叫「\(name)」的人"], nil)
         }
-        let recent = context.entries
+        let recentEntries = context.entries
             .filter { $0.person == hit.name && !$0.isPendingSend }
             .sorted { $0.date > $1.date }
             .prefix(5)
-            .map { entryDict($0) }
-        return json([
+        let recent = recentEntries.map { entryDict($0) }
+        let dict: [String: Any] = [
             "ok": true,
             "found": true,
             "name": hit.name,
@@ -257,12 +265,23 @@ public enum AdvisorToolEngine {
             "recordCount": hit.count,
             "lastDate": hit.lastDate,
             "recentRecords": Array(recent),
-        ])
+        ]
+        // 卡片与 JSON 同源：recent 的快照原样映射成明细行（分口径）
+        let card = AdvisorCard.person(AdvisorPersonCard(
+            summary: hit,
+            recent: recentEntries.map {
+                AdvisorEntryLine(
+                    person: $0.person, ledgerType: $0.ledgerType,
+                    direction: $0.direction, amountCents: $0.amountCents, date: $0.date
+                )
+            }
+        ))
+        return (dict, card)
     }
 
     // MARK: query_records
 
-    private static func queryRecords(args: AdvisorToolArgs, context: AdvisorToolContext) -> String {
+    private static func queryRecords(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
         let person = args.string("person")
         let ledgerType = args.string("ledgerType").flatMap {
             LiqianConstants.ledgerTypes.contains($0) ? $0 : nil
@@ -299,36 +318,63 @@ public enum AdvisorToolEngine {
             if e.isPendingSend { d["status"] = "待送出（备礼，还没送出，不计入汇总）" }
             return d
         }
-        return json([
+        let dict: [String: Any] = [
             "ok": true,
             "totalCount": matched.count,
             "returnedCount": rows.count,
             "records": Array(rows),
-        ])
+        ]
+        // 查无结果不出卡（模型文字如实说即可）；有结果才挂流水卡，
+        // 行模型与 JSON 的 records 是同一批快照
+        let card: AdvisorCard? = matched.isEmpty ? nil : .records(AdvisorRecordsCard(
+            totalCount: matched.count,
+            rows: sorted.prefix(limit).map { e in
+                AdvisorRecordRow(
+                    person: e.person, relation: e.relation, direction: e.direction,
+                    amountCents: e.amountCents, date: e.date, ledgerType: e.ledgerType,
+                    ledgerTitle: e.ledgerID.flatMap { titleByID[$0] } ?? "",
+                    isPendingSend: e.isPendingSend
+                )
+            }
+        ))
+        return (dict, card)
     }
 
     // MARK: aggregate
 
-    private static func aggregate(args: AdvisorToolArgs, context: AdvisorToolContext) -> String {
+    private static func aggregate(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
         let groupBy = args.string("groupBy") ?? "none"
         let dateFrom = args.date("dateFrom")
         let dateTo = args.date("dateTo")
 
         let scoped = scope(context.entries, from: dateFrom, to: dateTo)
+        let mainTotals = totals(scoped)
+        let mainLabel = rangeText(from: dateFrom, to: dateTo)
         var result: [String: Any] = [
             "ok": true,
-            "range": rangeText(from: dateFrom, to: dateTo),
+            "range": mainLabel,
             "totals": totalsDict(scoped),
         ]
 
+        var groupData: [(key: String, received: Int, given: Int, count: Int)] = []
         if groupBy != "none" {
+            groupData = groupRowsData(scoped, groupBy: groupBy, context: context)
             result["groupBy"] = groupBy
-            result["groups"] = groupRows(scoped, groupBy: groupBy, context: context)
+            result["groups"] = groupData.map { row in
+                [
+                    "group": row.key,
+                    "receivedYuan": yuan(row.received),
+                    "givenYuan": yuan(row.given),
+                    "netYuan": yuan(row.received - row.given),
+                    "recordCount": row.count,
+                ] as [String: Any]
+            }
         }
 
+        var comparisonCard: AdvisorComparisonCard?
         if let compareFrom = args.date("compareFrom"), let compareTo = args.date("compareTo") {
             let other = scope(context.entries, from: compareFrom, to: compareTo)
-            let a = totals(scoped)
+            let a = mainTotals
             let b = totals(other)
             result["comparison"] = [
                 "range": rangeText(from: compareFrom, to: compareTo),
@@ -337,8 +383,43 @@ public enum AdvisorToolEngine {
                 "deltaGivenYuan": yuan(a.given - b.given),
                 "deltaNetYuan": yuan((a.received - a.given) - (b.received - b.given)),
             ]
+            comparisonCard = AdvisorComparisonCard(
+                main: AdvisorMoneyTotals(
+                    rangeLabel: mainLabel,
+                    receivedCents: a.received, givenCents: a.given, recordCount: a.count
+                ),
+                other: AdvisorMoneyTotals(
+                    rangeLabel: rangeText(from: compareFrom, to: compareTo),
+                    receivedCents: b.received, givenCents: b.given, recordCount: b.count
+                )
+            )
         }
-        return json(result)
+
+        // 卡片优先级：对比 > 分组 > 总计（与任务定版：对比卡或分组条卡；
+        // 都没有时给单时段汇总卡，不让 aggregate 的回答回到文字墙）
+        let card: AdvisorCard?
+        if let comparisonCard {
+            card = .comparison(comparisonCard)
+        } else if groupBy != "none" {
+            card = .groups(AdvisorGroupsCard(
+                dimension: groupBy,
+                rangeLabel: mainLabel,
+                rows: groupData.map {
+                    AdvisorGroupRow(
+                        key: $0.key, receivedCents: $0.received,
+                        givenCents: $0.given, recordCount: $0.count
+                    )
+                }
+            ))
+        } else {
+            card = .totals(AdvisorTotalsCard(totals: AdvisorMoneyTotals(
+                rangeLabel: mainLabel,
+                receivedCents: mainTotals.received,
+                givenCents: mainTotals.given,
+                recordCount: mainTotals.count
+            )))
+        }
+        return (result, card)
     }
 
     /// 主时段过滤（待送出不计，与全 App 口径一致）
@@ -370,9 +451,11 @@ public enum AdvisorToolEngine {
         ]
     }
 
-    private static func groupRows(
+    /// 分组聚合的原始行（分口径）：回模型的 JSON 与 UI 分组卡同源于此，
+    /// 排序口径不变（月/年按时间序，其余按收随总量降序）
+    private static func groupRowsData(
         _ entries: [EntrySnapshot], groupBy: String, context: AdvisorToolContext
-    ) -> [[String: Any]] {
+    ) -> [(key: String, received: Int, given: Int, count: Int)] {
         func key(_ e: EntrySnapshot) -> String {
             switch groupBy {
             case "month": return String(e.date.prefix(7))
@@ -398,20 +481,12 @@ public enum AdvisorToolEngine {
                     ? $0.key < $1.key
                     : ($0.totals.received + $0.totals.given) > ($1.totals.received + $1.totals.given)
             }
-            .map { row in
-                [
-                    "group": row.key,
-                    "receivedYuan": yuan(row.totals.received),
-                    "givenYuan": yuan(row.totals.given),
-                    "netYuan": yuan(row.totals.received - row.totals.given),
-                    "recordCount": row.totals.count,
-                ] as [String: Any]
-            }
+            .map { (key: $0.key, received: $0.totals.received, given: $0.totals.given, count: $0.totals.count) }
     }
 
     // MARK: pending_list
 
-    private static func pendingList(args: AdvisorToolArgs, context: AdvisorToolContext) -> String {
+    private static func pendingList(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
         let limit = min(max(args.int("limit") ?? 10, 1), 30)
         let list = LedgerMath.people(from: context.entries)
             .filter { $0.pendingCents > 0 }
@@ -429,47 +504,76 @@ public enum AdvisorToolEngine {
                 "lastDate": p.lastDate,
             ]
         }
-        return json([
+        let totalPendingCents = list.reduce(0) { $0 + $1.pendingCents }
+        let dict: [String: Any] = [
             "ok": true,
             "totalPeople": list.count,
-            "totalPendingYuan": yuan(list.reduce(0) { $0 + $1.pendingCents }),
+            "totalPendingYuan": yuan(totalPendingCents),
             "returnedCount": rows.count,
             "people": Array(rows),
-        ])
+        ]
+        // 空名单照常出卡：视图给「都结清了」的体面空态（结论本身）
+        let card = AdvisorCard.pending(AdvisorPendingCard(
+            totalPeople: list.count,
+            totalPendingCents: totalPendingCents,
+            people: Array(list.prefix(limit))
+        ))
+        return (dict, card)
     }
 
     // MARK: upcoming_events
 
-    private static func upcomingEvents(args: AdvisorToolArgs, context: AdvisorToolContext) -> String {
+    private static func upcomingEvents(args: AdvisorToolArgs, context: AdvisorToolContext) -> (dict: [String: Any], card: AdvisorCard?) {
         let limit = min(max(args.int("limit") ?? 5, 1), 10)
-        let upcoming = context.ledgers
+        let eventItems = context.ledgers
             .filter { $0.date >= context.today }
             .sorted { $0.date < $1.date }
             .prefix(limit)
-            .map { info -> [String: Any] in
-                [
-                    "title": info.title,
-                    "type": info.type,
-                    "date": info.date,
-                    "daysUntil": daysBetween(from: context.today, to: info.date) ?? -1,
-                ]
+            .map { info in
+                AdvisorEventItem(
+                    title: info.title, type: info.type, date: info.date,
+                    daysUntil: daysBetween(from: context.today, to: info.date) ?? -1
+                )
             }
-        let prep = context.entries
+        let upcoming = eventItems.map { item -> [String: Any] in
+            [
+                "title": item.title,
+                "type": item.type,
+                "date": item.date,
+                "daysUntil": item.daysUntil,
+            ]
+        }
+        let prepEntries = context.entries
             .filter { $0.isPendingSend }
             .sorted { $0.date < $1.date }
             .prefix(limit)
-            .map { e -> [String: Any] in
-                var d = entryDict(e)
-                d["status"] = "待送出（备礼）"
-                return d
-            }
-        return json([
+        let prep = prepEntries.map { e -> [String: Any] in
+            var d = entryDict(e)
+            d["status"] = "待送出（备礼）"
+            return d
+        }
+        let prepTotal = context.entries.filter { $0.isPendingSend }.count
+        let dict: [String: Any] = [
             "ok": true,
             "today": context.today,
             "upcomingEvents": Array(upcoming),
-            "prepPendingCount": context.entries.filter { $0.isPendingSend }.count,
+            "prepPendingCount": prepTotal,
             "prepList": Array(prep),
-        ])
+        ]
+        // 空场次照常出卡（近期没安排也是结论），备礼行与 JSON 同批快照
+        let card = AdvisorCard.events(AdvisorEventsCard(
+            events: Array(eventItems),
+            prepTotalCount: prepTotal,
+            prep: prepEntries.map { e in
+                AdvisorRecordRow(
+                    person: e.person, relation: e.relation, direction: e.direction,
+                    amountCents: e.amountCents, date: e.date, ledgerType: e.ledgerType,
+                    ledgerTitle: ledgerTitle(of: e, in: context),
+                    isPendingSend: true
+                )
+            }
+        ))
+        return (dict, card)
     }
 
     // MARK: - 共用小件
@@ -513,8 +617,15 @@ public enum AdvisorToolEngine {
         return Calendar(identifier: .gregorian).dateComponents([.day], from: a, to: b).day
     }
 
-    private static func errorJSON(_ message: String) -> String {
-        json(["ok": false, "error": message])
+    /// 错误负载（不出卡）：dict 序列化后与旧 errorJSON 逐字一致
+    private static func errorPayload(_ message: String) -> (dict: [String: Any], card: AdvisorCard?) {
+        (["ok": false, "error": message], nil)
+    }
+
+    /// 快照所属礼簿标题（卡片行展示用；查不到归属给空串）
+    private static func ledgerTitle(of entry: EntrySnapshot, in context: AdvisorToolContext) -> String {
+        guard let id = entry.ledgerID else { return "" }
+        return context.ledgers.first(where: { $0.id == id })?.title ?? ""
     }
 
     private static func json(_ object: [String: Any]) -> String {
