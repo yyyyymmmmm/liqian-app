@@ -123,4 +123,8 @@ docs/V531-NOTES.md 的审计表为据，律师看的正好是本改后稿。
 
 ### CI 结果（回填）
 
-- 待推送后回填。
+- GitHub Actions run **42460315721**（workflow_dispatch @
+  feat/v59-legal-register，head 388bc07）：completed / **success**，
+  全步绿（SwiftLint、Build、Unit tests、预签、打包、上传），耗时 2m28s。
+- 单测：**Executed 255 tests, with 0 failures**——与基线 v5.8.1 的
+  255 例持平，一例未掉（本轮纯文本改动，未触任何逻辑）。
