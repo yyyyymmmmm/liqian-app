@@ -73,11 +73,23 @@ Contents.json，只按其现有声明替换全部 PNG。
   **今后切勿重跑该脚本**，会把备用图标算坏。本版未重跑，AltIcon
   文件经 git 核验零改动。
 
-## 验收（回填）
+## 验收（实测回填）
 
-- CI：（待回填）
-- 单测：（待回填）
-- 解包验：（待回填）
+- CI：run 42528832212（workflow_dispatch @ feat/v5113-appicon），
+  attempt 1 经 API 逐 attempt 实查 completed/success，job build-native
+  全部步骤 success（无一失败/跳过异常）。
+- 单测：日志实查「Executed 301 tests, with 0 failures」＋
+  「TEST SUCCEEDED」（LiqianCore，与 v5.11.2 基线持平，本版无代码改动）。
+- 解包验（IPA 4,312,768 字节）：App 与 Widget 的 Info.plist 均为
+  5.11.3/74；PlugIns 仅 LiqianWidget.appex，无 LiqianShare.appex。
+- 包内主图标确为新图：actool 产物为苹果 CgBI 优化 PNG（标准解码器
+  读不了），自写解码器解码后与仓库生成图逐像素比对——
+  AppIcon60x60@2x（120px）与 AppIcon76x76@2x~ipad（152px）均
+  max channel diff = 0、差异像素 0；仓库内 1024 槽位与留档主图
+  md5 一致（043bb1579eeeeabdbe0e91f1885cff15）。
+- 备用图标未动：包内 AltIcon 抽查两款（primary@3x、jdRed@2x）
+  CgBI 解码后与仓库文件逐像素 diff = 0（md5 不同仅因 Xcode 复制时
+  CgBI 重编码，像素无变化）。
 
 ## 真机未验（待用户验）
 
