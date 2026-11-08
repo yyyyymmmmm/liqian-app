@@ -14,6 +14,7 @@ struct ContentView: View {
     /// 触发重挂，故纳入根视图身份键计算
     @AppStorage(AppTheme.customBaseStorageKey) private var customThemeBaseHex = ""
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @Query private var allRecords: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var allLedgers: [Ledger]
     @Query private var allReminderDays: [ReminderDay]
@@ -162,6 +163,9 @@ struct ContentView: View {
             checkShareImport()
             checkShortcutPending()
             calibrateReminders()
+            // 宾客回执（v5.12）：冷启动先同步一次（锁屏只盖界面，
+            // 同步本身只拉回执元数据落库，不展示）
+            await GuestSyncCenter.shared.syncAll(in: modelContext)
         }
         .fullScreenCover(isPresented: onboardingPresentation) {
             OnboardingView { finishOnboarding() }
@@ -169,7 +173,11 @@ struct ContentView: View {
         .onChange(of: isLocked) { _, locked in
             // 分享导入（v4.5）：锁定状态下暂存不承接，解锁一刻补检，
             // 免得用户解完锁还要退后台再回来才弹导入
-            if !locked { checkShareImport() }
+            if !locked {
+                checkShareImport()
+                // 宾客回执（v5.12）：解锁后补同步一次（锁定期间只在冷启动拉过）
+                Task { await GuestSyncCenter.shared.syncAll(in: modelContext) }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -187,6 +195,10 @@ struct ContentView: View {
                 backgroundedAt = nil
                 refreshWidgetSummary()
                 checkQuickRecord()
+                // 宾客回执（v5.12）：回前台增量同步；锁着时不拉（解锁有补检）
+                if !isLocked {
+                    Task { await GuestSyncCenter.shared.syncAll(in: modelContext) }
+                }
                 // 分享导入（v4.5）：扩展没能自动打开 App、用户手动点开时，
                 // 靠回前台这一检把暂存接上（深链直达时走 onOpenURL 那条）
                 checkShareImport()

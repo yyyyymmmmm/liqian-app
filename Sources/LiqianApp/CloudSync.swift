@@ -97,7 +97,8 @@ final class CloudSyncManager: ObservableObject {
 
         let schema = Schema([
             Ledger.self, GiftRecord.self, ReminderDay.self, LedgerMember.self,
-            GuestSignature.self, VoiceBlessing.self
+            GuestSignature.self, VoiceBlessing.self,
+            GuestEventBinding.self, GuestReceipt.self
         ])
         if !enabled {
             let local = Self.makeLocalContainer(schema: schema)

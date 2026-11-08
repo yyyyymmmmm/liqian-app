@@ -18,6 +18,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 扫码随礼配发键注入（v5.12）：ISSUE_KEY 只存 Actions Secret，
+      # 构建前生成 GuestSecrets.swift（.gitignore 不入库）——键字节经
+      # XOR 掩码＋base64 才落盘，源码与 IPA 里都 grep 不到明文。
+      # 无 Secret 的构建（fork 等）生成占位文件，功能降级「暂未开通」。
+      - name: Generate guest secrets (ISSUE_KEY, masked)
+        env:
+          LIQIAN_ISSUE_KEY: ${{ secrets.LIQIAN_ISSUE_KEY }}
+        run: python3 scripts/gen-guest-secrets.py
+
+      - name: Assert guest secrets generated (non-placeholder when secret set)
+        env:
+          LIQIAN_ISSUE_KEY: ${{ secrets.LIQIAN_ISSUE_KEY }}
+        run: |
+          set -euo pipefail
+          test -f Sources/LiqianApp/GuestSecrets.swift
+          grep -q "liqian-guest-key-v1" Sources/LiqianApp/GuestSecrets.swift || { echo "ASSERT FAIL: GuestSecrets.swift missing generation marker"; exit 1; }
+          if [ -n "${LIQIAN_ISSUE_KEY:-}" ]; then
+            grep -q "isPlaceholder = false" Sources/LiqianApp/GuestSecrets.swift || { echo "ASSERT FAIL: guest key is placeholder despite secret present"; exit 1; }
+            # 配发键明文不得出现在工作区任何文件里（生成文件是掩码形态，也不例外）
+            if grep -rFq "$LIQIAN_ISSUE_KEY" --exclude-dir=.git .; then echo "ASSERT FAIL: plaintext issue key found in workspace"; exit 1; fi
+          fi
+          echo "guest secrets assertions passed"
+
       - name: Show Xcode
         run: xcodebuild -version
 
@@ -73,8 +96,16 @@ jobs:
       # 不进包（真机拒启基线，见 docs/V47-NOTES.md），包内 appex 集合会变动，
       # 不再写死名单；断言范围＝主 App＋实际存在的每个 appex 二进制。
       - name: Ad-hoc presign with entitlements (for AltSign)
+        env:
+          LIQIAN_ISSUE_KEY: ${{ secrets.LIQIAN_ISSUE_KEY }}
         run: |
           set -euo pipefail
+          # v5.12 追加断言：GuestSecrets 已生成；Secret 在场时不得是占位
+          test -f Sources/LiqianApp/GuestSecrets.swift && grep -q "liqian-guest-key-v1" Sources/LiqianApp/GuestSecrets.swift || { echo "ASSERT FAIL: GuestSecrets.swift not generated"; exit 1; }
+          if [ -n "${LIQIAN_ISSUE_KEY:-}" ]; then
+            grep -q "isPlaceholder = false" Sources/LiqianApp/GuestSecrets.swift || { echo "ASSERT FAIL: guest key placeholder at presign"; exit 1; }
+          fi
+          echo "guest secrets presign assertion passed"
           APP=$(find build/dd/Build/Products -name "LiqianApp.app" -type d | head -1)
           test -n "$APP" && test -x "$APP/LiqianApp"
           SIGN_DIR="$RUNNER_TEMP/presign"

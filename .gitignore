@@ -41,3 +41,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 扫码随礼配发键生成文件（v5.12）：CI/本地由 scripts/gen-guest-secrets.py 生成，绝不入库
+Sources/LiqianApp/GuestSecrets.swift

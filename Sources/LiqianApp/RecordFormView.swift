@@ -29,6 +29,10 @@ struct RecordFormView: View {
 
     let fixedLedger: Ledger?
     let existing: GiftRecord?
+    /// 宾客回执入账（v5.12）专用：新建保存成功后回调一次新建的记录，
+    /// 其他入口为 nil。表单「保存并继续」会多次落库、多次回调，
+    /// 消费方须按自身状态幂等处理（回执页按 pending 状态守卫）。
+    let onSavedNewRecord: ((GiftRecord) -> Void)?
 
     @State private var person: String
     @State private var amountText: String
@@ -68,6 +72,7 @@ struct RecordFormView: View {
     init(ledger: Ledger) {
         fixedLedger = ledger
         existing = nil
+        onSavedNewRecord = nil
         _person = State(initialValue: "")
         _amountText = State(initialValue: "")
         _relation = State(initialValue: "朋友")
@@ -83,6 +88,7 @@ struct RecordFormView: View {
     init(existing: GiftRecord) {
         fixedLedger = nil
         self.existing = existing
+        onSavedNewRecord = nil
         _person = State(initialValue: existing.person)
         _amountText = State(initialValue: Self.amountString(cents: existing.amountCents))
         _relation = State(initialValue: existing.relation)
@@ -98,6 +104,7 @@ struct RecordFormView: View {
     init(personName: String, presetDirection: String) {
         fixedLedger = nil
         existing = nil
+        onSavedNewRecord = nil
         _person = State(initialValue: personName)
         _amountText = State(initialValue: "")
         _relation = State(initialValue: "朋友")
@@ -107,6 +114,30 @@ struct RecordFormView: View {
         _status = State(initialValue: LiqianConstants.sentStatus)
         _note = State(initialValue: "")
         _showSupplements = State(initialValue: false)
+    }
+
+    /// 宾客回执入账（v5.12）：账本固定、方向收礼，姓名/金额/备注按回执
+    /// 预填（备注＝来源＋祝福，见 GuestReceiptMapping.recordNote），
+    /// 补充信息默认展开——备注是这笔的来历，用户保存前应当看得见。
+    init(
+        ledger: Ledger,
+        receiptName: String,
+        receiptAmountCents: Int,
+        receiptNote: String,
+        onSavedNewRecord: @escaping (GiftRecord) -> Void
+    ) {
+        fixedLedger = ledger
+        existing = nil
+        self.onSavedNewRecord = onSavedNewRecord
+        _person = State(initialValue: receiptName)
+        _amountText = State(initialValue: Self.amountString(cents: receiptAmountCents))
+        _relation = State(initialValue: "朋友")
+        _direction = State(initialValue: LiqianConstants.received)
+        _method = State(initialValue: "现金")
+        _date = State(initialValue: Date())
+        _status = State(initialValue: LiqianConstants.sentStatus)
+        _note = State(initialValue: receiptNote)
+        _showSupplements = State(initialValue: true)
     }
 
     private static func amountString(cents: Int) -> String {
@@ -741,20 +772,21 @@ struct RecordFormView: View {
             saveTrigger += 1
             dismiss()
         } else {
-            modelContext.insert(
-                GiftRecord(
-                    ledgerID: lid,
-                    person: name,
-                    relation: relation,
-                    amountCents: cents,
-                    direction: direction,
-                    method: method,
-                    note: trimmedNote,
-                    date: LiqianDate.string(from: date),
-                    status: finalStatus
-                )
+            let newRecord = GiftRecord(
+                ledgerID: lid,
+                person: name,
+                relation: relation,
+                amountCents: cents,
+                direction: direction,
+                method: method,
+                note: trimmedNote,
+                date: LiqianDate.string(from: date),
+                status: finalStatus
             )
+            modelContext.insert(newRecord)
             try? modelContext.save()
+            // 宾客回执入账（v5.12）：落库成功即回调，回执据此置已处理并关联
+            onSavedNewRecord?(newRecord)
             // 上次使用回写（v5.8.1）：新建落库成功即记住这本，
             // 下次新建默认先它（保存并继续同理，只记一次）
             lastUsedLedgerIDRaw = lid.uuidString

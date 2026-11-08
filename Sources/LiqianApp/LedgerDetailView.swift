@@ -14,6 +14,8 @@ struct LedgerDetailView: View {
     @Query private var allMembers: [LedgerMember]
     @Query private var allSignatures: [GuestSignature]
     @Query private var allBlessings: [VoiceBlessing]
+    @Query private var allGuestBindings: [GuestEventBinding]
+    @Query private var allGuestReceipts: [GuestReceipt]
 
     @State private var showRecordForm = false
     @State private var editingRecord: GiftRecord?
@@ -103,6 +105,21 @@ struct LedgerDetailView: View {
         return parts.isEmpty ? "翻页看" : parts.joined(separator: " · ")
     }
 
+    /// 扫码随礼（v5.12）：本簿的场次绑定（入口行状态文案用）
+    private var guestBinding: GuestEventBinding? {
+        allGuestBindings.first { $0.ledgerID == ledger.id }
+    }
+
+    /// 待确认回执数：>0 时在「宾客回执」行右侧出提示，把人领去处理
+    private var guestPendingCount: Int {
+        allGuestReceipts.filter { $0.ledgerID == ledger.id && $0.status == .pending }.count
+    }
+
+    private var guestCodeSummary: String {
+        guard let guestBinding else { return "未生成" }
+        return guestBinding.closed ? "已关闭" : "收集中"
+    }
+
     var body: some View {
         List {
             Section {
@@ -169,6 +186,38 @@ struct LedgerDetailView: View {
                         Text(liveSummaryText)
                             .font(.footnote)
                             .foregroundStyle(Palette.stone)
+                    }
+                }
+            }
+
+            // 扫码随礼（v5.12）：与电子礼谱同为「对外口」——宾客从这里
+            // 进来，回执也回到这里确认。独立成组放在礼谱入口之下、
+            // 记录之上，不进「更多」菜单（同护城河入口要可见的口径）。
+            Section {
+                NavigationLink {
+                    GuestCodeView(ledger: ledger)
+                } label: {
+                    HStack {
+                        Label("宾客码", systemImage: "qrcode")
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Text(guestCodeSummary)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.stone)
+                    }
+                }
+                NavigationLink {
+                    GuestReceiptsView(ledger: ledger)
+                } label: {
+                    HStack {
+                        Label("宾客回执", systemImage: "person.2.wave.2")
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        if guestPendingCount > 0 {
+                            Text("待确认 \(guestPendingCount) 条")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Palette.primary)
+                        }
                     }
                 }
             }
@@ -370,6 +419,10 @@ struct LedgerDetailView: View {
             Text("礼簿里的记录会一并删除，30 天内可以在「我的 → 最近删除」恢复。")
         }
         .sensoryFeedback(.warning, trigger: deleteTrigger)
+        // 进详情即增量同步一次宾客回执（v5.12）：无绑定时同步中心直接返回
+        .task {
+            await GuestSyncCenter.shared.sync(ledgerID: ledger.id, in: modelContext)
+        }
     }
 
     /// 头部行（PRO-AUDIT-2 第 6 项）：左＝封面满块、右＝标题/日期/三列统计，
