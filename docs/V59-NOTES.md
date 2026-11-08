@@ -121,3 +121,28 @@ AppIconVariant.alternateName 逐项一致。
 构建号 68（5.8.2/68）；本片构建号顺延为 69（5.9.0/69，
 短版本不变），避免同构建号双版本并存。合并两支时以
 5.8.2/68 → 5.9.0/69 的递增序为准，无需再改。
+
+## 整合说明（整合构建）
+本版为三线合流的整合构建，基线 feat/v581-quick-pack（v5.8.1/67），
+在 feat/v59-appearance 上依次合入：
+
+1. feat/v582-typewriter-fix（v5.8.2 热修，**已真机验过**）：
+   TypewriterMarkdownText 去存在性门控（全文 body 同步计算、
+   Text 常在、打字机降为化妆层且任务取消即全显）；settle 落地前
+   ensuringNonEmpty 断言（空 text 无卡改落兜底 note，含 4 个新
+   单测）；answerTrigger 触发原位落地补滚。详见 V582-NOTES.md。
+2. feat/v59-legal-register（v5.9 文案线）：隐私政策与用户协议
+   去 AI 味重写，只换语体、事实冻结。详见 V59-LEGAL-NOTES.md。
+
+冲突处理（共 1 处）：Project.swift 三处版本号字面量（工程设置、
+App plist、Widget plist）——热修侧为 5.8.2/68、外观侧为
+5.9.0/69，两边同改同行冲突。热修侧在该文件的全部改动仅为
+版本号，故取外观侧整体（5.9.0/69＋CFBundleAlternateIcons
+声明块完整保留），与上节「构建号口径」一致；其余文件零重叠、
+自动合入。合后核验：版本 5.9.0/69×3 处字面量＋图标声明在位；
+ensuringNonEmpty/answerTrigger 标记在位、TypewriterMarkdownText
+已无 `if let full` 门控；「一句话先说清」在 Legal.swift 为 0 处。
+
+真机口径分清：天气热修已在 v5.8.2 真机验过、本版原样带入；
+外观（自定义主题/换图标）与法务新文本未真机验，待验清单
+沿本 NOTES 前文各节。
