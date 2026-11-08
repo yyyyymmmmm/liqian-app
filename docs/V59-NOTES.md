@@ -96,10 +96,21 @@ AppIconVariant.alternateName 逐项一致。
 问账全链（管线/提示词/AdvisorSession）、语音链与 AnalyzerFeeder、
 金额与待回口径、礼谱生成：本片零改动（git diff 名单可核）。
 
-## 验收（待回填）
-- CI：
-- 单测：
-- 解包验：
+## 验收（2026-11-08 回填）
+- CI：run 42460572108 首跑单测 1 例期望误判挂（nearestHex 青绿
+  用例，见下），修期望后 run 42460871464 全绿（构建/SwiftLint/
+  单测/预签断言/打包全过）。
+- 单测：267 个执行、0 失败（v5.8.1 基线 255＋CustomTheme 12 个）。
+  首跑唯一失败＝testNearestHexPicksClosestVariant 的青绿用例：
+  评分实算石墨 43 胜苹果蓝 55（无绿/青同色变体时按色相加权＋
+  明度/饱和度差就近到石墨），原期望系人工误判，已改期望并加
+  鲜艳蓝→苹果蓝用例钉死两种路径，公式未动。
+- 解包验：liqian-native-unsigned.ipa 内 App 5.9.0/69、Widget
+  5.9.0/69（双字面量实读）；PlugIns 仅 LiqianWidget.appex、
+  无 LiqianShare.appex；AltIcon 9 款×@2x/@3x 共 18 个 PNG 全在
+  App 包根目录；Info.plist CFBundleIcons 结构实读正确
+  （CFBundlePrimaryIcon＋CFBundleAlternateIcons 恰 8 键、
+  CFBundleIconFiles 逐项对齐）。
 - 真机待验：设置里选自定义色全 App 即时变色、被调深时有提示；
   撞色基色（绿/青）下送礼金额变黛紫；逐款点选图标后桌面图标实际
   变更（系统弹窗为正常行为）；开跟随后切主题图标自动同色；
