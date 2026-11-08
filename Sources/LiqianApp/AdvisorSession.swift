@@ -151,6 +151,8 @@ final class AdvisorSession: ObservableObject {
     /// 链完成回写：把占位原位换成正式回复（id 不变，列表身份稳定），
     /// 同步落盘与复位在途状态。占位已被清空等情形下只复位状态、
     /// 不复活回复（settle 的 id 守卫＋索引双保险）。
+    /// v5.8.2：写入前过 AdvisorChatStore.ensuringNonEmpty 断言——
+    /// 空 text 又无卡片的 .answer 改落兜底 note，不许落空回复。
     private func settle(pendingID: AdvisorChatMessage.ID, kind: AdvisorChatMessage.Kind) {
         guard inFlightPendingID == pendingID else { return }
         inFlightPendingID = nil
@@ -158,7 +160,7 @@ final class AdvisorSession: ObservableObject {
         isAsking = false
         activityText = nil
         if let index = messages.firstIndex(where: { $0.id == pendingID }) {
-            messages[index].kind = kind
+            messages[index].kind = AdvisorChatStore.ensuringNonEmpty(kind)
             answerTrigger += 1
         }
         persist()

@@ -111,6 +111,20 @@ struct AdvisorView: View {
                         }
                     }
                 }
+                // settle 原位落地补滚（v5.8.2）：占位被原位替换成正式
+                // 回复时消息条数不变，上面的 count 触发不会响——
+                // answerTrigger 只在 settle 原位落地（及草稿确认回写）
+                // 时 +1，据此补一次滚到底，「问完切走再回来」第一眼
+                // 就能看到答没答完（docs/V58-WEATHER-DIAG.md 修复 3）
+                .onChange(of: session.answerTrigger) {
+                    if let last = session.messages.last {
+                        if reduceMotion {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        } else {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        }
+                    }
+                }
             }
             composer
         }
@@ -1281,40 +1295,43 @@ private struct CardInModifier: ViewModifier {
 /// 粗体等格式在每一帧都完整，不会打出半个 **；客户端不做流式协议，
 /// 揭示纯在本地。解析失败兜底为去标记纯文本：宁可无格式，也不露星号。
 /// Reduce Motion 时整段直出。
+/// v5.8.2 去存在性门控：全文改在 body 内同步算出、Text 永远在场，
+/// 打字机只剩 revealed 化妆动画且取消即全显——v5.8 以前文本的存在
+/// 押在 .task 异步填的 @State full 上，task 被 settle 同轮的滚动/
+/// 布局反馈取消时纯文本回复整行塌空（docs/V58-WEATHER-DIAG.md）。
 private struct TypewriterMarkdownText: View {
     let markdown: String
     /// 揭示进度回调（节流后触发，父视图据此把本条钉在底部）
     var onReveal: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var full: AttributedString?
     @State private var revealed = 0
 
     var body: some View {
-        Group {
-            if let full {
-                Text(slice(full))
+        let full = Self.render(markdown)
+        return Text(slice(full))
+            .task(id: markdown) {
+                let total = NSAttributedString(full).length
+                if reduceMotion {
+                    revealed = total
+                    return
+                }
+                revealed = 0
+                var count = 0
+                while count < total {
+                    count = min(total, count + 3)
+                    revealed = count
+                    if count % 24 == 0 { onReveal() }
+                    try? await Task.sleep(nanoseconds: 16_000_000)
+                    if Task.isCancelled {
+                        // 取消即全显：动画可被打断，文字不许被扣住
+                        // （旧实现在此直接 return，revealed 停在半途）
+                        revealed = total
+                        return
+                    }
+                }
+                onReveal()
             }
-        }
-        .task(id: markdown) {
-            let rendered = Self.render(markdown)
-            full = rendered
-            let total = NSAttributedString(rendered).length
-            if reduceMotion {
-                revealed = total
-                return
-            }
-            revealed = 0
-            var count = 0
-            while count < total {
-                count = min(total, count + 3)
-                revealed = count
-                if count % 24 == 0 { onReveal() }
-                try? await Task.sleep(nanoseconds: 16_000_000)
-                if Task.isCancelled { return }
-            }
-            onReveal()
-        }
     }
 
     private func slice(_ attributed: AttributedString) -> AttributedString {
