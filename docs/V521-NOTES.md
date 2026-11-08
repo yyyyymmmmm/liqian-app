@@ -64,9 +64,16 @@ Keychain 存储机制零改动；DeepSeek 问账链路（chatTurn/工具调用�
 
 ## 五、验收实测
 
-- CI：（回填）
-- 单测：（回填；基线 175＋AIVerificationTests 6 例）
-- 解包验：（回填）
+- CI：run 42444224212 **success**（workflow_dispatch 于本分支；
+  BUILD SUCCEEDED、presign assertions passed (2 binaries)）。
+- 单测：唯一用例 **181 个全过、0 失败**（基线 175＋新增
+  AIVerificationTests 6 例：落盘还原/换 Key 失效/失败原因留存/
+  清除回未验证等）。
+- 解包验：App 与 Widget 均 **5.2.1/55**；PlugIns 只有
+  LiqianWidget.appex、**无 LiqianShare.appex**；二进制抽查
+  AIVerification 符号与「保存并验证」「验证只发一次极小的接口
+  调用，确认 Key 真能用」等新文案均在包内（个别短串未命中系
+  Swift 小字符串内联编码，与 v5.0.2 既有现象一致）。
 
 ## 六、真机待验（未宣称已验）
 
