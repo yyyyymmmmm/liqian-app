@@ -330,6 +330,16 @@ struct QuickSentenceView: View {
 // 给明确人话、不静默换引擎；DictationTranscriber 兜底留作后备方向，
 // 记录在 V55-NOTES，本轮不做。
 //
+// 【隔离定版（v5.5.1）】v5.5 装机后仍闪退，用户发来两份 .ips 定罪：
+// 异常同为 EXC_BREAKPOINT，栈同为 _dispatch_assert_queue_fail ←
+// swift_task_isCurrentExecutor——本类是 @MainActor 隔离类型，在自身
+// 方法里形成的闭包继承 MainActor 隔离、自带执行者断言序言，框架从
+// 自有队列回调时正文一行未跑就被击杀（11-07 死于 TCC 授权回调、
+// 11-08 死于 tap 闭包被音频队列调用）。修法是结构搬迁：采音喂入
+// （引擎/tap/转换/输入流）整体搬进 nonisolated 的 AnalyzerFeeder，
+// 本类只同步调用其 start/stop；语音功能内全部框架回调的清点与
+// 去隔离结论见 docs/V551-NOTES.md。
+//
 // 【授权】新框架文档与官方示例均不要求语音识别授权（示例工程只声明
 // 麦克风权限键）——本链只走麦克风授权，且沿用 v5.4.1 同步分流口径：
 // 已决状态同步读、零回调，未决才经 nonisolated 桥发请求（避 TCC
@@ -361,14 +371,16 @@ final class SpeechTranscriber: ObservableObject {
     @Published var errorText: String?
     var onText: ((String) -> Void)?
 
-    private let audioEngine = AVAudioEngine()
+    /// 采音喂入（nonisolated，v5.5.1）：引擎/tap/转换/输入流全在
+    /// AnalyzerFeeder 里，本类只同步调它的启动/收尾方法——隔离
+    /// 红线见该文件头与 docs/V551-NOTES.md
+    private let feeder = AnalyzerFeeder()
     private var analyzer: Speech.SpeechAnalyzer?
     private var module: Speech.SpeechTranscriber?
     /// analyzer.start(inputSequence:) 是否已成功返回（收尾时据此决定
     /// 要不要 finalize：未启动过的分析器直接释放即可，官方文档口径
     /// 「调用 finish 方法或释放分析器」二选一）
     private var analyzerStarted = false
-    private var inputContinuation: AsyncStream<Speech.AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
     private var setupTask: Task<Void, Never>?
     private var teardownTask: Task<Void, Never>?
@@ -379,21 +391,12 @@ final class SpeechTranscriber: ObservableObject {
     private var traceArmed = false
     /// 首个识别结果只落一次面包屑
     private var didTraceFirstResult = false
-    /// 音频会话已由本类激活（stop 时据此 deactivate，不误关他人状态）
-    private var sessionActivated = false
-    /// tap 已装标记：收尾只在真装过时才碰 inputNode
-    private var tapInstalled = false
     /// 代际计数：stop()/新一轮 start() 都会推进；授权/资产等在途异步
     /// 回调落地前先验代际，过期直接丢弃（旧链隐患 ③，沿用）
     private var generation = 0
     /// 结果消费令牌：stop 收尾的 finalize flush 完成前保持有效，让
     /// 最后一句的 final 结果仍能送达 onText；收尾完成后推进作废
     private var sessionToken = 0
-    /// tap 接受旗（音频线程与主线程共享）：false 后 tap 不再喂入
-    private let bufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
-    /// tap 首个 buffer 面包屑旗：音频线程置位、只触发一次；实际写入
-    /// 异步落主执行者，不许在实时音频线程直接写 UserDefaults
-    private let firstBufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     func toggle() {
         if isRecording {
@@ -568,8 +571,9 @@ final class SpeechTranscriber: ObservableObject {
         )
 
         // 输入流先建：tap 喂入与 analyzer.start 共用同一条流
+        // （continuation 由 feeder 在 startCapture 里接管持有，收尾
+        // 经 feeder.finishInput 结束，v5.5.1）
         let (stream, continuation) = AsyncStream<Speech.AnalyzerInput>.makeStream()
-        inputContinuation = continuation
 
         // 4) 结果消费先行启动（官方示例次序：消费任务先于 start）
         sessionToken += 1
@@ -596,12 +600,26 @@ final class SpeechTranscriber: ObservableObject {
             }
         }
 
-        // 5) 采音装配（会话＋tap＋转换器），再启动分析器与引擎
+        // 5) 采音装配（会话＋tap＋转换器）整体在 nonisolated 的
+        //    AnalyzerFeeder 里完成——tap 闭包绝不许在 @MainActor 类型
+        //    的方法里形成（11-08 .ips 实锤：继承 MainActor 隔离、
+        //    被音频线程调用时死在序言断言，见 docs/V551-NOTES.md），
+        //    再启动分析器与引擎
         do {
-            try installCapture(
+            try feeder.startCapture(
                 analyzerFormat: analyzerFormat,
                 continuation: continuation,
-                generation: gen
+                trace: { step, name, detail in
+                    MicTrace.mark(step: step, name, detail: detail)
+                },
+                onFirstBuffer: { [weak self] in
+                    // 首包钩子（@Sendable，音频线程触发）：只许建
+                    // Task 回主执行者落 28，不许直接碰隔离状态
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == gen else { return }
+                        MicTrace.mark(step: 28, "首个音频已喂入分析器")
+                    }
+                }
             )
             try await analyzer.start(inputSequence: stream)
             analyzerStarted = true
@@ -609,8 +627,7 @@ final class SpeechTranscriber: ObservableObject {
                 teardownSession()
                 return
             }
-            audioEngine.prepare()
-            try audioEngine.start()
+            try feeder.startEngine()
         } catch {
             MicTrace.mark(step: 99, "启动异常", detail: error.localizedDescription)
             errorText = "录音启动失败：\(error.localizedDescription)。可直接输入文字。"
@@ -620,115 +637,6 @@ final class SpeechTranscriber: ObservableObject {
         MicTrace.mark(step: 27, "分析器已启动")
         isRecording = true
         isStarting = false
-    }
-
-    /// 音频会话激活＋装 tap＋建转换器（不启动引擎，引擎在
-    /// analyzer.start 成功后才启动，保证喂入前消费端已就绪）。
-    private func installCapture(
-        analyzerFormat: AVAudioFormat,
-        continuation: AsyncStream<Speech.AnalyzerInput>.Continuation,
-        generation gen: Int
-    ) throws {
-        let session = AVAudioSession.sharedInstance()
-        // 新框架官方示例口径：.playAndRecord + .spokenAudio
-        try session.setCategory(.playAndRecord, mode: .spokenAudio)
-        // 激活不带 .notifyOthersOnDeactivation（只对停用有效，v5.4.1 ⑨）
-        try session.setActive(true)
-        sessionActivated = true
-        MicTrace.mark(step: 24, "音频会话已激活")
-
-        let input = audioEngine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        MicTrace.mark(
-            step: 25, "读取输入格式",
-            detail: "\(Int(inputFormat.sampleRate))Hz/\(inputFormat.channelCount)ch"
-        )
-        // 格式没就绪就装 tap 会触发 AVFAudio 的 NSException（catch
-        // 不住、直接闪退）——旧链时代的教训，新链同样先拦下
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw NSError(
-                domain: "LiqianSpeech", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "麦克风暂时不可用"]
-            )
-        }
-        // 格式相同直通；不同才建转换器（primeMethod = .none 是官方
-        // 示例口径：牺牲最初几个采样换时间戳不漂移）
-        let converter: AVAudioConverter?
-        if inputFormat == analyzerFormat {
-            converter = nil
-        } else {
-            converter = AVAudioConverter(from: inputFormat, to: analyzerFormat)
-            converter?.primeMethod = .none
-            guard converter != nil else {
-                throw NSError(
-                    domain: "LiqianSpeech", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "音频格式转换不可用"]
-                )
-            }
-        }
-
-        // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap
-        if tapInstalled {
-            input.removeTap(onBus: 0)
-            tapInstalled = false
-        }
-        let gate = bufferGate
-        gate.withLock { $0 = true }
-        let traced = firstBufferGate
-        traced.withLock { $0 = false }
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            // 接受旗已关（收尾中）就不再喂入
-            guard gate.withLock({ $0 }) else { return }
-            let converted: AVAudioPCMBuffer?
-            if let converter {
-                converted = Self.convertBuffer(buffer, with: converter, to: analyzerFormat)
-            } else {
-                converted = buffer
-            }
-            guard let converted else { return }
-            continuation.yield(Speech.AnalyzerInput(buffer: converted))
-            // 首个音频落标：音频线程只置原子旗，写入异步切主执行者
-            let isFirst = traced.withLock { flag -> Bool in
-                if flag { return false }
-                flag = true
-                return true
-            }
-            if isFirst {
-                Task { @MainActor [weak self] in
-                    guard let self, self.generation == gen else { return }
-                    MicTrace.mark(step: 28, "首个音频已喂入分析器")
-                }
-            }
-        }
-        tapInstalled = true
-        MicTrace.mark(step: 26, "已装 tap")
-    }
-
-    /// AVAudioConverter 单 buffer 转换（官方示例的 inputBlock 形状：
-    /// 一次喂入、之后报 noDataNow）。在 tap 的音频线程串行调用。
-    nonisolated static func convertBuffer(
-        _ buffer: AVAudioPCMBuffer,
-        with converter: AVAudioConverter,
-        to format: AVAudioFormat
-    ) -> AVAudioPCMBuffer? {
-        let ratio = format.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
-        guard capacity > 0,
-              let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
-        else { return nil }
-        var error: NSError?
-        var delivered = false
-        let status = converter.convert(to: output, error: &error) { _, outStatus in
-            if delivered {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            delivered = true
-            outStatus.pointee = .haveData
-            return buffer
-        }
-        guard status != .error, output.frameLength > 0 else { return nil }
-        return output
     }
 
     /// 结果流结束/异常的统一入口：正常收尾时 teardown 已在跑，这里
@@ -759,8 +667,8 @@ final class SpeechTranscriber: ObservableObject {
     /// 消费令牌保持有效，最后一句不丢）→ 取消消费任务 → 停用会话。
     private func teardownSession() {
         guard teardownTask == nil else { return }
-        let hasSession = analyzer != nil || tapInstalled
-            || inputContinuation != nil || isRecording
+        let hasSession = analyzer != nil || feeder.hasSessionArtifacts
+            || isRecording
         isRecording = false
         guard hasSession else {
             isStarting = false
@@ -768,23 +676,16 @@ final class SpeechTranscriber: ObservableObject {
         }
         // 收尾完成前保持 isStarting，挡住立刻重开与收尾打架
         isStarting = true
-        bufferGate.withLock { $0 = false }
-        if audioEngine.isRunning {
-            audioEngine.stop()
-        }
-        if tapInstalled {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
-        }
-        let continuation = inputContinuation
-        inputContinuation = nil
+        // 关接受旗 → 停引擎 → 摘 tap（同步段，在 feeder 内完成）
+        feeder.stopCapture()
+        let feeder = self.feeder
         let analyzer = self.analyzer
         self.analyzer = nil
         let wasStarted = analyzerStarted
         analyzerStarted = false
         let token = sessionToken
         teardownTask = Task { @MainActor [weak self] in
-            continuation?.finish()
+            feeder.finishInput()
             if let analyzer, wasStarted {
                 // 冲刷已喂入音频的最终结果；失败不挡收尾
                 try? await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -793,11 +694,7 @@ final class SpeechTranscriber: ObservableObject {
             if self.sessionToken == token { self.sessionToken += 1 }
             self.resultsTask?.cancel()
             self.resultsTask = nil
-            if self.sessionActivated {
-                try? AVAudioSession.sharedInstance()
-                    .setActive(false, options: .notifyOthersOnDeactivation)
-                self.sessionActivated = false
-            }
+            feeder.deactivateSession()
             self.module = nil
             self.teardownTask = nil
             self.isStarting = false

@@ -242,6 +242,25 @@ final class BlessingRecorder: ObservableObject {
 
 enum BlessingTranscriber {
     static func transcribe(fileName: String) async -> String? {
+        // 执行体在 nonisolated 的 BlessingRecognitionRunner 里
+        // （v5.5.1 隔离定版）：框架回调闭包只许在无隔离类型内形成，
+        // 见 docs/V551-NOTES.md 清点表 ③
+        await BlessingRecognitionRunner.transcribeFile(
+            url: BlessingAudioStore.url(for: fileName)
+        )
+    }
+}
+
+/// 文件识别执行体（nonisolated 定版）：SFSpeechRecognizer 的授权回调
+/// 与 recognitionTask 结果 handler 都在本类型内形成。本类型无任何
+/// 隔离标注、本工程亦无默认隔离设置（Project.swift 只有
+/// SWIFT_VERSION，隔离只来自显式 @MainActor），闭包不继承 MainActor
+/// 隔离、不带执行者断言序言；结果经 CheckedContinuation 回到调用方
+/// 的 async 上下文。把执行体从外层入口独立出来，是防日后外层被标
+/// @MainActor 时回调继承污染复发——与实时链 tap 闭包同一病理，
+/// .ips 实锤见 docs/V551-NOTES.md。
+private enum BlessingRecognitionRunner {
+    static func transcribeFile(url: URL) async -> String? {
         let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
             SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
         }
@@ -250,9 +269,7 @@ enum BlessingTranscriber {
               recognizer.isAvailable
         else { return nil }
 
-        let request = SFSpeechURLRecognitionRequest(
-            url: BlessingAudioStore.url(for: fileName)
-        )
+        let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
         if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true
