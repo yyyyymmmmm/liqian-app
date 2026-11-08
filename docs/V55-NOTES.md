@@ -157,6 +157,27 @@ DocC 页面，声明经两份逐字转引官方文档 JSON 的独立核查记录
    一行回传（看新步号停在哪：20/21 资产、28 喂入、29 结果）；
 4. 语音祝福录制回归一次（本轮未动，顺手确认）。
 
-## 验收实测
+## 验收实测（2026-11-08 本机亲验）
 
-（待 CI 与解包验后回填。）
+- CI：run **42453714048 success**（手动 workflow_dispatch 于本分支；
+  Build/单测/预签断言/打包/上传全绿，日志含
+  `presign assertions passed (2 binaries)`；日志中两处 `error:` 命中
+  均为工作流自身 grep 命令的回显，非构建错误）。
+- 单测：**215 个用例、0 失败**（v5.4.2 基线 209 ＋ 本轮新增
+  TranscriptAccumulator 6 个，一例未掉）。
+- 解包验：App 与 Widget 的 Info.plist 均 **5.5.0/62**；PlugIns
+  只有 LiqianWidget，**无 LiqianShare.appex**。
+- 二进制符号验（App 主二进制原始字节）：
+  - `SFSpeechAudioBufferRecognitionRequest` **0 命中**——旧实时链
+    请求类已从包内消失（源码仅剩退役说明注释两处提及）；
+  - 新链符号命中：`AssetInventory`、`AnalyzerInput`、
+    `bestAvailableAudioFormat`、`downloadAndInstall` 各 2 处，
+    Swift mangled 符号含 `Speech.SpeechTranscriber` 的 results /
+    isAvailable / supportedLocale / ReportingOption 等；
+  - 新步名五项（语音模型资产状态/语音模型下载开始/首个音频已
+    喂入分析器/分析器已启动/正在准备语音模型）全部命中；
+  - `SFSpeechURLRecognitionRequest` 2 命中——归属为
+    BlessingTranscriber 的**文件转写路径**（本轮明示不动），
+    非实时链。
+- IPA：`~/workspace/your_files/liqian-v5.5/liqian-native-unsigned.ipa`
+  （4,015,245 字节，未签名，SideStore 覆盖安装、数据不动）。
