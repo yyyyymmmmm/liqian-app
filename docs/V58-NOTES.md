@@ -108,9 +108,12 @@ URLRequest.timeoutInterval（与既有 30 秒口径同一机制，超时错误
 
 ## 六、验收
 
-- CI：<回填>
-- 单测：<回填>（基线 236 ＋ 新增 12：预算 8＋占位 4）
-- 解包验：<回填>
+- CI：run 42458946547 **success**（Build/单测/预签断言/打包全绿，
+  日志含 `presign assertions passed (2 binaries)`）。
+- 单测：**248 个、0 失败**（236 基线＋新增 12：AdvisorTimeBudget 8
+  ＋占位落盘/收敛 4，AdvisorDeliveryTests）。
+- 解包验：App 与 Widget 均 **5.8.0/66**；PlugIns 只有 LiqianWidget，
+  **无 LiqianShare.appex**。
 - AnalyzerFeeder.swift 相对基线零改动（git diff 核对）。
 
 ## 七、真机待验（不宣称已修好，装机后按此判读）
