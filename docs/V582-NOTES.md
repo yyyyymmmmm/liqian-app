@@ -92,11 +92,17 @@ var body: some View {
 - 工作区另有 v5.9 外观线的未提交改动（Palette/CustomTheme 等），
   非本片文件，未纳入本片提交。
 
-## 验收（回填）
+## 验收（实测）
 
-- CI：（待回填）
-- 单测：（待回填，基线 255＋新增 4）
-- 解包验：（待回填）
+- CI run 42460457434 success（workflow_dispatch 于 feat/v582-typewriter-fix）：
+  Build／单测／预签断言（presign assertions passed, 2 binaries）／打包全绿。
+- 单测 259 个、0 失败（255 基线＋新增 4 例 ensuringNonEmpty，一例未掉）。
+- 解包验：App 与 Widget 的 Info.plist 均为 5.8.2/68；PlugIns 只有
+  LiqianWidget.appex，无 LiqianShare.appex。
+- AnalyzerFeeder.swift 相对基线 feat/v581-quick-pack 零改动
+  （git diff 核对为空）；本片提交仅 6 文件（Project.swift、
+  AdvisorSession.swift、AdvisorView.swift、AdvisorChatStore.swift、
+  AdvisorDeliveryTests.swift、本 NOTES）。
 
 ## 真机待验
 
