@@ -143,7 +143,22 @@
 
 ## 四、验收实测
 
-（CI 回填）
+- CI：首跑 run 42442777395 失败（Swift 6 并发检查：全局 @ViewBuilder
+  函数返回的视图闭包 non-Sendable，PendingWidgets.swift:78）→ 待回逐人
+  行改为正式 View 结构体 PendingPersonRow 后重跑 run 42442846311
+  **success**（BUILD/TEST SUCCEEDED、presign assertions passed
+  (2 binaries)）。
+- 单测：**163 个唯一用例全过、0 失败**（基线 160＋新增
+  WidgetDeepLinkTests 3 个）。
+- 解包验（artifact 13601919348）：App 与 Widget 均 **5.1.0/53**；
+  PlugIns 只有 LiqianWidget.appex，**无 LiqianShare.appex**；IPA
+  3,597,639 字节，落在 ~/workspace/your_files/liqian-v5.1/。
+- 包内抽查：Widget 二进制含 PendingPersonRow（130 处元数据引用）、
+  PendingLargeView、PendingCircularView、WidgetSkeletonView 类名与
+  长文案（「暂无人情待回」「近期没有重要日子」「还没有重要日子」字节
+  命中）；「liqian://pending」字面量在 LiqianCore.framework 与 Widget
+  二进制均命中。短串（记一笔/本月收礼/更新等 ≤15 字节）未命中系
+  Swift 小字符串内联编码，与 v5.0.2 解包时的既有现象一致。
 
 ## 五、真机待验（未验，不宣称）
 
