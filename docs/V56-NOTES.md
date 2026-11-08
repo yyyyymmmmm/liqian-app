@@ -155,9 +155,36 @@ SpeechAnalyzer 配置（显式 init/volatileResults/audioTimeRange）
 未动；问答纪律与 draft_record 未动；Blessing 全链未动；
 TranscriptAccumulator 未动（本就分定稿/未定稿两段）。
 
-## 验收实测
+## 验收实测（2026-11-08 本机亲验）
 
-（CI 与解包验完成后回填。）
+- CI：run **42456058700 success**（Build/单测/预签断言/打包/上传
+  全绿，含 `presign assertions passed` 口径与历版一致）。
+- 单测：**229 个用例、0 失败**（v5.5.1 基线 221 ＋ 本轮新增
+  VoiceLevelMath 8 个，VoiceLevelMathTests 套件单独 passed）。
+- 解包验：App 与 Widget 的 Info.plist 均 **5.6.0/64**；PlugIns
+  只有 LiqianWidget，**无 LiqianShare.appex**。
+- 源码级隔离复核证据（可复现）：
+  - `grep -rn "installTap" Sources/` 全仓**仅一处**：
+    AnalyzerFeeder.swift:148；QuickSentenceView.swift 内
+    installTap / AVAudioEngine() 均 **0 命中**；
+  - tap 闭包捕获列表原文：
+    `[gate, firstFlag, meter, converter, analyzerFormat, continuation, onFirstBuffer, onLevel]`
+    ——无 self、无 SpeechTranscriber；
+  - feeder 声明原文（AnalyzerFeeder.swift:36）：
+    `nonisolated final class AnalyzerFeeder: @unchecked Sendable`；
+  - MicTrace.swift 相对基线分支 **零改动**（步号体系未动）。
+- 二进制抽查：App 主二进制中 `VoiceInputPanel`／`AnalyzerFeeder`
+  相关符号共 198 处命中（面板与 feeder 均已进包）；中文步名未命
+  中属 Swift 小字符串内联编码的历版同一现象，源码调用逐字在位。
+- IPA：`~/workspace/your_files/liqian-v5.6/liqian-native-unsigned.ipa`
+  （4,059,107 字节，未签名，SideStore 覆盖安装、数据不动）。
+
+## 如实声明（不宣称已修好）
+
+本版是体验形态改版：数据通道（真实电平）与面板均为新代码，CI
+与解包只能证明「包对、测过」；波形是否真随声音起伏、灰/墨两段
+是否如预期、取消是否真不落字，都要以真机实测为准（清单见上节）。
+隔离红线与转写链语义未动，v5.5.1 的结案结论不受本版影响。
 
 ## 真机待验（装 v5.6 后）
 
