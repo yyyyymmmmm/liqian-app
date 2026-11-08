@@ -136,9 +136,28 @@ AdvisorReplyConvergence.failureApologyText：点明可能是网络问题、
 - 版本字面量：Project.swift 全局设置＋App＋Widget 三处升
   5.7.0/65（休眠的 LiqianShare target 历版不升、未动）。
 
-## 五、验收实测（待 CI 回填）
+## 五、验收实测（2026-11-08 本机亲验）
 
-（占位：CI run、单测总数、解包验、隔离复核，跑完回填。）
+- CI：run **42456607368 success**（Build/单测/预签断言/打包/上传
+  全绿，日志含 `presign assertions passed (2 binaries)`）。
+- 单测：**236 个用例、0 失败**（v5.6 基线 229 ＋ 本轮新增
+  AdvisorReplyTests 7 个，日志中该套件用例逐个可查）。
+- 解包验：App 与 Widget 的 Info.plist 均 **5.7.0/65**；PlugIns
+  只有 LiqianWidget，**无 LiqianShare.appex**。
+- 隔离复核不变：AnalyzerFeeder.swift 相对基线分支**零改动**
+  （git diff 无该文件），installTap 全仓仍只在 AnalyzerFeeder
+  一处；本版改动面只有 AdvisorView.swift（问账管线＋键盘）、
+  Project.swift（版本）、新增 AdvisorReply.swift 与其单测。
+- IPA：`~/workspace/your_files/liqian-v5.7/liqian-native-unsigned.ipa`
+  （4,072,721 字节，未签名，SideStore 覆盖安装、数据不动）。
+
+## 如实声明（不宣称已修好）
+
+「永不沉默」是管线结构保证：每条出口都收敛到一条可见回复，且
+收敛裁决有单测钉住；但账外回答的质量与语气、工具路径第一轮直
+答是否如预期、键盘三路的手感，都要以真机实测为准（清单见下节）。
+断网兜底受链路 30 秒超时约束：最坏情况要等主路径＋通用 lane 两
+段超时后才落致歉，是「迟到但必到」，不是即时。
 
 ## 六、真机待验（装 v5.7 后）
 
