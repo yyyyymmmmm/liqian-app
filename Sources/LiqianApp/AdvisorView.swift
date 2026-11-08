@@ -19,6 +19,10 @@ import LiqianDesign
 /// v5.4：对话本地持久化（AdvisorChatStore 落 JSON 文件），退出重进
 /// 历史还在，页面菜单可清空；新增 draft_record 记账工具——AI 只起草
 /// 待确认卡，用户点「确认入账」才走既有记账数据路径真正写库。
+/// v5.7 双修：①问账回答政策「永不沉默」——工具提示词加账外 lane
+/// （账外问题模型直接用自身知识作答），管线末端加通用作答 lane＋
+/// AdvisorReplyConvergence 收敛裁决，任何出口必落一条可见回复；
+/// ②键盘收起三件套：滚动收键盘、点消息区收键盘、键盘附件栏收起钮。
 struct AdvisorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
@@ -36,6 +40,9 @@ struct AdvisorView: View {
     @State private var editingRecord: GiftRecord?
     @State private var input = ""
     @State private var isAsking = false
+    /// 键盘收起三件套的焦点锚（v5.7）：输入框绑定它，点空白/附件栏
+    /// 收起钮都靠把这一位放掉来收键盘
+    @FocusState private var composerFocused: Bool
     /// 查账过程状态（v5.3）：按当前工具映射的人话文案，nil = 不在查账
     @State private var activityText: String?
     /// 答案落定触感（v4.7 审计补齐）：提问全程原无任何触感，答案 append 时 +1
@@ -89,6 +96,13 @@ struct AdvisorView: View {
                         value: messages.count
                     )
                 }
+                // 键盘收起三件套 ①②（v5.7）：滑动消息流交互式收键盘；
+                // 点消息区任意处（含卡片按钮，动作照常触发）顺手放焦点
+                // 收键盘——simultaneous 不抢占卡片自身的点按与滚动拖动
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(
+                    TapGesture().onEnded { composerFocused = false }
+                )
                 .onChange(of: messages.count) {
                     if let last = messages.last {
                         // Reduce Motion 时直接定位不滚动动画（v4.4）
@@ -142,6 +156,17 @@ struct AdvisorView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel("对话菜单")
+            }
+            // 键盘收起三件套 ③（v5.7）：键盘附件栏右侧「收起」钮，
+            // 键盘升起时才出现，不占输入坞布局
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button {
+                    composerFocused = false
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .accessibilityLabel("收起键盘")
             }
         }
         .confirmationDialog(
@@ -281,6 +306,7 @@ struct AdvisorView: View {
                 .accessibilityLabel(transcriber.isRecording ? "停止录音" : "语音输入")
 
                 TextField("问一句，如：我和大舅谁欠谁", text: $input)
+                    .focused($composerFocused)
                     .submitLabel(.send)
                     .onSubmit { ask(input) }
 
@@ -1248,18 +1274,60 @@ struct AdvisorView: View {
                 return
             }
             let intent = await resolveIntent(question: question, people: names)
-            isAsking = false
-            activityText = nil
             if let intent {
+                isAsking = false
+                activityText = nil
                 messages.append(AdvisorChatMessage(kind: .result(
                     AdvisorEngine.execute(intent, entries: entries)
                 )))
-            } else {
+                answerTrigger += 1
+                return
+            }
+            // v5.7 收敛段（永不沉默）：意图/规则都兜不住时，先过通用
+            // 作答 lane 让模型用自身知识回答账外问题；再由收敛器裁决
+            // 最终出口——通用回答 / 未开通兜底卡 / 真故障致歉，三者
+            // 必居其一，不再有「消息挂着没回复」的第四种结果。
+            let aiReady = AIAccess.readiness() == .ready
+            let general = aiReady ? await answerGenerally(question: question) : nil
+            isAsking = false
+            activityText = nil
+            switch AdvisorReplyConvergence.resolve(aiReady: aiReady, generalAnswer: general) {
+            case .generalAnswer(let text):
+                messages.append(AdvisorChatMessage(kind: .answer(text: text, cards: [])))
+            case .unsupportedWithoutAI:
                 messages.append(AdvisorChatMessage(kind: .result(.unsupported)))
+            case .failureApology:
+                messages.append(AdvisorChatMessage(kind: .note(
+                    AdvisorReplyConvergence.failureApologyText
+                )))
             }
             answerTrigger += 1
         }
     }
+
+    /// 通用作答 lane（v5.7）：无工具的纯文本对话，账外问题（天气/
+    /// 常识/礼仪/闲聊/用法请教）在这里由模型用自身知识回答。
+    /// 任何失败（网络/接口/空回复）返回 nil，交收敛器落致歉兜底，
+    /// 本函数自己不吞不编。
+    private func answerGenerally(question: String) async -> String? {
+        guard let client = try? DeepSeekClient() else { return nil }
+        activityText = "正在整理回答…"
+        do {
+            let text = try await client.chatText(system: Self.generalSystemPrompt, user: question)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            return nil
+        }
+    }
+
+    /// 通用作答提示词：账外 lane 的纪律——用自身知识答、实时信息
+    /// 先声明拿不到再给常识、不编账目数据、不许诺没有的 App 功能。
+    private static let generalSystemPrompt = """
+        你是「礼记」的问账管家。用户刚问的这个问题与他的人情礼金账无关，或者账里没有答案。用你自己的知识直接、简洁、口语化地回答，不要提「查账」「工具」，不要假装查过他的账，也不要把用户推开说「我只管账目」。
+        需要实时信息才能答准的问题（实时天气、新闻、价格行情等）：先明说你拿不到实时数据，再给常识性的回答或建议；不许编造具体的实时数值，也不许只说「查不到」就结束。
+        不要编造用户账本里的任何金额、人名和记录。被问到这个 App 怎么用时，只介绍它确实有的功能：记人情账、问账查账、待回提醒、礼谱与报表导出、语音和拍照记账；没有的功能不要许诺。
+        """
 
     /// 工具问答轮数上限：模型最多连查 4 轮工具，防死循环烧额度
     private static let maxToolRounds = 4
@@ -1357,7 +1425,7 @@ struct AdvisorView: View {
         3. 回答简洁口语、先给结论；涉及金额时带上口径出处，如「据你 2026 年的账」「你和大舅的全部往来里」。
         4. 回礼建议类问题：先用 query_person 查清差额与最近往来，再结合差额给建议，并说明建议依据的数字来自账里哪笔/哪段汇总；建议金额只能引用工具结果里的数字或其明确加减，不要凭空报数。
         5. 工具返回 ok:false 时，按 error 的意思如实告诉用户，或换个工具/参数再查一次；同一问题最多查 4 轮工具。
-        6. 只处理与人情账目有关的事（查账与记账）；无关问题礼貌说明自己只管人情账目。
+        6. 账外问题（与人情账目无关的问题，如天气、常识、礼仪人情、闲聊、问这个 App 怎么用）：不要调任何查账工具，直接用你自己的知识简洁作答；不许说「我只管账目」把用户推开，也不许假装查过账。一句问题里账内账外都有时，账内部分按上面 1-5 条先查工具，账外部分在同一条回复里用自己的知识答。账外回答里不许出现编造的账目金额、人名和记录；被问到这个 App 怎么用时，只介绍它确实有的功能：记人情账、问账查账、待回提醒、礼谱与报表导出、语音和拍照记账，没有的功能不要许诺。需要实时信息才能答准的（实时天气、新闻、价格行情），先明说你拿不到实时数据，再给常识性的回答或建议，不许编一个具体的实时数值，也不许只说「查不到」就结束。
         """
     }
 
