@@ -235,25 +235,4 @@ public enum CustomTheme {
         }
         return (channel(16) << 16) | (channel(8) << 8) | channel(0)
     }
-
-    /// 就近匹配（图标联动用）：候选里挑与基色最接近的一个。
-    /// 距离＝色相夹角（按双方饱和度加权，灰阶色相不可靠时自动降权）
-    /// ＋明度差＋饱和度差的加权和。候选为空返回 nil。
-    public static func nearestHex(baseHex: UInt32, candidates: [UInt32]) -> UInt32? {
-        let base = hsl(of: baseHex)
-        var best: UInt32?
-        var bestScore = Double.greatestFiniteMagnitude
-        for candidate in candidates {
-            let c = hsl(of: candidate)
-            let hueWeight = max(base.s, c.s)
-            let score = hueDistance(base.h, c.h) * hueWeight
-                + abs(base.l - c.l) * 60
-                + abs(base.s - c.s) * 30
-            if score < bestScore {
-                bestScore = score
-                best = candidate
-            }
-        }
-        return best
-    }
 }

@@ -122,22 +122,4 @@ final class CustomThemeTests: XCTestCase {
         }
     }
 
-    // MARK: 就近匹配（图标联动）
-
-    func testNearestHexPicksClosestVariant() {
-        let candidates: [UInt32] = [
-            0xA62B1F, 0xD96A5C, 0x0052D9, 0x4E5969, 0xA16207,
-            0xE1251B, 0x007AFF, 0x232323, 0xE8A20C,
-        ]
-        // 纯红 → 大厂红；近黑 → 黑
-        XCTAssertEqual(CustomTheme.nearestHex(baseHex: 0xFF0000, candidates: candidates), 0xE1251B)
-        XCTAssertEqual(CustomTheme.nearestHex(baseHex: 0x101010, candidates: candidates), 0x232323)
-        // 鲜艳浅蓝（高饱和、色相近）→ 苹果蓝
-        XCTAssertEqual(CustomTheme.nearestHex(baseHex: 0x3395FF, candidates: candidates), 0x007AFF)
-        // 青绿：九款里没有绿/青同色，评分（色相夹角按饱和度加权
-        // ＋明度/饱和度差）下石墨最近（实算 43 对苹果蓝 55）→ 石墨。
-        // 无同色时的就近结果以评分为准，此例钉死防回归
-        XCTAssertEqual(CustomTheme.nearestHex(baseHex: 0x1F9E8A, candidates: candidates), 0x4E5969)
-        XCTAssertNil(CustomTheme.nearestHex(baseHex: 0xFF0000, candidates: []))
-    }
 }

@@ -10,8 +10,8 @@
 的现有声明等比缩放（LANCZOS）到每个槽位的像素尺寸，文件名与声明
 逐项一致；1024 槽位直接字节复制主图、不重编码。构图零改动。
 
-注意：备用图标（AltIcon-*）由 scripts/make_alt_icons.py 以旧主图
-（礼结）做换色投影生成，与本脚本无关，本脚本不碰它们。
+注意：备用图标（AltIcon-*）已于 v5.11.4 整体取消，其生产脚本
+make_alt_icons.py 随之删除，本脚本是图标资产的唯一生产入口。
 
 用法（仓库根目录）：python3 scripts/make_primary_icon.py
 依赖：Pillow。

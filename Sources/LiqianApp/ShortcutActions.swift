@@ -54,6 +54,9 @@ final class LiqianAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // 备用图标下线迁移（v5.11.4）：旧版选过换色图标的设备在此
+        // 复位主图标＋清下线偏好键，幂等，见 IconCleanup
+        IconCleanup.run()
         // 冷启动点快捷项：此时界面未就绪，只写标记，
         // ContentView 出现后在 .task 里统一消费（与小组件标记同一时机）
         if let item = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {

@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "5.11.3",
-        "CURRENT_PROJECT_VERSION": "74",
+        "MARKETING_VERSION": "5.11.4",
+        "CURRENT_PROJECT_VERSION": "75",
     ]),
     targets: [
         .target(
@@ -43,28 +43,17 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "5.11.3",
-                "CFBundleVersion": "74",
-                // 备用图标（v5.9，审计 #2）：白底不变、只换礼结色的 8 款
-                // 变体，文件由 scripts/make_alt_icons.py 生成、随资源进包
-                // 根目录（AltIcon-<变体>@2x/@3x.png）。键名与
-                // AppIconVariant.alternateName 逐项一致；主图标仍走资源
-                // 目录 AppIcon（此处主图标条目为结构完整而写，actool
-                // 构建时以资源目录为准合并）。
+                "CFBundleShortVersionString": "5.11.4",
+                "CFBundleVersion": "75",
+                // 图标只有主图标一本（v5.11.4 收口）：v5.9 的换色备用
+                // 图标已整体取消（用户拍板）——CFBundleAlternateIcons
+                // 声明与 AltIcon-* 文件一并删除，此处只声明主图标，
+                // 图走资源目录 AppIcon.appiconset（v5.11.3 起为谱框）。
+                // 旧版选过备用图标的设备由 IconCleanup 在启动时复位。
                 "CFBundleIcons": [
                     "CFBundlePrimaryIcon": [
                         "CFBundleIconFiles": ["AppIcon"],
                         "CFBundleIconName": "AppIcon",
-                    ],
-                    "CFBundleAlternateIcons": [
-                        "AltIcon-night": ["CFBundleIconFiles": ["AltIcon-night"]],
-                        "AltIcon-tencentBlue": ["CFBundleIconFiles": ["AltIcon-tencentBlue"]],
-                        "AltIcon-graphite": ["CFBundleIconFiles": ["AltIcon-graphite"]],
-                        "AltIcon-amber": ["CFBundleIconFiles": ["AltIcon-amber"]],
-                        "AltIcon-jdRed": ["CFBundleIconFiles": ["AltIcon-jdRed"]],
-                        "AltIcon-appleBlue": ["CFBundleIconFiles": ["AltIcon-appleBlue"]],
-                        "AltIcon-black": ["CFBundleIconFiles": ["AltIcon-black"]],
-                        "AltIcon-brightYellow": ["CFBundleIconFiles": ["AltIcon-brightYellow"]],
                     ],
                 ],
                 // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
@@ -172,8 +161,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "5.11.3",
-                "CFBundleVersion": "74",
+                "CFBundleShortVersionString": "5.11.4",
+                "CFBundleVersion": "75",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],
