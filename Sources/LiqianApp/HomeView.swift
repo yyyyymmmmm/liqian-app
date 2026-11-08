@@ -5,7 +5,10 @@ import LiqianDesign
 
 /// 首页＝总览台（v4.7 重规划，替代原「礼簿列表当首页」）：自上而下——
 /// 下一个重要日子倒计时 → 待回礼 → 本月往来 → 快捷动作 → 最近动态 →
-/// 我的礼簿（原 LedgersView 的礼簿列表能力完整下沉到本页下半区）。
+/// 我的礼簿（原 LedgersView 的礼簿列表能力完整下沉到本页下半区）→
+/// 礼谱成书旗舰卡（v5.11：常驻弱位在礼簿段下方；某本礼簿到了成书
+/// 时机时升位到礼簿段顶部）。右下 FAB 自 v5.11 起是「记一笔」
+/// （用户批准），新建礼簿在礼簿段头。
 /// 数据口径与全 App 一致：AppSupport.snapshots + 示例礼簿隔离
 /// （SampleData.sampleIDs），待回 = max(balance, 0)，金额 fmtMoney。
 /// 跨 Tab 跳转只走 ContentView 既有通道：待回人物经 personDeepLinkName
@@ -152,6 +155,12 @@ struct HomeView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     } else {
+                        // 事件驱动升位（v5.11）：有礼簿到了成书时机，
+                        // 旗舰卡升到礼簿段顶部（常驻位在段下方，见下）
+                        if let promoted = promotedBookLedger {
+                            bookFlagshipCard(ledger: promoted, promoted: true)
+                                .modifier(plainRow)
+                        }
                         ForEach(ledgers) { ledger in
                             Button {
                                 ledgerRoute = ledger
@@ -185,7 +194,27 @@ struct HomeView: View {
                     }
                 } header: {
                     if !ledgers.isEmpty {
-                        Text("我的礼簿")
+                        HStack {
+                            Text("我的礼簿")
+                            Spacer()
+                            // 新建礼簿入口（v5.11）：FAB 让位给记一笔后收进段头
+                            Button {
+                                showNewLedger = true
+                            } label: {
+                                Label("新建礼簿", systemImage: "plus")
+                                    .font(.footnote.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Palette.primary)
+                        }
+                    }
+                }
+                // 礼谱成书旗舰卡常驻席位（v5.11）：固定在礼簿段下方，
+                // 不置顶不抢记账注意力；有升位对象时本卡不出（已升到段顶）
+                if promotedBookLedger == nil, let target = flagshipBookLedger {
+                    Section {
+                        bookFlagshipCard(ledger: target, promoted: false)
+                            .modifier(plainRow)
                     }
                 }
             }
@@ -197,10 +226,12 @@ struct HomeView: View {
             .animation(reduceMotion ? nil : .snappy, value: statRecords.count)
             .navigationTitle("首页")
             .navigationBarTitleDisplayMode(.large)
-            // 新建礼簿仍走右下角 FAB（v2.4 定版），避让浮动 Tab 栏
+            // FAB 换「记一笔」（v5.11，用户批准）：最高频动作占浮动位，
+            // 默认礼簿由 RecordFormView 内的 DefaultLedgerPicker 决定
+            // （上次使用优先）；新建礼簿收进「我的礼簿」段头入口。
             .overlay(alignment: .bottomTrailing) {
-                AddFloatingButton(label: "新建礼簿", bottomPadding: AddFloatingButton.tabBarClearance) {
-                    showNewLedger = true
+                AddFloatingButton(label: "记一笔", bottomPadding: AddFloatingButton.tabBarClearance) {
+                    showQuickRecord = true
                 }
             }
             .navigationDestination(item: $personRoute) { route in
@@ -535,6 +566,90 @@ struct HomeView: View {
             .frame(minHeight: LiqianMetrics.minTapTarget)
         }
         .padding(.top, 48)
+    }
+
+    // MARK: - 礼谱成书旗舰卡（v5.11：常驻弱位＋事件驱动升位）
+
+    /// 成书升位门槛（成册口径笔数）：20 笔是一场小场次（家宴/满月）
+    /// 能成册的下限——再少印出来是几页纸、不成「书」。笔数口径与
+    /// LibuExportView 的 countedCount 一致：排除待送出。
+    private static let bookPromotionMinCount = 20
+
+    private func countedCount(of ledger: Ledger) -> Int {
+        records.filter { $0.ledgerID == ledger.id && !$0.isPendingSend }.count
+    }
+
+    /// 升位对象：非示例礼簿中，场次日期已过（ledger.date < 今天）且
+    /// 成册笔数达标者，取笔数最多的一本（ledgers 已按日期倒序，
+    /// 同笔数时 max 取先到者＝日期较近的一本）。
+    private var promotedBookLedger: Ledger? {
+        let today = LiqianDate.todayString()
+        return ledgers
+            .filter {
+                !sampleIDs.contains($0.id) && $0.date < today
+                    && countedCount(of: $0) >= Self.bookPromotionMinCount
+            }
+            .max { countedCount(of: $0) < countedCount(of: $1) }
+    }
+
+    /// 常驻旗舰卡的落点：最近一本非示例礼簿（点卡进其详情，导出→
+    /// 装订成书在详情内）；一本真礼簿都没有时整卡不出。
+    private var flagshipBookLedger: Ledger? {
+        ledgers.first { !sampleIDs.contains($0.id) }
+    }
+
+    /// 旗舰卡：纸面满块＋衬线标题（衬线白名单：礼簿封面满块同格），
+    /// 与首页数据卡天然区分；存在感靠文案与视觉，不靠位置。
+    private func bookFlagshipCard(ledger: Ledger, promoted: Bool) -> some View {
+        Button {
+            ledgerRoute = ledger
+        } label: {
+            HStack(alignment: .top, spacing: LiqianMetrics.spacingSM) {
+                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                    if promoted {
+                        Text("《\(ledger.title)》记完了，可以成书了")
+                            .font(.liqianSerif(.title3))
+                            .foregroundStyle(Palette.paperInk)
+                        Text("这场事已经办完，共记了 \(countedCount(of: ledger)) 笔。")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.paperStone)
+                            .lineSpacing(3)
+                        Text("把礼簿印成锁线精装的礼谱——摆在家里、送给长辈，都是拿得出手的传家件。")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.paperStone)
+                            .lineSpacing(3)
+                    } else {
+                        Text("把你家的礼簿，做成一本能传下去的礼谱")
+                            .font(.liqianSerif(.title3))
+                            .foregroundStyle(Palette.paperInk)
+                        Text("礼谱已是印刷级排版，装订成书是锁线精装、右开本，约 299–399 元一本。")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.paperStone)
+                            .lineSpacing(3)
+                    }
+                    HStack(spacing: 4) {
+                        Text(promoted ? "去成书" : "看看成书")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.primary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.primary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.top, 2)
+                }
+                Spacer()
+                SealStampView(char: "谱", size: 40)
+            }
+            .padding(LiqianMetrics.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.paper, in: RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner))
+            .overlay(
+                RoundedRectangle(cornerRadius: LiqianMetrics.cardCorner)
+                    .stroke(Palette.paperLine, lineWidth: 1)
+            )
+        }
+        .buttonStyle(ScaleOnPressButtonStyle())
     }
 
     // MARK: - 礼簿行口径（同 LedgersView）

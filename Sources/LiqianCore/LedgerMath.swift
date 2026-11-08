@@ -518,6 +518,103 @@ public enum LedgerMath {
         return rows.sorted { $0.year > $1.year }
     }
 
+    // MARK: - v5.11 年度报告「之最」（纯函数，口径同上：待送出不计金额/笔数）
+
+    /// 年度之最的原料（年度报告叙事版）：三项全部从真实记录派生，
+    /// 无数据的一项为 nil——展示层整项不出现，绝不编造。
+    public struct AnnualHighlights: Sendable, Equatable {
+        /// 最大一笔：金额最大的单笔（收/随同台比），并列取日期较晚者
+        public struct Biggest: Sendable, Equatable {
+            public var person: String
+            /// 所属礼簿的事由（婚礼/满月…），快照无账本时为 ""
+            public var ledgerType: String
+            public var amountCents: Int
+            public var direction: String
+            public var date: String
+
+            public init(person: String, ledgerType: String, amountCents: Int, direction: String, date: String) {
+                self.person = person
+                self.ledgerType = ledgerType
+                self.amountCents = amountCents
+                self.direction = direction
+                self.date = date
+            }
+        }
+
+        public var biggest: Biggest?
+        /// 最忙的月份（笔数最多，并列取较早月份）；只有一个月有数据时仍返回该月
+        public var busiestMonth: Int?
+        public var busiestMonthCount: Int
+        /// 往来最多的人（收+随总额最大，并列取最近往来者）；差额随 PersonSummary 带出
+        public var topPerson: PersonSummary?
+
+        public init(
+            biggest: Biggest? = nil, busiestMonth: Int? = nil,
+            busiestMonthCount: Int = 0, topPerson: PersonSummary? = nil
+        ) {
+            self.biggest = biggest
+            self.busiestMonth = busiestMonth
+            self.busiestMonthCount = busiestMonthCount
+            self.topPerson = topPerson
+        }
+    }
+
+    /// 入参应为单年快照（展示层按年份前缀过滤后传入）；本函数内再滤待送出。
+    public static func annualHighlights(from entries: [EntrySnapshot]) -> AnnualHighlights {
+        let counted = entries.filter { !$0.isPendingSend }
+        guard !counted.isEmpty else { return AnnualHighlights() }
+
+        let big = counted.max { a, b in
+            if a.amountCents != b.amountCents { return a.amountCents < b.amountCents }
+            return a.date < b.date
+        }
+
+        var monthCounts: [String: Int] = [:]
+        for e in counted {
+            monthCounts[String(e.date.prefix(7)), default: 0] += 1
+        }
+        // 并列取较早月份：max 的「更小」判定里同 count 时 key 较大者排后
+        let busiest = monthCounts.max { a, b in
+            if a.value != b.value { return a.value < b.value }
+            return a.key > b.key
+        }
+
+        let top = people(from: entries).max { a, b in
+            let ta = a.received + a.given
+            let tb = b.received + b.given
+            if ta != tb { return ta < tb }
+            return a.lastDate < b.lastDate
+        }
+
+        return AnnualHighlights(
+            biggest: big.map {
+                AnnualHighlights.Biggest(
+                    person: $0.person, ledgerType: $0.ledgerType,
+                    amountCents: $0.amountCents, direction: $0.direction, date: $0.date
+                )
+            },
+            busiestMonth: busiest.flatMap { Int($0.key.suffix(2)) },
+            busiestMonthCount: busiest?.value ?? 0,
+            topPerson: top
+        )
+    }
+
+    /// 年度总结句（规则版，不调 AI）：主导事由（按收+随总额）占比 ≥ 30%
+    /// 时点名它是这一年的「主角」；否则落回规模句。占比只在这里出现一次，
+    /// 按事由行只给占比条不给百分比数字，避免同数多遍（v5.8 审计 #8）。
+    public static func annualClosingLine(
+        dominantType: String?, dominantShare: Double, peopleCount: Int
+    ) -> String {
+        if let t = dominantType, !t.isEmpty, dominantShare >= 0.3 {
+            let pct = Int((dominantShare * 100).rounded())
+            return "这一年，\(t)是你人情往来的主角，占了全年往来的 \(pct)%。"
+        }
+        if peopleCount > 0 {
+            return "这一年的人情，分散在 \(peopleCount) 位亲友之间——记下来，就是给往后留个念想。"
+        }
+        return ""
+    }
+
     // 回礼参考区间已由 v4.3 的 ReplyAdvisor（ReplyAdvice.swift）替换：
     // 旧版只有「锚 ×1.2 取整」一条糙规则、给不出理由，新模型为
     // 锚（最近收礼，回退最大/中位）×年涨幅复利×场合系数，再按红事整百/
