@@ -301,93 +301,98 @@ struct QuickSentenceView: View {
         """
 }
 
-// MARK: - 语音转写（Speech 框架，zh-CN；权限被拒/不可用都给人话，文本输入始终可用）
+// MARK: - 语音转写（v5.5 起：SpeechAnalyzer 新框架，zh-CN，全程本机识别）
 //
-// 闪退加固（v2.7）：AVAudioEngine 装 tap 有两类 Swift do/catch 拦不住的 NSException——
-// ① 输入格式无效（硬件路由未就绪时 sampleRate/channelCount 为 0）时 installTap；
-// ② 同一 bus 上重复 installTap。旧代码两条都可能踩：授权回调是异步的，
-// isRecording 在引擎真正启动前一直是 false，用户连点或授权慢时 start() 会重入，
-// 且 stop() 只在引擎运行时摘 tap，启动中途失败残留的 tap 会让下一次启动必崩。
-// 修法：isStarting 重入闸门、装 tap 前校验格式并先摘旧 tap、stop() 无条件摘 tap。
+// 【旧链退役说明】v5.4.2 及以前的实时链是 AVAudioEngine tap →
+// SFSpeechAudioBufferRecognitionRequest.append → SFSpeechRecognizer
+// recognitionTask。真机闪退连追四轮（v2.7 加固、v5.4 五修、v5.4.1 授权
+// 同步快路、v5.4.2 启动次序翻正），黑匣子面包屑最终钉死：v5.4.2 装机
+// 后仍停在「#14 引擎已启动」——engine.start() 成功，首个 buffer 落标、
+// 0.5 秒存活标、首个结果全都没到达。四轮的共同分母只剩旧管线本身，
+// 按 V542-NOTES 预案整链换实现，本类内部不再出现 SFSpeechRecognizer /
+// SFSpeechAudioBufferRecognitionRequest / recognitionTask。
 //
-// 闪退再审（v5.4，用户真机点麦克风仍闪退后的逐行审计，新隐患点）：
-// ③ 授权链没有「作废」机制：stop()/页面消失后，在途的语音→麦克风两段
-//    授权回调仍会继续调 beginSession()，在已离开的页面上启动音频引擎，
-//    甚至与下一个页面的转写器抢同一个 AVAudioSession。修法：代际计数，
-//    stop() 必递增代际，每段异步回调落地前先验代际，过期直接丢弃。
-// ④ tap 回调（音频线程）的 append 与 stop() 的 endAudio 存在竞争窗口：
-//    removeTap 返回时可能仍有一个在途 buffer，endAudio 之后再 append
-//    会抛 NSException（SFSpeech 的经典崩点，do/catch 拦不住）。修法：
-//    原子接受旗——stop() 先关旗、再摘 tap、最后 endAudio；tap 内先验旗。
-// ⑤ setCategory(.record, options: .duckOthers)：该 option 与 record
-//    类别组合不合法会抛 AVAudioSession 错误（虽被 catch 成报错、不算
-//    闪退，但属无谓失败点）。修法：去掉该 option。
-// ⑥ stop() 无条件访问 inputNode：从未启动过也去摘 tap 会凭空创建输入
-//    节点；在无输入路由的极端状态下查节点有抛异常的报告。修法：
-//    tapInstalled 标记，没装过 tap 的 stop 完全不碰引擎。
-// ⑦ recognizer 在 init 时只建一次：系统语音服务中途掉线后 isAvailable
-//    状态可能过期。修法：每次 start 现建实例并判空＋判 isAvailable。
-// 以上 ③–⑦ 为代码审计推定，真机崩溃日志未到手，待真机验（V54-NOTES）。
+// 【新链形状】（API 形状按苹果官方文档核对，出处见 docs/V55-NOTES.md）
+// Speech.SpeechTranscriber（新框架转写模块，全名避与本类同名冲突）
+// + Speech.SpeechAnalyzer（actor 会话）+ AsyncStream<AnalyzerInput>
+// 喂入；音频仍经 AVAudioEngine 采音，逐 buffer 用 AVAudioConverter
+// 转到 SpeechAnalyzer.bestAvailableAudioFormat 后喂入——分析器不替
+// 调用方做任何格式转换（官方文档明示）。结果走 module.results
+// 异步序列：volatile（未定稿）整体替换、final 顺序拼接，累积逻辑在
+// LiqianCore.TranscriptAccumulator（可单测），onText 仍是「每次给
+// 全量文本」，与旧链语义一致，两个调用方（一句话记账、AI 问账）
+// 零改动。
 //
-// 闪退三审（v5.4.1，用户装 v5.4 后真机仍闪退、且「没弹权限申请」）：
-// ⑧ 执行者陷阱（强候选）：授权已决时，requestAuthorization /
-//    requestRecordPermission 的回调由 TCC 在 XPC 回复线程投递；闭包若被
-//    编译器推断为 @MainActor 隔离（在本类内书写即如此），回调入口会触发
-//    swift_task_isCurrentExecutor → dispatch_assert_queue_fail
-//    （EXC_BREAKPOINT）——已授权用户点麦克风不弹框、直接闪退，与反馈
-//    严丝合缝（公开同形案例：emergent-inc/mosaic 的 iOS dictation 修复
-//    commit）。修法：先同步读 authorizationStatus() / recordPermission，
-//    已决直接走（零回调）；只有未决才发请求，且请求经 nonisolated 桥。
-// ⑨ setActive(true, options: .notifyOthersOnDeactivation)：该 option
-//    文档上只对停用有效，激活时传它在严格执法的系统上会抛错。修法：
-//    激活不带 option（停用侧保留）。
-// ⑩ recognizer 现建后是局部变量、recognitionTask 期间无人强引用：
-//    补 activeRecognizer 属性持有到 stop()。
-// 另全程埋 MicTrace 面包屑（步号见各 mark 调用），下次再闪退，设置页
-// 诊断行会显示死在哪一步——本轮目标是修掉或让它自报，不再猜。
+// 【选型】模块选 SpeechTranscriber 不选 DictationTranscriber：前者是
+// 苹果为取代 SFSpeechRecognizer 推出的新一代本机模型（WWDC25 277），
+// 官方实时采音示例用的正是它＋volatile 结果；后者复用旧听写模型、
+// 定位是老设备/语言兜底。设备硬件不支持时（isAvailable == false）
+// 给明确人话、不静默换引擎；DictationTranscriber 兜底留作后备方向，
+// 记录在 V55-NOTES，本轮不做。
 //
-// 闪退四审（v5.4.2，黑匣子命中死亡窗口后的定点修）：
-// ⑪ 启动次序：v5.4.1 诊断行回传「停在 #14 引擎已启动」——引擎已转、
-//    tap 已装（13）、首个识别结果（15）从未到达。旧 beginSession 次序
-//    是「装 tap → prepare/start 引擎 → 才建 recognitionTask」：死亡
-//    窗口正在 task 建出之前，tap 已往 request 里灌音频、消费端却还
-//    不存在。修法：翻正为苹果官方示例的次序——先建 request、先建
-//    recognitionTask、再装 tap、最后启动引擎，保证第一个 buffer
-//    流入时 task 必然已存在。窗口内另加三步细分面包屑：17 task 已建
-//    （引擎启动前）、18 首个 buffer 已 append（音频线程只置原子旗、
-//    异步落主队列写）、19 引擎启动 0.5 秒存活确认。不宣称已修好。
+// 【授权】新框架文档与官方示例均不要求语音识别授权（示例工程只声明
+// 麦克风权限键）——本链只走麦克风授权，且沿用 v5.4.1 同步分流口径：
+// 已决状态同步读、零回调，未决才经 nonisolated 桥发请求（避 TCC
+// 回调执行者陷阱）。两个 static 桥保留：BlessingRecorder 仍在用
+// requestRecordPermissionBridge（它属于祝福录音链，不在本轮范围）。
+//
+// 【资产】zh-CN 模型是系统托管资产：未安装时经 AssetInventory
+// .assetInstallationRequest(supporting:) → downloadAndInstall() 正规
+// 下载，过程经 isStarting/errorText 如实呈现；下载失败给明确文案，
+// 不回退旧管线。locale 经 supportedLocale(equivalentTo:) 归一化
+// （官方论坛口径：Locale(identifier:) 直造的 locale 可能对不上）。
+//
+// 【音频会话】按新框架官方示例口径改 .playAndRecord + .spokenAudio
+// （旧链的 .record + .measurement 随旧链退役）；激活不带
+// .notifyOthersOnDeactivation（只对停用有效，v5.4.1 ⑨）。
+//
+// 【面包屑步号（v5.5 新链）】1 点麦克风 → 2 新框架可用 → 3 同步读
+// 麦克风授权 →（4 请求麦克风授权 → 5 授权回调）→ 6 麦克风已授权 →
+// 20 资产状态 →（21 下载开始）→ 22 资产就绪 → 23 分析器格式就绪 →
+// 24 音频会话已激活 → 25 输入格式 → 26 已装 tap → 27 分析器已启动 →
+// 28 首个音频已喂入 → 29 首个识别结果 → 30 结果流结束/异常；
+// 98 启动失败 / 99 启动异常。旧链步号 2–19 退役对照表见 V55-NOTES。
 
 @MainActor
 final class SpeechTranscriber: ObservableObject {
     @Published var isRecording = false
-    /// 授权/启动进行中：这段时间 toggle() 忽略点击，视图据此禁用按钮
+    /// 授权/资产准备/启动/收尾进行中：视图据此禁用按钮
     @Published var isStarting = false
     @Published var errorText: String?
     var onText: ((String) -> Void)?
 
     private let audioEngine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    /// 本轮识别器的强引用（隐患 ⑩）：beginSession 现建后持有到 stop()，
-    /// 防止识别途中实例被释放
-    private var activeRecognizer: SFSpeechRecognizer?
-    /// 面包屑会话已武装：start() 置位、stop() 据此决定要不要 close，
-    /// 防止从未启动过的 stop()（如页面 onDisappear）抹掉上次的取证标记
+    private var analyzer: Speech.SpeechAnalyzer?
+    private var module: Speech.SpeechTranscriber?
+    /// analyzer.start(inputSequence:) 是否已成功返回（收尾时据此决定
+    /// 要不要 finalize：未启动过的分析器直接释放即可，官方文档口径
+    /// 「调用 finish 方法或释放分析器」二选一）
+    private var analyzerStarted = false
+    private var inputContinuation: AsyncStream<Speech.AnalyzerInput>.Continuation?
+    private var resultsTask: Task<Void, Never>?
+    private var setupTask: Task<Void, Never>?
+    private var teardownTask: Task<Void, Never>?
+    /// 结果累积（Core 纯逻辑）：定稿拼接＋volatile 替换
+    private var accumulator = TranscriptAccumulator()
+    /// 面包屑会话已武装：start() 置位、收尾据此决定要不要 close，
+    /// 防止从未启动过的 stop()（如页面 onDisappear）抹掉上次取证标记
     private var traceArmed = false
     /// 首个识别结果只落一次面包屑
     private var didTraceFirstResult = false
     /// 音频会话已由本类激活（stop 时据此 deactivate，不误关他人状态）
     private var sessionActivated = false
-    /// tap 已装标记：stop 只在真装过时才碰 inputNode（隐患 ⑥）
+    /// tap 已装标记：收尾只在真装过时才碰 inputNode
     private var tapInstalled = false
-    /// 代际计数：stop()/新一轮 start() 都会推进；在途异步回调落地前
-    /// 先验代际，过期回调直接丢弃（隐患 ③）
+    /// 代际计数：stop()/新一轮 start() 都会推进；授权/资产等在途异步
+    /// 回调落地前先验代际，过期直接丢弃（旧链隐患 ③，沿用）
     private var generation = 0
-    /// tap 接受旗（音频线程与主线程共享）：false 后 tap 不再 append（隐患 ④）
+    /// 结果消费令牌：stop 收尾的 finalize flush 完成前保持有效，让
+    /// 最后一句的 final 结果仍能送达 onText；收尾完成后推进作废
+    private var sessionToken = 0
+    /// tap 接受旗（音频线程与主线程共享）：false 后 tap 不再喂入
     private let bufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
-    /// tap 首个 buffer 面包屑旗（隐患 ⑪ 细分步 18）：音频线程置位、
-    /// 只触发一次；实际的 UserDefaults 写入异步落到主执行者，不许在
-    /// 实时音频线程直接写
+    /// tap 首个 buffer 面包屑旗：音频线程置位、只触发一次；实际写入
+    /// 异步落主执行者，不许在实时音频线程直接写 UserDefaults
     private let firstBufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     func toggle() {
@@ -401,53 +406,35 @@ final class SpeechTranscriber: ObservableObject {
     func start() {
         guard !isRecording, !isStarting else { return }
         errorText = nil
+        module = nil
+        analyzer = nil
+        analyzerStarted = false
         traceArmed = true
         didTraceFirstResult = false
         MicTrace.mark(step: 1, "点麦克风·开始启动")
-        // 先同步探一次可用性（隐患 ⑦）；识别器实例不跨异步链传递
-        // （Swift 6 并发：SFSpeechRecognizer 非 Sendable，正式实例在
-        // beginSession 里现建）
-        guard let probe = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
-              probe.isAvailable else {
-            MicTrace.mark(step: 2, "识别器探针", detail: "不可用")
-            errorText = "语音识别暂时不可用，可直接输入文字。"
-            // 这是优雅失败不是闪退：关掉面包屑会话，免得设置页误报诊断行
+        // 新框架硬件可用性是同步静态量：不支持直接给人话，不进异步链
+        guard Speech.SpeechTranscriber.isAvailable else {
+            errorText = "这台设备不支持新版语音识别，可直接输入文字。"
             traceArmed = false
-            MicTrace.close(reason: "识别器不可用，未启动")
+            MicTrace.close(reason: "设备不支持新框架，未启动")
             return
         }
-        MicTrace.mark(step: 2, "识别器探针", detail: "可用")
+        MicTrace.mark(step: 2, "新框架可用", detail: "SpeechAnalyzer")
         isStarting = true
         generation += 1
         let gen = generation
 
-        // 隐患 ⑧ 同步快路：先同步读两项授权状态。都已决（授权过或
-        // 已拒绝）就直接分流、一个异步回调都不发——执行者陷阱专挑
-        // 「已决还走回调」触发，已授权用户点麦克风不弹框也正出于此。
-        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        // 麦克风授权同步分流（沿用 v5.4.1 ⑧ 口径）：已决状态同步读、
+        // 一个异步回调都不发；只有未决才经 nonisolated 桥发请求。
         let micPermission = AVAudioApplication.shared.recordPermission
         MicTrace.mark(
-            step: 3, "同步读授权状态",
-            detail: "语音=\(speechStatus.rawValue) 麦克风=\(micPermission.rawValue)"
+            step: 3, "同步读麦克风授权",
+            detail: "麦克风=\(micPermission.rawValue)"
         )
-        switch speechStatus {
-        case .denied, .restricted:
-            failStart("语音识别未获得权限，可直接输入文字；如需使用，请在系统设置中开启。")
-            return
-        case .authorized:
-            break
-        case .notDetermined:
-            requestSpeechAuthorization(generation: gen)
-            return
-        @unknown default:
-            failStart("语音识别暂时不可用，可直接输入文字。")
-            return
-        }
-        // 语音已授权，再分流麦克风
         switch micPermission {
         case .granted:
             MicTrace.mark(step: 6, "麦克风已授权（同步快路）")
-            beginSession(generation: gen)
+            beginSetup(generation: gen)
         case .denied:
             failStart("麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。")
         case .undetermined:
@@ -468,52 +455,26 @@ final class SpeechTranscriber: ObservableObject {
         }
     }
 
-    /// 语音未决才走这条：请求回调经 nonisolated 桥投递（隐患 ⑧），
-    /// 闭包是 @Sendable 非隔离的，回主执行者靠显式 Task 切换
-    private func requestSpeechAuthorization(generation gen: Int) {
-        MicTrace.mark(step: 4, "请求语音授权")
-        Self.requestSpeechAuthorizationBridge { [weak self] status in
-            Task { @MainActor in
-                guard let self, self.generation == gen else { return }
-                MicTrace.mark(step: 5, "语音授权回调", detail: "status=\(status.rawValue)")
-                guard status == .authorized else {
-                    self.failStart("语音识别未获得权限，可直接输入文字；如需使用，请在系统设置中开启。")
-                    return
-                }
-                // 麦克风同样先同步分流（可能已在语音祝福处授权/拒绝过），
-                // 只有未决才发请求回调
-                switch AVAudioApplication.shared.recordPermission {
-                case .granted:
-                    MicTrace.mark(step: 6, "麦克风已授权（同步快路）")
-                    self.beginSession(generation: gen)
-                case .denied:
-                    self.failStart("麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。")
-                case .undetermined:
-                    self.requestMicPermission(generation: gen)
-                @unknown default:
-                    self.failStart("麦克风暂时不可用，可直接输入文字。")
-                }
-            }
-        }
-    }
-
     private func requestMicPermission(generation gen: Int) {
-        MicTrace.mark(step: 6, "请求麦克风授权")
+        MicTrace.mark(step: 4, "请求麦克风授权")
         Self.requestRecordPermissionBridge { [weak self] granted in
             Task { @MainActor in
                 guard let self, self.generation == gen else { return }
-                MicTrace.mark(step: 7, "麦克风授权回调", detail: "granted=\(granted)")
+                MicTrace.mark(step: 5, "麦克风授权回调", detail: "granted=\(granted)")
                 guard granted else {
                     self.failStart("麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。")
                     return
                 }
-                self.beginSession(generation: gen)
+                self.beginSetup(generation: gen)
             }
         }
     }
 
     /// nonisolated 授权桥：TCC 回调在 XPC 回复线程投递，桥函数与回调
-    /// 都不带主执行者隔离，杜绝回调入口的执行者断言陷阱（隐患 ⑧）
+    /// 都不带主执行者隔离，杜绝回调入口的执行者断言陷阱（v5.4.1 ⑧）。
+    /// requestSpeechAuthorizationBridge 本链已不用（新框架不要求语音
+    /// 识别授权），保留供文件转写等旧路径按需取用；
+    /// requestRecordPermissionBridge 仍被 BlessingRecorder 共用。
     nonisolated static func requestSpeechAuthorizationBridge(
         completion: @escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void
     ) {
@@ -526,152 +487,326 @@ final class SpeechTranscriber: ObservableObject {
         AVAudioApplication.requestRecordPermission(completionHandler: completion)
     }
 
-    private func beginSession(generation gen: Int) {
-        guard generation == gen else { return }
-        MicTrace.mark(step: 10, "进入 beginSession")
-        // 正式识别器在本方法内现建（主线程上下文，不跨异步边界），
-        // 并由 activeRecognizer 持有到 stop()（隐患 ⑩）
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
-              recognizer.isAvailable else {
-            failStart("语音识别暂时不可用，可直接输入文字。")
-            return
-        }
-        activeRecognizer = recognizer
-        do {
-            let session = AVAudioSession.sharedInstance()
-            // 隐患 ⑤：.duckOthers 与 .record 组合不合法，去掉该 option
-            try session.setCategory(.record, mode: .measurement)
-            // 隐患 ⑨：.notifyOthersOnDeactivation 只对停用有效，激活不带
-            try session.setActive(true)
-            sessionActivated = true
-            MicTrace.mark(step: 11, "音频会话已激活")
-
-            let input = audioEngine.inputNode
-            let format = input.outputFormat(forBus: 0)
-            MicTrace.mark(
-                step: 12, "读取输入格式",
-                detail: "\(Int(format.sampleRate))Hz/\(format.channelCount)ch"
-            )
-            // 格式没就绪就装 tap 会触发 AVFAudio 的 NSException（catch 不住、直接闪退），先拦下
-            guard format.sampleRate > 0, format.channelCount > 0 else {
-                errorText = "麦克风暂时不可用，可直接输入文字。"
-                stop()
-                return
-            }
-
-            let request = SFSpeechAudioBufferRecognitionRequest()
-            request.shouldReportPartialResults = true
-            self.request = request
-
-            // 隐患 ⑪（v5.4.2 定点修）：先建识别任务，再装 tap，最后才
-            // 启动引擎（苹果官方示例次序）。旧次序「装 tap → 引擎启动
-            // → 才建 task」在真机被黑匣子命中：停在 #14——引擎已转、
-            // tap 已在往 request 灌音频，消费它的 task 却还没建出来，
-            // 首个识别结果从未到达。任务先行后，第一个 buffer 流入时
-            // task 必然已存在。handler 内容与旧版逐字一致。
-            task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-                Task { @MainActor in
-                    guard let self, self.generation == gen else { return }
-                    if let result {
-                        if !self.didTraceFirstResult {
-                            self.didTraceFirstResult = true
-                            MicTrace.mark(step: 15, "首个识别结果")
-                        }
-                        self.onText?(result.bestTranscription.formattedString)
-                    }
-                    if error != nil || result?.isFinal == true {
-                        MicTrace.mark(
-                            step: 16, "识别结束回调",
-                            detail: error != nil ? "带 error" : "isFinal"
-                        )
-                        self.stop()
-                    }
-                }
-            }
-            MicTrace.mark(step: 17, "识别任务已建", detail: "引擎启动前")
-
-            // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap，重复装同样是 NSException
-            if tapInstalled {
-                input.removeTap(onBus: 0)
-                tapInstalled = false
-            }
-            let gate = bufferGate
-            gate.withLock { $0 = true }
-            // 细分步 18 的首 buffer 旗：每个会话重新待发
-            let traced = firstBufferGate
-            traced.withLock { $0 = false }
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-                // 隐患 ④：endAudio 之后再 append 会抛异常，先验接受旗
-                guard gate.withLock({ $0 }) else { return }
-                request.append(buffer)
-                // 细分步 18：首个 buffer 已 append。实时音频线程不许
-                // 直接写 UserDefaults——原子旗只放行一次，落标异步切到
-                // 主执行者（代际已变＝会话已收尾时丢弃，不污染取证）
-                let isFirst = traced.withLock { flag -> Bool in
-                    if flag { return false }
-                    flag = true
-                    return true
-                }
-                if isFirst {
-                    Task { @MainActor [weak self] in
-                        guard let self, self.generation == gen else { return }
-                        MicTrace.mark(step: 18, "首个音频已流入识别")
-                    }
-                }
-            }
-            tapInstalled = true
-            MicTrace.mark(step: 13, "已装 tap")
-            audioEngine.prepare()
-            try audioEngine.start()
-            MicTrace.mark(step: 14, "引擎已启动")
-            isRecording = true
-            isStarting = false
-            // 细分步 19：引擎启动 0.5 秒存活确认。还活着且首个结果没到
-            // 才落标（已出结果时 15 更有信息量，不覆盖）；若下次诊断
-            // 停在 19，说明启动全程无崩、死亡发生在识别出字之前。
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard let self, self.generation == gen,
-                      self.isRecording, !self.didTraceFirstResult else { return }
-                MicTrace.mark(step: 19, "引擎启动后存活确认", detail: "0.5 秒无首结果")
-            }
-        } catch {
-            MicTrace.mark(step: 99, "beginSession 异常", detail: error.localizedDescription)
-            errorText = "录音启动失败：\(error.localizedDescription)。可直接输入文字。"
-            stop()
+    /// 资产准备＋分析器启动都在异步阶段完成（isStarting 期间），
+    /// 每段 await 之后验代际：stop() 已推进代际的，静默退出不碰状态。
+    private func beginSetup(generation gen: Int) {
+        setupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.prepareAndStart(generation: gen)
+            self.setupTask = nil
         }
     }
 
+    private func prepareAndStart(generation gen: Int) async {
+        // 1) locale 归一化：必须经 supportedLocale(equivalentTo:) 取
+        //    系统认可的 locale 对象（官方论坛口径），nil = 不支持中文
+        guard let locale = await Speech.SpeechTranscriber.supportedLocale(
+            equivalentTo: Locale(identifier: "zh-CN")
+        ) else {
+            if generation == gen {
+                failStart("语音识别不支持中文（普通话），可直接输入文字。")
+            }
+            return
+        }
+        guard generation == gen else { return }
+        // 显式选项而非 preset：就要 volatile 实时结果＋时间范围属性，
+        // 语义在代码里写死，不依赖 preset 的内部组合
+        let module = Speech.SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: [.audioTimeRange]
+        )
+        self.module = module
+
+        // 2) 资产：状态先查；未安装走 AssetInventory 正规下载流程，
+        //    失败给明确文案、不回退旧管线
+        let status = await Speech.AssetInventory.status(forModules: [module])
+        guard generation == gen else { return }
+        MicTrace.mark(step: 20, "语音模型资产状态", detail: "\(status)")
+        switch status {
+        case .unsupported:
+            failStart("这台设备不支持中文语音模型，可直接输入文字。")
+            return
+        case .installed:
+            MicTrace.mark(step: 22, "语音模型已就绪")
+        case .supported, .downloading:
+            errorText = "正在准备语音模型，首次使用需要下载，请保持网络畅通…"
+            MicTrace.mark(step: 21, "语音模型下载开始")
+            do {
+                if let request = try await Speech.AssetInventory
+                    .assetInstallationRequest(supporting: [module]) {
+                    try await request.downloadAndInstall()
+                }
+            } catch {
+                if generation == gen {
+                    failStart("语音模型下载失败，请检查网络后重试；也可以直接输入文字。")
+                }
+                return
+            }
+            guard generation == gen else { return }
+            errorText = nil
+            MicTrace.mark(step: 22, "语音模型已就绪", detail: "下载完成")
+        @unknown default:
+            failStart("语音模型暂时不可用，可直接输入文字。")
+            return
+        }
+
+        // 3) 分析器与目标格式：bestAvailableAudioFormat 必须在资产
+        //    就绪后查（未装资产时官方文档明示返回 nil）
+        let analyzer = Speech.SpeechAnalyzer(modules: [module])
+        self.analyzer = analyzer
+        guard let analyzerFormat = await Speech.SpeechAnalyzer
+            .bestAvailableAudioFormat(compatibleWith: [module]) else {
+            failStart("语音识别暂时不可用，可直接输入文字。")
+            return
+        }
+        guard generation == gen else { return }
+        MicTrace.mark(
+            step: 23, "分析器格式就绪",
+            detail: "\(Int(analyzerFormat.sampleRate))Hz/\(analyzerFormat.channelCount)ch"
+        )
+
+        // 输入流先建：tap 喂入与 analyzer.start 共用同一条流
+        let (stream, continuation) = AsyncStream<Speech.AnalyzerInput>.makeStream()
+        inputContinuation = continuation
+
+        // 4) 结果消费先行启动（官方示例次序：消费任务先于 start）
+        sessionToken += 1
+        let token = sessionToken
+        accumulator.reset()
+        resultsTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                for try await result in module.results {
+                    guard self.sessionToken == token else { return }
+                    if !self.didTraceFirstResult {
+                        self.didTraceFirstResult = true
+                        MicTrace.mark(step: 29, "首个识别结果")
+                    }
+                    self.accumulator.consume(
+                        text: String(result.text.characters),
+                        isFinal: result.isFinal
+                    )
+                    self.onText?(self.accumulator.text)
+                }
+                self.resultsEnded(token: token, error: nil)
+            } catch {
+                self.resultsEnded(token: token, error: error)
+            }
+        }
+
+        // 5) 采音装配（会话＋tap＋转换器），再启动分析器与引擎
+        do {
+            try installCapture(
+                analyzerFormat: analyzerFormat,
+                continuation: continuation,
+                generation: gen
+            )
+            try await analyzer.start(inputSequence: stream)
+            analyzerStarted = true
+            guard generation == gen else {
+                teardownSession()
+                return
+            }
+            audioEngine.prepare()
+            try audioEngine.start()
+        } catch {
+            MicTrace.mark(step: 99, "启动异常", detail: error.localizedDescription)
+            errorText = "录音启动失败：\(error.localizedDescription)。可直接输入文字。"
+            stop()
+            return
+        }
+        MicTrace.mark(step: 27, "分析器已启动")
+        isRecording = true
+        isStarting = false
+    }
+
+    /// 音频会话激活＋装 tap＋建转换器（不启动引擎，引擎在
+    /// analyzer.start 成功后才启动，保证喂入前消费端已就绪）。
+    private func installCapture(
+        analyzerFormat: AVAudioFormat,
+        continuation: AsyncStream<Speech.AnalyzerInput>.Continuation,
+        generation gen: Int
+    ) throws {
+        let session = AVAudioSession.sharedInstance()
+        // 新框架官方示例口径：.playAndRecord + .spokenAudio
+        try session.setCategory(.playAndRecord, mode: .spokenAudio)
+        // 激活不带 .notifyOthersOnDeactivation（只对停用有效，v5.4.1 ⑨）
+        try session.setActive(true)
+        sessionActivated = true
+        MicTrace.mark(step: 24, "音频会话已激活")
+
+        let input = audioEngine.inputNode
+        let inputFormat = input.outputFormat(forBus: 0)
+        MicTrace.mark(
+            step: 25, "读取输入格式",
+            detail: "\(Int(inputFormat.sampleRate))Hz/\(inputFormat.channelCount)ch"
+        )
+        // 格式没就绪就装 tap 会触发 AVFAudio 的 NSException（catch
+        // 不住、直接闪退）——旧链时代的教训，新链同样先拦下
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw NSError(
+                domain: "LiqianSpeech", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "麦克风暂时不可用"]
+            )
+        }
+        // 格式相同直通；不同才建转换器（primeMethod = .none 是官方
+        // 示例口径：牺牲最初几个采样换时间戳不漂移）
+        let converter: AVAudioConverter?
+        if inputFormat == analyzerFormat {
+            converter = nil
+        } else {
+            converter = AVAudioConverter(from: inputFormat, to: analyzerFormat)
+            converter?.primeMethod = .none
+            guard converter != nil else {
+                throw NSError(
+                    domain: "LiqianSpeech", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "音频格式转换不可用"]
+                )
+            }
+        }
+
+        // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap
+        if tapInstalled {
+            input.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        let gate = bufferGate
+        gate.withLock { $0 = true }
+        let traced = firstBufferGate
+        traced.withLock { $0 = false }
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+            // 接受旗已关（收尾中）就不再喂入
+            guard gate.withLock({ $0 }) else { return }
+            let converted: AVAudioPCMBuffer?
+            if let converter {
+                converted = Self.convertBuffer(buffer, with: converter, to: analyzerFormat)
+            } else {
+                converted = buffer
+            }
+            guard let converted else { return }
+            continuation.yield(Speech.AnalyzerInput(buffer: converted))
+            // 首个音频落标：音频线程只置原子旗，写入异步切主执行者
+            let isFirst = traced.withLock { flag -> Bool in
+                if flag { return false }
+                flag = true
+                return true
+            }
+            if isFirst {
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == gen else { return }
+                    MicTrace.mark(step: 28, "首个音频已喂入分析器")
+                }
+            }
+        }
+        tapInstalled = true
+        MicTrace.mark(step: 26, "已装 tap")
+    }
+
+    /// AVAudioConverter 单 buffer 转换（官方示例的 inputBlock 形状：
+    /// 一次喂入、之后报 noDataNow）。在 tap 的音频线程串行调用。
+    nonisolated static func convertBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        with converter: AVAudioConverter,
+        to format: AVAudioFormat
+    ) -> AVAudioPCMBuffer? {
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
+        guard capacity > 0,
+              let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
+        else { return nil }
+        var error: NSError?
+        var delivered = false
+        let status = converter.convert(to: output, error: &error) { _, outStatus in
+            if delivered {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            delivered = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        guard status != .error, output.frameLength > 0 else { return nil }
+        return output
+    }
+
+    /// 结果流结束/异常的统一入口：正常收尾时 teardown 已在跑，这里
+    /// 只处理「录音中结果流自己断了」的自发结束（给人话＋收尾）。
+    private func resultsEnded(token: Int, error: Error?) {
+        guard sessionToken == token else { return }
+        if let error {
+            MicTrace.mark(step: 30, "识别结果流异常", detail: error.localizedDescription)
+            if isRecording {
+                errorText = "语音识别中断了，可直接输入文字。"
+            }
+        } else {
+            MicTrace.mark(step: 30, "识别结果流结束")
+        }
+        teardownSession()
+    }
+
     func stop() {
-        // 代际推进：在途授权/识别回调自此全部作废（隐患 ③）
+        // 代际推进：授权/资产/启动的在途异步回调自此全部作废
         generation += 1
-        // 先关接受旗，tap 立刻停止 append，再动引擎与请求（隐患 ④ 的顺序）
+        setupTask?.cancel()
+        setupTask = nil
+        teardownSession()
+    }
+
+    /// 收尾（幂等，stop 与结果流自发结束共用）：关接受旗 → 停引擎 →
+    /// 摘 tap → finish 输入流 → finalize 冲刷最后结果（flush 期间结果
+    /// 消费令牌保持有效，最后一句不丢）→ 取消消费任务 → 停用会话。
+    private func teardownSession() {
+        guard teardownTask == nil else { return }
+        let hasSession = analyzer != nil || tapInstalled
+            || inputContinuation != nil || isRecording
+        isRecording = false
+        guard hasSession else {
+            isStarting = false
+            return
+        }
+        // 收尾完成前保持 isStarting，挡住立刻重开与收尾打架
+        isStarting = true
         bufferGate.withLock { $0 = false }
         if audioEngine.isRunning {
             audioEngine.stop()
         }
-        // 没装过 tap 就完全不碰 inputNode（隐患 ⑥）；装过必摘，
-        // 否则中途失败残留的 tap 会让下一次启动必崩
         if tapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
-        request?.endAudio()
-        task?.cancel()
-        request = nil
-        task = nil
-        activeRecognizer = nil
-        if sessionActivated {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            sessionActivated = false
-        }
-        isRecording = false
-        isStarting = false
-        // 面包屑收尾：只有真启动过的会话才 close，没启动过的 stop()
-        // 不许抹掉上次闪退留下的未结束标记（取证完整性）
-        if traceArmed {
-            traceArmed = false
-            MicTrace.close(reason: "会话正常结束")
+        let continuation = inputContinuation
+        inputContinuation = nil
+        let analyzer = self.analyzer
+        self.analyzer = nil
+        let wasStarted = analyzerStarted
+        analyzerStarted = false
+        let token = sessionToken
+        teardownTask = Task { @MainActor [weak self] in
+            continuation?.finish()
+            if let analyzer, wasStarted {
+                // 冲刷已喂入音频的最终结果；失败不挡收尾
+                try? await analyzer.finalizeAndFinishThroughEndOfInput()
+            }
+            guard let self else { return }
+            if self.sessionToken == token { self.sessionToken += 1 }
+            self.resultsTask?.cancel()
+            self.resultsTask = nil
+            if self.sessionActivated {
+                try? AVAudioSession.sharedInstance()
+                    .setActive(false, options: .notifyOthersOnDeactivation)
+                self.sessionActivated = false
+            }
+            self.module = nil
+            self.teardownTask = nil
+            self.isStarting = false
+            // 面包屑收尾：只有真启动过的会话才 close，没启动过的
+            // stop() 不许抹掉上次闪退留下的未结束标记（取证完整性）
+            if self.traceArmed {
+                self.traceArmed = false
+                MicTrace.close(reason: "会话正常结束")
+            }
         }
     }
 }
