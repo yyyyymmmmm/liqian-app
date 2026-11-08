@@ -86,7 +86,13 @@ Sources/LiqianCore/DefaultLedger.swift），单测 7 例钉死：
 
 ## 四、验收
 
-（CI/单测/解包结果回填于此节，见提交记录。）
+- CI：run 42459462901 **success**（Build/单测/预签断言/打包全绿，
+  日志含 `presign assertions passed (2 binaries)`）。
+- 单测：**255 个、0 失败**（248 基线＋新增 7：DefaultLedgerPickerTests，
+  覆盖上次使用命中/已删兜底/示例约束跳过/只剩示例/无历史/全示例/空）。
+- 解包验：App 与 Widget 均 **5.8.1/67**；PlugIns 只有 LiqianWidget，
+  **无 LiqianShare.appex**。
+- AnalyzerFeeder.swift 相对基线零改动（git diff 核对）。
 
 ## 五、真机待验（不宣称已验）
 
