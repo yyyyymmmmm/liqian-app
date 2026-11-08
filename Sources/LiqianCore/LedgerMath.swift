@@ -147,6 +147,32 @@ public enum LedgerMath {
         return "¥\(sign)\(grouped).\(rem < 10 ? "0" : "")\(rem)"
     }
 
+    /// 逐笔金额带符号文本（v5.0.2 用户改版定版）：收礼 `+¥N`、随礼 `−¥N`
+    /// （减号为数学减号 U+2212，不用连字符），金额主体复用 fmtMoney 的
+    /// 千分位口径；零金额中性呈现 `¥0`（不带符号、方向不显——组件层
+    /// 同步回墨色）。全 App 逐笔金额只许走本函数＋SignedMoneyText 组件，
+    /// 不许各页自拼符号。汇总数字（合计/差额/待回）不走本函数、仍用 fmtMoney。
+    public static func signedMoney(cents: Int, direction: String) -> String {
+        let absCents = abs(cents)
+        if absCents == 0 { return fmtMoney(cents: 0) }
+        let body = fmtMoney(cents: absCents)
+        return direction == LiqianConstants.received ? "+\(body)" : "−\(body)"
+    }
+
+    /// 逐笔金额的 VoiceOver 读法（v5.0.2）：只读符号聋用户听不出方向，
+    /// 必须读方向词＋金额读数——「收 500 元」/「送 500 元」；零金额
+    /// 同样带方向（「收 0 元」），不让读屏用户丢方向信息。
+    public static func signedMoneyAccessibility(cents: Int, direction: String) -> String {
+        let word = direction == LiqianConstants.received ? "收" : "送"
+        return "\(word) \(plainMoney(cents: abs(cents))) 元"
+    }
+
+    /// 无符号金额读数（VoiceOver 用）：千分位、非整两位、无 ¥ 符号，
+    /// 如 1,000 / 66.50。仅供 signedMoneyAccessibility 拼读法。
+    private static func plainMoney(cents: Int) -> String {
+        String(fmtMoney(cents: cents).dropFirst())
+    }
+
     public static func sum(_ entries: [EntrySnapshot]) -> Int {
         entries.reduce(0) { $0 + $1.amountCents }
     }

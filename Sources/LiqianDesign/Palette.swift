@@ -11,7 +11,8 @@ import UIKit
 // - 90% 中性打底：中性色阶占满界面，强调色只有一个色族、面积受控。
 //   强调色族自 v2.4 起由外观主题驱动（默认朱砂，见 AppTheme），纪律不变。
 // - 朱砂只出现在：主按钮、选中态、链接、印章、礼簿封面、收礼方向签/小色点、
-//   「待回礼」行动提示。记录金额一律墨色，收/送靠 +/− 符号与方向签区分。
+//   「待回礼」行动提示。金额口径（v5.0.2 用户改版）：逐笔金额符号＋语义
+//   双色（收走主题强调、送走黛青），汇总数字仍墨色——见下方金额语义令牌。
 // - 描金退出 UI：App 视图禁止引用 Palette.gold，仅礼谱 PDF 等静态成品可参考。
 
 public extension Color {
@@ -98,8 +99,12 @@ public struct AppThemeTokens {
     public let primary: UInt32
     /// 品牌填充深档：强调底＋白字（主按钮、FAB、封面签、印章）
     public let primaryFill: UInt32
-    /// 品牌浅染：选中态衬底、标签底、快捷钮底
+    /// 品牌浅染：选中态衬底、标签底
     public let primaryTint: UInt32
+    /// 送礼金额语义色「黛青」（v5.0.2 新增）：与品牌收色一暖一冷成对，
+    /// 只给逐笔随礼金额数字与图表随礼系列用；逐主题校过对比度
+    /// （对本主题 pageBG/surface 均 ≥4.5:1，实测表见 docs/V502-NOTES.md）
+    public let moneyGiven: UInt32
     /// 主文字（与品牌同色温的中性）
     public let ink: UInt32
     /// 次文字
@@ -109,7 +114,8 @@ public struct AppThemeTokens {
 
     public init(
         pageBG: UInt32, surface: UInt32, primary: UInt32, primaryFill: UInt32,
-        primaryTint: UInt32, ink: UInt32, sub: UInt32, line: UInt32
+        primaryTint: UInt32, ink: UInt32, sub: UInt32, line: UInt32,
+        moneyGiven: UInt32
     ) {
         self.pageBG = pageBG
         self.surface = surface
@@ -119,6 +125,7 @@ public struct AppThemeTokens {
         self.ink = ink
         self.sub = sub
         self.line = line
+        self.moneyGiven = moneyGiven
     }
 }
 
@@ -131,31 +138,36 @@ public extension AppTheme {
             return AppThemeTokens(
                 pageBG: 0xFAF9F7, surface: 0xFFFFFF,
                 primary: 0xA62B1F, primaryFill: 0x8F241B, primaryTint: 0xF9ECE9,
-                ink: 0x1C1917, sub: 0x6B6660, line: 0xE9E4DE
+                ink: 0x1C1917, sub: 0x6B6660, line: 0xE9E4DE,
+                moneyGiven: 0x14665A
             )
         case .night:
             return AppThemeTokens(
                 pageBG: 0x131315, surface: 0x1E1E21,
                 primary: 0xD96A5C, primaryFill: 0xC4533F, primaryTint: 0x2C1E1B,
-                ink: 0xF2EFE9, sub: 0xA39E97, line: 0x33302C
+                ink: 0xF2EFE9, sub: 0xA39E97, line: 0x33302C,
+                moneyGiven: 0x4FB3A6
             )
         case .tencentBlue:
             return AppThemeTokens(
                 pageBG: 0xF2F3F5, surface: 0xFFFFFF,
                 primary: 0x0052D9, primaryFill: 0x003CAB, primaryTint: 0xEAF1FE,
-                ink: 0x1F2329, sub: 0x5F6570, line: 0xE3E6EB
+                ink: 0x1F2329, sub: 0x5F6570, line: 0xE3E6EB,
+                moneyGiven: 0x14665A
             )
         case .graphite:
             return AppThemeTokens(
                 pageBG: 0xF4F4F3, surface: 0xFFFFFF,
                 primary: 0x4E5969, primaryFill: 0x39424E, primaryTint: 0xEBEDF0,
-                ink: 0x1D2126, sub: 0x646A73, line: 0xE2E4E6
+                ink: 0x1D2126, sub: 0x646A73, line: 0xE2E4E6,
+                moneyGiven: 0x14665A
             )
         case .amber:
             return AppThemeTokens(
                 pageBG: 0xFCFAF3, surface: 0xFFFFFF,
                 primary: 0xA16207, primaryFill: 0x854D0E, primaryTint: 0xF8EED3,
-                ink: 0x221D10, sub: 0x6E6455, line: 0xEAE3D0
+                ink: 0x221D10, sub: 0x6E6455, line: 0xEAE3D0,
+                moneyGiven: 0x14665A
             )
         }
     }
@@ -260,6 +272,21 @@ public enum Palette {
     public static let baiLine = hairline
     // 注：随礼方向签底色原有独立的 givenTag（全仓唯一非动态令牌），
     // 已按 PRO-AUDIT §3.3 并入 baiPrimary，DirectionTag 直接引用 baiPrimary。
+
+    // —— 金额语义双色（v5.0.2 用户改版）：只给「逐笔」收/送金额数字与
+    // 图表收/送系列用；合计/差额/待回等汇总数字不入此口径、仍墨色。
+    // 解析口径（方向×白事）收敛在 DesignTokens 的 MoneyTone，组件层
+    // 走 SignedMoneyText，不许各页自选金额色。——
+    /// 收礼金额色：当前主题强调令牌本身（暖，随五主题走）
+    public static var moneyReceived: Color { primary }
+    /// 随礼金额色「黛青」：主题令牌 moneyGiven（冷），逐主题对
+    /// pageBG/surface 对比均 ≥4.5:1（实测表见 docs/V502-NOTES.md）
+    public static let moneyGiven = token(\.moneyGiven)
+    /// 白事收礼金额色：朱砂降饱和变体——白事克制口径，不入主题表、
+    /// 随深浅外观给两值（浅 #8C4A3E / 深 #C08D81，对比实测同 V502-NOTES）
+    public static let moneyReceivedBai = dyn(0x8C4A3E, 0xC08D81)
+    /// 白事随礼金额色：黛青降饱和变体（浅 #4C6D66 / 深 #87A29B）
+    public static let moneyGivenBai = dyn(0x4C6D66, 0x87A29B)
 }
 
 // MARK: - 字阶与度量（ui-checker：全 App 统一，不许各页自创）

@@ -223,6 +223,47 @@ public struct LiqianMoneyText: View {
     }
 }
 
+// MARK: - 逐笔金额组件（v5.0.2）：符号＋语义双色的唯一呈现点
+// 全 App 每一处「逐笔收/送金额」只许用本组件：文本走
+// LedgerMath.signedMoney（收 +¥N / 送 −¥N / 零 ¥0），颜色走
+// MoneyTone（收主题强调、送黛青、白事降饱和、零回墨），字阶走
+// liqianMoney（暗色自动降字重，与 LiqianMoneyText 同口径）。
+// VoiceOver 读方向词＋金额（signedMoneyAccessibility），不读符号。
+// 汇总数字（合计/差额/待回）禁用本组件——仍走 fmtMoney＋墨色。
+
+public struct SignedMoneyText: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let cents: Int
+    private let direction: String
+    private let bai: Bool
+    private let style: Font.TextStyle
+
+    public init(
+        cents: Int,
+        direction: String,
+        bai: Bool = false,
+        style: Font.TextStyle = .title3
+    ) {
+        self.cents = cents
+        self.direction = direction
+        self.bai = bai
+        self.style = style
+    }
+
+    private var foreground: Color {
+        if cents == 0 { return MoneyTone.neutralColor(bai: bai) }
+        return MoneyTone.tone(direction: direction).color(bai: bai)
+    }
+
+    public var body: some View {
+        Text(LedgerMath.signedMoney(cents: cents, direction: direction))
+            .font(.liqianMoney(style, dark: colorScheme == .dark))
+            .foregroundStyle(foreground)
+            .accessibilityLabel(LedgerMath.signedMoneyAccessibility(cents: cents, direction: direction))
+    }
+}
+
 public struct SealStampView: View {
     /// 印面字（通常取礼簿名首字）
     public let char: String

@@ -504,9 +504,7 @@ struct LedgerDetailView: View {
                 Spacer()
                 // 右列：金额（上）＋日期（下，右对齐次级色），纵向成列方便扫读
                 VStack(alignment: .trailing, spacing: LiqianMetrics.spacingXS) {
-                    Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                        .font(.liqianMoney(.title3))
-                        .foregroundStyle(Palette.ink)
+                    SignedMoneyText(cents: r.amountCents, direction: r.direction, bai: isBai)
                     Text(LiqianDate.displayString(for: r.date))
                         .font(.footnote)
                         .foregroundStyle(Palette.stone)

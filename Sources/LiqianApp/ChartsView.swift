@@ -559,10 +559,10 @@ struct ChartsView: View {
                     Spacer()
                     Text("收 " + LedgerMath.fmtMoney(cents: sel.received))
                         .font(.footnote.monospacedDigit())
-                        .foregroundStyle(Palette.stone)
+                        .foregroundStyle(Palette.moneyReceived)
                     Text("送 " + LedgerMath.fmtMoney(cents: sel.given))
                         .font(.footnote.monospacedDigit())
-                        .foregroundStyle(Palette.stone)
+                        .foregroundStyle(Palette.moneyGiven)
                     Text("净 " + netMoneyText(sel.received - sel.given))
                         .font(.footnote.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Palette.ink)
@@ -667,9 +667,12 @@ struct ChartsView: View {
                                     Text(LiqianDate.displayString(for: record.date))
                                         .font(.footnote)
                                         .foregroundStyle(Palette.stone)
-                                    Text(LedgerMath.fmtMoney(cents: record.amountCents))
-                                        .font(.liqianMoney(.body))
-                                        .foregroundStyle(Palette.ink)
+                                    SignedMoneyText(
+                                        cents: record.amountCents,
+                                        direction: record.direction,
+                                        bai: ledgers.first { $0.id == record.ledgerID }?.isBai ?? false,
+                                        style: .body
+                                    )
                                 }
                                 .frame(minHeight: LiqianMetrics.minTapTarget)
                                 .contentShape(Rectangle())
@@ -728,7 +731,9 @@ struct ChartsView: View {
         .liqianCardSurface()
     }
 
-    private var givenColor: Color { Palette.ink.opacity(0.42) }
+    /// 随礼系列色（v5.0.2）：黛青语义令牌，与收礼的主题强调成对；
+    /// 全图收/送系列（趋势双柱/净额负柱/事由成对条/红事随礼）统一走它
+    private var givenColor: Color { Palette.moneyGiven }
 
     private func legendDot(color: Color, text: String) -> some View {
         HStack(spacing: LiqianMetrics.spacingXS) {

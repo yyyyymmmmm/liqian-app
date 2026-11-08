@@ -1,4 +1,5 @@
 import SwiftUI
+import LiqianCore
 
 // MARK: - v5 设计一期令牌（docs/DESIGN.md 附录定版 / 前沿设计审计 §3）
 // 定版融合句：「纸墨为体，玻璃为用。」内容层（卡/列表/图表/表单）永远
@@ -104,5 +105,38 @@ public enum MotionTokens {
     /// 的降级由系统玻璃自动回退实色，不在代码层处理。
     public static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : animation
+    }
+}
+
+// MARK: - 金额语义双色（v5.0.2 用户改版定版，docs/DESIGN.md 金额节）
+// 记账软件式表达：逐笔金额 = 符号（LedgerMath.signedMoney）＋语义双色。
+// 收礼走主题强调令牌（暖：朱砂/蓝/石墨/琥珀随主题），随礼走黛青（冷，
+// 主题令牌 moneyGiven）——一暖一冷，扫一眼就分清方向。双色只染金额
+// 数字本身：背景、图标、按钮、方向签一律不跟随染色，页面底色仍中性。
+// 边界：合计/差额/净额/待回等「算出来的数」不入本口径，仍墨色；
+// 礼谱 PDF 等导出排版不入本口径，纸墨形制不动。
+public enum MoneyTone {
+    case received
+    case given
+
+    /// 方向字符串（LiqianConstants）→ 语义向：收礼为 received，其余为 given
+    public static func tone(direction: String) -> MoneyTone {
+        direction == LiqianConstants.received ? .received : .given
+    }
+
+    /// 逐笔金额色：白事簿内走降饱和变体（白事克制），其余走主题令牌
+    public func color(bai: Bool) -> Color {
+        switch (self, bai) {
+        case (.received, false): return Palette.moneyReceived
+        case (.given, false): return Palette.moneyGiven
+        case (.received, true): return Palette.moneyReceivedBai
+        case (.given, true): return Palette.moneyGivenBai
+        }
+    }
+
+    /// 零金额的中性色（与 LedgerMath.signedMoney 的 ¥0 中性呈现成对）：
+    /// 零不带符号、也不着双色，回主文字墨（白事回白事墨）
+    public static func neutralColor(bai: Bool) -> Color {
+        bai ? Palette.baiInk : Palette.ink
     }
 }

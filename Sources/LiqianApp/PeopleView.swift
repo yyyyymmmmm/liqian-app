@@ -204,9 +204,11 @@ struct PeopleView: View {
                 Text(LiqianDate.displayString(for: r.date))
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
-                Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                    .font(.liqianMoney(.title3))
-                    .foregroundStyle(Palette.ink)
+                SignedMoneyText(
+                    cents: r.amountCents,
+                    direction: r.direction,
+                    bai: ledgers.first { $0.id == r.ledgerID }?.isBai ?? false
+                )
             }
             .frame(minHeight: LiqianMetrics.minTapTarget)
             .contentShape(Rectangle())
@@ -333,6 +335,8 @@ struct PrepListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var records: [GiftRecord]
+    /// 白事判定（金额降饱和变体）需要按 ledgerID 查所属礼簿
+    @Query private var ledgers: [Ledger]
     @State private var personRoute: PeopleView.NameRoute?
     @State private var prepToDelete: GiftRecord?
     /// 与往来页同口径的左滑结果触感（v4.4）：删除＝警告、已送出＝成功
@@ -406,9 +410,11 @@ struct PrepListView: View {
                 Text(LiqianDate.displayString(for: r.date))
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
-                Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                    .font(.liqianMoney(.title3))
-                    .foregroundStyle(Palette.ink)
+                SignedMoneyText(
+                    cents: r.amountCents,
+                    direction: r.direction,
+                    bai: ledgers.first { $0.id == r.ledgerID }?.isBai ?? false
+                )
             }
             .frame(minHeight: LiqianMetrics.minTapTarget)
             .contentShape(Rectangle())

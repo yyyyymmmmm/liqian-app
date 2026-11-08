@@ -36,6 +36,31 @@ final class LedgerMathTests: XCTestCase {
         XCTAssertEqual(LedgerMath.fmtMoney(cents: -100_50), "¥-100.50")
     }
 
+    // MARK: signedMoney（v5.0.2 逐笔带符号口径：收 + / 送 −（U+2212）/ 零中性）
+
+    func testSignedMoney() {
+        // 收礼带 +，随礼带数学减号 −（不是连字符 -）
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 500_00, direction: "收礼"), "+¥500")
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 500_00, direction: "随礼"), "−¥500")
+        // 千分位与非整金额与 fmtMoney 同口径
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 1_000_000, direction: "收礼"), "+¥10,000")
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 123_456_789, direction: "随礼"), "−¥1,234,567.89")
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 66_50, direction: "随礼"), "−¥66.50")
+        // 零金额中性呈现：不带符号、两方向同值
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 0, direction: "收礼"), "¥0")
+        XCTAssertEqual(LedgerMath.signedMoney(cents: 0, direction: "随礼"), "¥0")
+    }
+
+    func testSignedMoneyAccessibility() {
+        // VoiceOver 读方向词＋金额读数，不读符号
+        XCTAssertEqual(LedgerMath.signedMoneyAccessibility(cents: 500_00, direction: "收礼"), "收 500 元")
+        XCTAssertEqual(LedgerMath.signedMoneyAccessibility(cents: 500_00, direction: "随礼"), "送 500 元")
+        XCTAssertEqual(LedgerMath.signedMoneyAccessibility(cents: 1_000_000, direction: "收礼"), "收 10,000 元")
+        XCTAssertEqual(LedgerMath.signedMoneyAccessibility(cents: 66_50, direction: "随礼"), "送 66.50 元")
+        // 零金额仍带方向，不丢信息
+        XCTAssertEqual(LedgerMath.signedMoneyAccessibility(cents: 0, direction: "随礼"), "送 0 元")
+    }
+
     // MARK: displayString（界面日期显示定版：当年 M月d日 / 跨年 yyyy年M月d日）
 
     func testDisplayString() {

@@ -379,9 +379,7 @@ struct PersonDetailView: View {
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                 }
                 Spacer()
-                Text("\(r.direction == LiqianConstants.received ? "+" : "-")\(LedgerMath.fmtMoney(cents: r.amountCents))")
-                    .font(.liqianMoney(.title3))
-                    .foregroundStyle(isBai ? Palette.baiInk : Palette.ink)
+                SignedMoneyText(cents: r.amountCents, direction: r.direction, bai: isBai)
             }
             .padding(.horizontal, LiqianMetrics.spacingM)
             .padding(.vertical, LiqianMetrics.spacingSM)

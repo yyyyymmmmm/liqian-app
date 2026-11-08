@@ -515,9 +515,11 @@ struct HomeView: View {
                         Text(LiqianDate.displayString(for: r.date))
                             .font(.footnote)
                             .foregroundStyle(Palette.stone)
-                        Text(LedgerMath.fmtMoney(cents: r.amountCents))
-                            .font(.liqianMoney(.title3))
-                            .foregroundStyle(Palette.ink)
+                        SignedMoneyText(
+                            cents: r.amountCents,
+                            direction: r.direction,
+                            bai: ledger(of: r)?.isBai ?? false
+                        )
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                     .contentShape(Rectangle())
