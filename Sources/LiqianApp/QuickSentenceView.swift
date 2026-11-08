@@ -361,9 +361,11 @@ final class SpeechTranscriber: ObservableObject {
     func start() {
         guard !isRecording, !isStarting else { return }
         errorText = nil
-        // 每次现建识别器并判空＋判可用（隐患 ⑦）
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
-              recognizer.isAvailable else {
+        // 先同步探一次可用性（隐患 ⑦）；识别器实例不跨异步链传递
+        // （Swift 6 并发：SFSpeechRecognizer 非 Sendable，正式实例在
+        // beginSession 里现建）
+        guard let probe = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
+              probe.isAvailable else {
             errorText = "语音识别暂时不可用，可直接输入文字。"
             return
         }
@@ -386,16 +388,18 @@ final class SpeechTranscriber: ObservableObject {
                             self.errorText = "麦克风未获得权限，可直接输入文字；如需使用，请在系统设置中开启。"
                             return
                         }
-                        self.beginSession(recognizer: recognizer, generation: gen)
+                        self.beginSession(generation: gen)
                     }
                 }
             }
         }
     }
 
-    private func beginSession(recognizer: SFSpeechRecognizer, generation gen: Int) {
+    private func beginSession(generation gen: Int) {
         guard generation == gen else { return }
-        guard recognizer.isAvailable else {
+        // 正式识别器在本方法内现建（主线程上下文，不跨异步边界）
+        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")),
+              recognizer.isAvailable else {
             isStarting = false
             errorText = "语音识别暂时不可用，可直接输入文字。"
             return
