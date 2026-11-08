@@ -345,6 +345,17 @@ struct QuickSentenceView: View {
 //    补 activeRecognizer 属性持有到 stop()。
 // 另全程埋 MicTrace 面包屑（步号见各 mark 调用），下次再闪退，设置页
 // 诊断行会显示死在哪一步——本轮目标是修掉或让它自报，不再猜。
+//
+// 闪退四审（v5.4.2，黑匣子命中死亡窗口后的定点修）：
+// ⑪ 启动次序：v5.4.1 诊断行回传「停在 #14 引擎已启动」——引擎已转、
+//    tap 已装（13）、首个识别结果（15）从未到达。旧 beginSession 次序
+//    是「装 tap → prepare/start 引擎 → 才建 recognitionTask」：死亡
+//    窗口正在 task 建出之前，tap 已往 request 里灌音频、消费端却还
+//    不存在。修法：翻正为苹果官方示例的次序——先建 request、先建
+//    recognitionTask、再装 tap、最后启动引擎，保证第一个 buffer
+//    流入时 task 必然已存在。窗口内另加三步细分面包屑：17 task 已建
+//    （引擎启动前）、18 首个 buffer 已 append（音频线程只置原子旗、
+//    异步落主队列写）、19 引擎启动 0.5 秒存活确认。不宣称已修好。
 
 @MainActor
 final class SpeechTranscriber: ObservableObject {
@@ -374,6 +385,10 @@ final class SpeechTranscriber: ObservableObject {
     private var generation = 0
     /// tap 接受旗（音频线程与主线程共享）：false 后 tap 不再 append（隐患 ④）
     private let bufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
+    /// tap 首个 buffer 面包屑旗（隐患 ⑪ 细分步 18）：音频线程置位、
+    /// 只触发一次；实际的 UserDefaults 写入异步落到主执行者，不许在
+    /// 实时音频线程直接写
+    private let firstBufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     func toggle() {
         if isRecording {
@@ -548,26 +563,12 @@ final class SpeechTranscriber: ObservableObject {
             request.shouldReportPartialResults = true
             self.request = request
 
-            // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap，重复装同样是 NSException
-            if tapInstalled {
-                input.removeTap(onBus: 0)
-                tapInstalled = false
-            }
-            let gate = bufferGate
-            gate.withLock { $0 = true }
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-                // 隐患 ④：endAudio 之后再 append 会抛异常，先验接受旗
-                guard gate.withLock({ $0 }) else { return }
-                request.append(buffer)
-            }
-            tapInstalled = true
-            MicTrace.mark(step: 13, "已装 tap")
-            audioEngine.prepare()
-            try audioEngine.start()
-            MicTrace.mark(step: 14, "引擎已启动")
-            isRecording = true
-            isStarting = false
-
+            // 隐患 ⑪（v5.4.2 定点修）：先建识别任务，再装 tap，最后才
+            // 启动引擎（苹果官方示例次序）。旧次序「装 tap → 引擎启动
+            // → 才建 task」在真机被黑匣子命中：停在 #14——引擎已转、
+            // tap 已在往 request 灌音频，消费它的 task 却还没建出来，
+            // 首个识别结果从未到达。任务先行后，第一个 buffer 流入时
+            // task 必然已存在。handler 内容与旧版逐字一致。
             task = recognizer.recognitionTask(with: request) { [weak self] result, error in
                 Task { @MainActor in
                     guard let self, self.generation == gen else { return }
@@ -586,6 +587,53 @@ final class SpeechTranscriber: ObservableObject {
                         self.stop()
                     }
                 }
+            }
+            MicTrace.mark(step: 17, "识别任务已建", detail: "引擎启动前")
+
+            // 装之前先摘可能残留的旧 tap：同一 bus 只许一个 tap，重复装同样是 NSException
+            if tapInstalled {
+                input.removeTap(onBus: 0)
+                tapInstalled = false
+            }
+            let gate = bufferGate
+            gate.withLock { $0 = true }
+            // 细分步 18 的首 buffer 旗：每个会话重新待发
+            let traced = firstBufferGate
+            traced.withLock { $0 = false }
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                // 隐患 ④：endAudio 之后再 append 会抛异常，先验接受旗
+                guard gate.withLock({ $0 }) else { return }
+                request.append(buffer)
+                // 细分步 18：首个 buffer 已 append。实时音频线程不许
+                // 直接写 UserDefaults——原子旗只放行一次，落标异步切到
+                // 主执行者（代际已变＝会话已收尾时丢弃，不污染取证）
+                let isFirst = traced.withLock { flag -> Bool in
+                    if flag { return false }
+                    flag = true
+                    return true
+                }
+                if isFirst {
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == gen else { return }
+                        MicTrace.mark(step: 18, "首个音频已流入识别")
+                    }
+                }
+            }
+            tapInstalled = true
+            MicTrace.mark(step: 13, "已装 tap")
+            audioEngine.prepare()
+            try audioEngine.start()
+            MicTrace.mark(step: 14, "引擎已启动")
+            isRecording = true
+            isStarting = false
+            // 细分步 19：引擎启动 0.5 秒存活确认。还活着且首个结果没到
+            // 才落标（已出结果时 15 更有信息量，不覆盖）；若下次诊断
+            // 停在 19，说明启动全程无崩、死亡发生在识别出字之前。
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, self.generation == gen,
+                      self.isRecording, !self.didTraceFirstResult else { return }
+                MicTrace.mark(step: 19, "引擎启动后存活确认", detail: "0.5 秒无首结果")
             }
         } catch {
             MicTrace.mark(step: 99, "beginSession 异常", detail: error.localizedDescription)
