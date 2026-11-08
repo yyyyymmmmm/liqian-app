@@ -56,27 +56,30 @@ private var pendingPageURL: URL? { URL(string: LiqianDeepLink.pendingURL()) }
 
 /// 待回逐人行（中/大共用）：姓名＋收向带符号金额（朱砂），点行直达该人；
 /// 示例行不挂深链（名字是编的，点了也找不到人）
-@ViewBuilder
-private func pendingPersonRow(
-    _ person: WPendingPerson, isDemo: Bool, font: Font.TextStyle
-) -> some View {
-    let row = HStack(spacing: 6) {
-        Text(person.name)
-            .font(.system(font))
-            .foregroundStyle(WPalette.ink)
-            .lineLimit(1)
-        Spacer(minLength: 4)
-        Text(signedMoneyText(cents: person.pendingCents, direction: LiqianConstants.received))
-            .font(.system(font, weight: .semibold).monospacedDigit())
-            .foregroundStyle(WPalette.primary)
-            .privacySensitive()
-    }
-    .contentShape(Rectangle())
-    if isDemo {
-        row
-    } else {
-        Link(destination: URL(string: LiqianDeepLink.personURL(name: person.name))!) {
+private struct PendingPersonRow: View {
+    let person: WPendingPerson
+    let isDemo: Bool
+    let font: Font.TextStyle
+
+    var body: some View {
+        let row = HStack(spacing: 6) {
+            Text(person.name)
+                .font(.system(font))
+                .foregroundStyle(WPalette.ink)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(signedMoneyText(cents: person.pendingCents, direction: LiqianConstants.received))
+                .font(.system(font, weight: .semibold).monospacedDigit())
+                .foregroundStyle(WPalette.primary)
+                .privacySensitive()
+        }
+        .contentShape(Rectangle())
+        if isDemo {
             row
+        } else {
+            Link(destination: URL(string: LiqianDeepLink.personURL(name: person.name))!) {
+                row
+            }
         }
     }
 }
@@ -136,7 +139,7 @@ private struct PendingSmallView: View {
                         .foregroundStyle(WPalette.stone)
                     if let top = s.pendingTop?.first {
                         Divider()
-                        pendingPersonRow(top, isDemo: entry.isDemo, font: .subheadline)
+                        PendingPersonRow(person: top, isDemo: entry.isDemo, font: .subheadline)
                     } else if !s.topName.isEmpty {
                         Text("最多的是 \(s.topName)")
                             .font(.caption)
@@ -244,7 +247,7 @@ private struct PendingMediumView: View {
         if let s = entry.summary, s.pendingCount > 0, let top = s.pendingTop, !top.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(Array(top.prefix(3).enumerated()), id: \.offset) { _, person in
-                    pendingPersonRow(person, isDemo: entry.isDemo, font: .subheadline)
+                    PendingPersonRow(person: person, isDemo: entry.isDemo, font: .subheadline)
                 }
                 Spacer(minLength: 0)
             }
@@ -296,7 +299,7 @@ private struct PendingLargeView: View {
                 if let top = s.pendingTop, !top.isEmpty {
                     VStack(spacing: 7) {
                         ForEach(Array(top.prefix(3).enumerated()), id: \.offset) { _, person in
-                            pendingPersonRow(person, isDemo: entry.isDemo, font: .callout)
+                            PendingPersonRow(person: person, isDemo: entry.isDemo, font: .callout)
                         }
                     }
                 } else {
