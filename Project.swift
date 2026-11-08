@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "5.8.0",
-        "CURRENT_PROJECT_VERSION": "66",
+        "MARKETING_VERSION": "5.8.1",
+        "CURRENT_PROJECT_VERSION": "67",
     ]),
     targets: [
         .target(
@@ -43,8 +43,8 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "5.8.0",
-                "CFBundleVersion": "66",
+                "CFBundleShortVersionString": "5.8.1",
+                "CFBundleVersion": "67",
                 // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
                 // 承接在 AppDelegate（冷启动 launchOptions / 运行时 performActionFor）
                 // → ShortcutActions 写标记 → ContentView 消费，与小组件深链同守卫
@@ -150,8 +150,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "5.8.0",
-                "CFBundleVersion": "66",
+                "CFBundleShortVersionString": "5.8.1",
+                "CFBundleVersion": "67",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],

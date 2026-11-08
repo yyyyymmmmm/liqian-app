@@ -142,6 +142,12 @@ struct RecordFormView: View {
     /// 回礼参考年涨幅设置（与人物详情卡同键同源）
     @AppStorage(ReplyAdvisor.annualRateKey) private var annualRatePercent = ReplyAdvisor.defaultAnnualRatePercent
 
+    /// 上次使用礼簿（v5.8.1，审计 #10）：新建记账成功后回写本次所记
+    /// 礼簿 ID 字符串，下次新建默认先它（决策顺序在
+    /// DefaultLedgerPicker，Core 纯逻辑＋单测）；编辑既有记录不回写
+    /// ——编辑不做选簿动作，不算「使用」。
+    @AppStorage(DefaultLedgerPicker.lastUsedKey) private var lastUsedLedgerIDRaw = ""
+
     /// 回礼提示（v4.3）：记随礼、新建、已填姓名且与此人有收礼往来时才有；
     /// 场合＝当前礼簿事由。没依据（没收过他的礼）返回 nil，提示行不出
     private var replyAdvice: ReplyAdvice? {
@@ -240,13 +246,20 @@ struct RecordFormView: View {
             }
             .onAppear {
                 if needsLedgerPicker, selectedLedgerID == nil {
-                    // 默认礼簿（v4.2 修复）：此前取 allLedgers.first（顺序不定），
-                    // 示例礼簿常排在前面，随礼会默认记进示例簿——而示例数据是
-                    // 统计隔离的，往来/差额里看不到，表现为「保存没反应」。
-                    // 改为：日期最新的非示例礼簿；没有真礼簿时才落到示例簿。
+                    // 默认礼簿（v4.2 修复＋v5.8.1 上次使用优先）：此前取
+                    // allLedgers.first（顺序不定），示例礼簿常排在前面，
+                    // 随礼会默认记进示例簿——而示例数据是统计隔离的，
+                    // 往来/差额里看不到，表现为「保存没反应」。
+                    // 决策顺序（DefaultLedgerPicker，单测钉死）：上次
+                    // 成功记账所用礼簿（仍存在且非示例）→ 日期最新非
+                    // 示例礼簿 → 日期最新礼簿（只剩示例时）。
                     let sampleIDs = SampleData.sampleIDs(ledgers: allLedgers)
                     let byDate = allLedgers.sorted { $0.date > $1.date }
-                    selectedLedgerID = (byDate.first { !sampleIDs.contains($0.id) } ?? byDate.first)?.id
+                    selectedLedgerID = DefaultLedgerPicker.pick(
+                        lastUsedID: UUID(uuidString: lastUsedLedgerIDRaw),
+                        ledgerIDsByDateDescending: byDate.map(\.id),
+                        sampleIDs: sampleIDs
+                    )
                 }
                 if existing == nil {
                     focus = .person
@@ -742,6 +755,9 @@ struct RecordFormView: View {
                 )
             )
             try? modelContext.save()
+            // 上次使用回写（v5.8.1）：新建落库成功即记住这本，
+            // 下次新建默认先它（保存并继续同理，只记一次）
+            lastUsedLedgerIDRaw = lid.uuidString
             // 落印：盖印动画约 1 秒，不阻断输入；普通保存等印落完再关闭
             // 印文（v2.6 口径）：收礼「礼」；随礼用既有印资源——礼簿名首字印，
             // 无礼簿名可用时同印「礼」
@@ -797,6 +813,8 @@ struct RecordFormView: View {
             )
         }
         try? modelContext.save()
+        // 上次使用回写（v5.8.1）：与 save() 新建同口径
+        lastUsedLedgerIDRaw = lid.uuidString
         saveTrigger += 1
         // 落印口径同 save()：全是随礼用礼簿名首字印，其余（含混合）盖「礼」印
         sealText = results.allSatisfy { $0.direction == LiqianConstants.given }

@@ -18,8 +18,6 @@ struct MeView: View {
     /// Pro 权益单点（v5）：本页只问它，不直接碰 StoreKit
     @EnvironmentObject private var entitlements: EntitlementCenter
     @State private var showPaywall = false
-    /// 重看引导（v5 追加）：与首开同一 OnboardingView、同一呈现模式
-    @State private var showOnboardingReplay = false
     @Query private var records: [GiftRecord]
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Query private var reminderDays: [ReminderDay]
@@ -186,8 +184,10 @@ struct MeView: View {
                     Text("总览")
                 }
 
-                // —— 数据：同步状态打头、导出/恢复居中、回收站随后、
-                // 示例数据沉底（v5.0.1 IA）；备份提醒行已移「提醒」组。
+                // —— 数据：同步状态打头、导出/恢复居中、回收站收尾
+                // （v5.0.1 IA；v5.8.1 示例礼簿行移出设置页——生成入口
+                // 在首页/往来/礼簿列表空态，审计 #4）；备份提醒行已移
+                // 「提醒」组。
                 Section {
                     Toggle(isOn: $cloudSync.syncEnabled) {
                         entryLabel(
@@ -236,15 +236,6 @@ struct MeView: View {
                             icon: "trash",
                             title: "最近删除",
                             subtitle: "删除的礼簿与记录保留 30 天，过期自动清除，期间可恢复"
-                        )
-                    }
-                    Button {
-                        toggleSamples()
-                    } label: {
-                        entryLabel(
-                            icon: "sparkles",
-                            title: "示例礼簿",
-                            subtitle: hasSamples ? "示例数据：已生成，点按清除" : "示例数据：生成两本示例礼簿看效果，不影响真实数据"
                         )
                     }
                 } header: {
@@ -399,20 +390,12 @@ struct MeView: View {
                     Text("隐私与协议")
                 }
 
-                // —— 帮助：重看引导与意见反馈（v5.0.1 IA）；不设
-                // 「给个好评」——现版无此入口且 ReviewPrompt 既定
-                // 设计不放常驻评分入口，账见 V501-NOTES。
+                // —— 帮助：只剩意见反馈（v5.8.1 删「重看引导」行——
+                // 设置页不放引导入口，审计 #4；首开引导本体在
+                // ContentView 呈现，不经设置页）；不设「给个好评」——
+                // 现版无此入口且 ReviewPrompt 既定设计不放常驻评分
+                // 入口，账见 V501-NOTES。
                 Section {
-                    Button {
-                        showOnboardingReplay = true
-                    } label: {
-                        entryLabel(
-                            icon: "sparkles",
-                            title: "重看引导",
-                            subtitle: "礼谱成书、数据在自己手里、起第一本礼簿"
-                        )
-                    }
-                    .buttonStyle(.plain)
                     Link(destination: FeedbackMail.url) {
                         HStack(spacing: LiqianMetrics.spacingSM) {
                             entryLabel(icon: "envelope", title: "意见反馈")
@@ -487,9 +470,6 @@ struct MeView: View {
             .sheet(isPresented: $showPaywall) {
                 NavigationStack { PaywallView() }
             }
-            .fullScreenCover(isPresented: $showOnboardingReplay) {
-                OnboardingView { showOnboardingReplay = false }
-            }
             .sensoryFeedback(.success, trigger: importTrigger)
         }
     }
@@ -556,19 +536,6 @@ struct MeView: View {
                 )
                 .opacity(0.5)
             }
-        }
-    }
-
-    private var hasSamples: Bool { SampleData.hasSamples(ledgers: ledgers) }
-
-    /// 示例数据开关：生成两本示例礼簿看效果，看完一键清掉（不碰真实数据）
-    private func toggleSamples() {
-        if hasSamples {
-            SampleData.clearSamples(ledgers: ledgers, records: records, in: modelContext)
-            showInfo(title: "示例数据已清除", message: "示例数据已删除，你的数据未受影响。")
-        } else {
-            SampleData.generate(into: modelContext)
-            showInfo(title: "示例数据已生成", message: "「首页」多了两本示例礼簿，「往来」页能看到往来差额和备礼清单的效果。")
         }
     }
 

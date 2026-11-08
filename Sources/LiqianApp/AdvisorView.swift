@@ -60,7 +60,8 @@ struct AdvisorView: View {
     }
 
     /// 示例问题 chips（v5.2 扩面：查人/对比/趋势/场合/安排各一例，
-    /// 点即问，让用户一眼知道现在能问什么——覆盖表见 V52-NOTES）
+    /// 点即问，让用户一眼知道现在能问什么——覆盖表见 V52-NOTES；
+    /// v5.8.1 起仅空态在欢迎卡内呈现，见 introBlock/exampleChips）
     private static let examples = [
         "谁还没回礼",
         "我和大舅谁欠谁",
@@ -222,8 +223,15 @@ struct AdvisorView: View {
             Text("比如谁还没回礼、和谁欠谁、今年和去年比哪个多、最近几个月的趋势、下一场安排。金额都由工具按本机账目现查现算。也可以直接吩咐我记账，如「张三随礼了 500」——我拟好卡片，你核对点确认才入账。")
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)
+            // 示例 chips（v5.8.1，审计 #6）：只活在空态——无对话时
+            // 作为欢迎卡的一部分出现（点即问），发出第一条消息后
+            // 随 messages 非空整体消失，不再常驻输入区上方；成熟
+            // AI 产品（ChatGPT/Claude/assistant-ui）的统一口径。
+            if session.messages.isEmpty {
+                exampleChips
+            }
             // v5.4：隐私脚注从输入栈里挪进欢迎卡底部——输入区只剩
-            // 签行＋输入坞，不再有文字夹在两层控件之间。
+            // 输入坞，不再有文字夹在两层控件之间。
             Divider()
             Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。对话记录只存这台手机，随时可在右上角菜单里清空。")
                 .font(.caption)
@@ -235,6 +243,28 @@ struct AdvisorView: View {
         .offset(y: reduceMotion ? 0 : (entered ? 0 : 10))
     }
 
+    /// 示例 chips 行（v5.8.1 从输入区移入欢迎卡）：横滚一排染色
+    /// 玻璃签，点即问；呈现条件在 introBlock（仅空态），样式语言
+    /// 与 v5.3 常驻时一致（Mat.tinted＋主题染色＋令牌间距）。
+    private var exampleChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                ForEach(Self.examples, id: \.self) { example in
+                    Button { ask(example) } label: {
+                        Text(example)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.primary)
+                            .padding(.horizontal, LiqianMetrics.spacingSM)
+                            .padding(.vertical, LiqianMetrics.spacingXS + 2)
+                            .liqianGlassSurface(.tinted, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.isAsking)
+                }
+            }
+        }
+    }
+
     /// 语音面板入口（v5.6）：先启动转写会话、再上面板；启动即失败
     /// 时面板呈现异常态＋关闭钮，不静默无反应
     private func openVoicePanel() {
@@ -243,32 +273,14 @@ struct AdvisorView: View {
         showVoicePanel = true
     }
 
-    // MARK: - 输入区（示例 chips + 输入坞）
-    // v5.3：示例签走 Mat.tinted 染色玻璃、麦克风落玻璃圆、发送键三态。
-    // v5.4 收拾成一坨：签行贴在坞上方，坞（玻璃圆角容器）内只装
-    // 麦克风/输入框/发送键；隐私脚注已移出输入栈、收进欢迎卡底部，
-    // 输入区与标签栏之间只留令牌间距，不再五层堆叠夹文字。
+    // MARK: - 输入区（输入坞）
+    // v5.3：麦克风落玻璃圆、发送键三态。v5.4 收拾成一坨：坞（玻璃
+    // 圆角容器）内只装麦克风/输入框/发送键；隐私脚注已移出输入栈、
+    // 收进欢迎卡底部；示例 chips 自 v5.8.1 起移入欢迎卡、仅空态
+    // 呈现（审计 #6），输入区与标签栏之间只留令牌间距。
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: LiqianMetrics.spacingS) {
-                    ForEach(Self.examples, id: \.self) { example in
-                        Button { ask(example) } label: {
-                            Text(example)
-                                .font(.footnote)
-                                .foregroundStyle(Palette.primary)
-                                .padding(.horizontal, LiqianMetrics.spacingSM)
-                                .padding(.vertical, LiqianMetrics.spacingXS + 2)
-                                .liqianGlassSurface(.tinted, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(session.isAsking)
-                    }
-                }
-            }
-            .opacity(entered ? 1 : 0)
-            .offset(y: reduceMotion ? 0 : (entered ? 0 : 8))
             if transcriber.isRecording {
                 Text("正在录音，识别在语音面板里进行…")
                     .font(.footnote)

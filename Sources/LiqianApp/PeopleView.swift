@@ -14,6 +14,9 @@ struct PeopleView: View {
     @State private var prepToDelete: GiftRecord?
     @State private var showSampleDone = false
     @State private var showAdvisor = false
+    /// 记一笔（v5.8.1，审计 #10）：往来页 FAB 打开的记账表单，
+    /// 与首页「记一笔」同一形态（全局入口、默认礼簿走上次使用）
+    @State private var showQuickRecord = false
     /// 小组件人物深链（v4.5）：ContentView 收到 liqian://person/<姓名> 后
     /// 切到本页并把姓名放进这个绑定，本页消费后置路由并清空绑定
     @Binding private var deepLinkPerson: String?
@@ -138,6 +141,19 @@ struct PeopleView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Palette.pageBG.ignoresSafeArea())
+            // 记一笔 FAB（v5.8.1，审计 #10）：与首页同款玻璃主钮
+            // （AddFloatingButton）＋同口径底部避让；往来本是记账主
+            // 场景之一，此前无任何添加入口、空态文案都让人「先去
+            // 礼簿里记一笔」。备礼区在时同样靠 contentMargins 避让。
+            .contentMargins(.bottom, 72, for: .scrollContent)
+            .overlay(alignment: .bottomTrailing) {
+                AddFloatingButton(label: "记一笔", bottomPadding: AddFloatingButton.tabBarClearance) {
+                    showQuickRecord = true
+                }
+            }
+            .sheet(isPresented: $showQuickRecord) {
+                RecordFormView(personName: "", presetDirection: LiqianConstants.received)
+            }
             // 行增删动画（v4.4）：人物与备礼行集合变化时平滑过渡
             .animation(reduceMotion ? nil : .snappy, value: summaries.map(\.name))
             .animation(reduceMotion ? nil : .snappy, value: pendingSends.map(\.id))

@@ -22,8 +22,8 @@ struct ContentView: View {
     @State private var showQuickRecord = false
     @State private var tabSelection = 0
     /// 首开引导（v5）：一次性标记未置位时呈现；隐私锁未解开前不呈现
-    /// （cover 会盖在锁屏之上）。「我的 → 关于 → 重看引导」走 MeView
-    /// 自己的呈现，不经这里、也不动这个标记。
+    /// （cover 会盖在锁屏之上）。设置页无重看入口（v5.8.1 删，审计 #4），
+    /// 本标记置位后不再自动呈现。
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: OnboardingView.doneKey)
     /// 小组件人物深链（v4.5）：liqian://person/<姓名> 的待达姓名，
     /// 交给 PeopleView 消费（切到往来页后由它置人物路由并清空）
@@ -44,7 +44,7 @@ struct ContentView: View {
 
     /// 首开呈现绑定（v5）：隐私锁未解开时恒 false（cover 不盖锁屏），
     /// 解锁后自动接上；被关掉（完成/跳过）即置一次性标记，此后不再
-    /// 自动呈现（重看走「我的 → 关于 → 重看引导」）。
+    /// 自动呈现（v5.8.1 起设置页无重看入口，审计 #4）。
     private var onboardingPresentation: Binding<Bool> {
         Binding(
             get: { showOnboarding && !(privacyLockEnabled && isLocked) },

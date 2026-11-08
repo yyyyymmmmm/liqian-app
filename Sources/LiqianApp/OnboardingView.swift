@@ -6,10 +6,9 @@ import LiqianDesign
 /// 首开引导（v5，讲尖刀）：三页——尖刀页（礼簿成礼谱）→ 信任页
 /// （数据在你自己手里）→ 起簿页（场景预设建第一本）。一次性标记在
 /// 呈现方（ContentView）手里，本视图只负责呈现与建簿，关闭走 onFinish。
-/// 「我的 → 关于 → 重看引导」复用同一实现（同一呈现模式、可跳过可
-/// 完成），不复制第二份。视觉走 v5 令牌：纸墨内容＋玻璃功能层
-/// （继续钮 Mat.tinted），不新造插画——意象用礼谱封面小签＋印章
-/// （衬线白名单的封面小签/印章 moment，不越界）。
+/// 只服务首开（v5.8.1 起设置页无重看入口，审计 #4）。视觉走 v5 令牌：
+/// 纸墨内容＋玻璃功能层（继续钮 Mat.tinted），不新造插画——意象用
+/// 礼谱封面小签＋印章（衬线白名单的封面小签/印章 moment，不越界）。
 struct OnboardingView: View {
     /// 完成或跳过（呈现方据此关页；首开路径同时置一次性标记）
     let onFinish: () -> Void
@@ -17,7 +16,7 @@ struct OnboardingView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var page = 0
 
-    /// 一次性标记键（首开判断在 ContentView；重看入口不读它）
+    /// 一次性标记键（首开判断在 ContentView）
     static let doneKey = "liqian.onboarding.v5.done"
 
     var body: some View {
