@@ -93,9 +93,21 @@ v5.4.1 装机后用户点麦克风仍闪退，重开 App 在「我的 → AI 管
 长格式音频转写的新官方路径），整条实时转写链换实现，而不是在
 SFSpeechRecognizer 上继续打补丁。届时先出迁移评估再动工。
 
-## 验收实测
+## 验收实测（2026-11-08 本机亲验）
 
-（CI 与解包验完成后回填。）
+- CI：run **42452830356 success**（手动 workflow_dispatch 于本分支；
+  Build/Unit tests/预签断言/打包/上传全绿，日志含
+  `presign assertions passed (2 binaries)`）。
+- 单测：日志汇总行 **209 个用例、0 失败**（与 v5.4.1 基线 209
+  持平，一例未掉；本轮未新增单测——改动在 App 层语音时序，
+  Core 的 MicTrace API 未动）。
+- 解包验：App 与 Widget 的 Info.plist 均 **5.4.2/61**；PlugIns
+  只有 LiqianWidget，**无 LiqianShare.appex**；App 二进制原始字节
+  抽查：新步名「识别任务已建」「首个音频已流入识别」「引擎启动后
+  存活确认」全部命中（旧步名「引擎已启动」未命中属 Swift 小字符串
+  内联编码的历版同一现象，其 mark 调用与 v5.4.1 逐字未变）。
+- IPA：`~/workspace/your_files/liqian-v5.4.2/liqian-native-unsigned.ipa`
+  （4,000,865 字节，未签名，SideStore 覆盖安装、数据不动）。
 
 ## 真机待验（不宣称已验）
 
