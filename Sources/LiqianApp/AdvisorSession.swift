@@ -27,6 +27,11 @@ final class AdvisorSession: ObservableObject {
     @Published private(set) var activityText: String?
     /// 答案落定触感计数（v4.7 沿用）：正式回复原位落地时 +1
     @Published private(set) var answerTrigger = 0
+    /// 最近一次 settle 原位落地的消息 id（v5.11.2）：与 answerTrigger
+    /// 在 settle 内同点位发布——视图据此判定「本页本次出现期间新
+    /// 落地的那一条」，只有它重播打字机，其余历史行直出全文
+    /// （docs/ADVISOR-SCROLL-DIAG.md 第二层）
+    @Published private(set) var lastSettledID: AdvisorChatMessage.ID?
 
     private var askTask: Task<Void, Never>?
     /// 在途提问的占位 id：完成回写只认它，防清空/新问之后旧链回写错位
@@ -161,6 +166,9 @@ final class AdvisorSession: ObservableObject {
         activityText = nil
         if let index = messages.firstIndex(where: { $0.id == pendingID }) {
             messages[index].kind = AdvisorChatStore.ensuringNonEmpty(kind)
+            // 落地 id 与触感计数同点位发布（v5.11.2）：视图据此认领
+            // 「本次出现期间新落地的那一条」打字机资格
+            lastSettledID = messages[index].id
             answerTrigger += 1
         }
         persist()

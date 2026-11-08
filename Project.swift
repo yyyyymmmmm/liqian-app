@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "5.11.1",
-        "CURRENT_PROJECT_VERSION": "72",
+        "MARKETING_VERSION": "5.11.2",
+        "CURRENT_PROJECT_VERSION": "73",
     ]),
     targets: [
         .target(
@@ -43,8 +43,8 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "5.11.1",
-                "CFBundleVersion": "72",
+                "CFBundleShortVersionString": "5.11.2",
+                "CFBundleVersion": "73",
                 // 备用图标（v5.9，审计 #2）：白底不变、只换礼结色的 8 款
                 // 变体，文件由 scripts/make_alt_icons.py 生成、随资源进包
                 // 根目录（AltIcon-<变体>@2x/@3x.png）。键名与
@@ -172,8 +172,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "5.11.1",
-                "CFBundleVersion": "72",
+                "CFBundleShortVersionString": "5.11.2",
+                "CFBundleVersion": "73",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],

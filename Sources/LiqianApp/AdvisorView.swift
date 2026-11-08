@@ -50,6 +50,14 @@ struct AdvisorView: View {
     @State private var personRoute: PeopleView.NameRoute?
     /// 首屏入场（v5.3）：欢迎卡与示例签淡入上浮，Reduce Motion 时直达终态
     @State private var entered = false
+    /// 出现基线（v5.11.2）：onAppear 那一刻的 lastSettledID 快照＋
+    /// 已出现标记，打字机资格判定用（见 answerBlock）——出现时就已
+    /// 落地的回答（id 与基线相同）是历史行、直出全文不重播；出现后
+    /// 新 settle 的（id 与基线不同）才获得重播资格。首帧求值时
+    /// hasAppeared=false 兜底，保证 onAppear 之前构建的行一律按
+    /// 历史行处理（docs/ADVISOR-SCROLL-DIAG.md 第二层）
+    @State private var hasAppeared = false
+    @State private var settleBaseline: AdvisorChatMessage.ID?
 
     private var snapshots: [EntrySnapshot] {
         AppSupport.snapshots(records: records, ledgers: ledgers)
@@ -125,6 +133,24 @@ struct AdvisorView: View {
                         }
                     }
                 }
+                // 出现即滚底（v5.11.2 第一层）：冷进问账页时 count 与
+                // answerTrigger 都是「数据变化」触发，进页数据未变、
+                // 两路都不响，列表停在默认顶部——出现那一刻显式补滚
+                // 一次到最后一条。仅此一次：onAppear 在本次呈现内只
+                // 发生这一回，用户之后上滑读历史不会被拽回（新消息/
+                // 原位落地仍走上面两路）。不用 .defaultScrollAnchor：
+                // 它是常驻锚点，内容高度变化（打字机逐字变高）时会
+                // 反复重锚，与「只补一次」的要求冲突；且空态小内容
+                // 时的落位不受控。此处「落位」不是「滚动」，不带动
+                // 画；推迟一拍等首帧布局完成，scrollTo 才有行可落
+                // （docs/ADVISOR-SCROLL-DIAG.md 第一层）
+                .onAppear {
+                    guard let last = session.messages.last else { return }
+                    let target = last.id
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(target, anchor: .bottom)
+                    }
+                }
             }
             composer
         }
@@ -194,6 +220,11 @@ struct AdvisorView: View {
             Text("问答历史会从本机删除，账本记录不受影响。")
         }
         .onAppear {
+            // 出现基线落定（v5.11.2）：此刻 lastSettledID 指向的回答
+            // 是「进页前就已落地」的历史行，后续判定不再给它打字机
+            // 资格；只有出现之后新 settle 的回答才重播
+            hasAppeared = true
+            settleBaseline = session.lastSettledID
             if !entered {
                 if reduceMotion {
                     entered = true
@@ -406,8 +437,19 @@ struct AdvisorView: View {
     private func answerBlock(
         text: String, cards: [AdvisorCard], messageID: AdvisorChatMessage.ID, proxy: ScrollViewProxy
     ) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            TypewriterMarkdownText(markdown: text) {
+        // 打字机资格（v5.11.2）：仅「本页本次出现期间经 settle 新
+        // 落地的那一条」重播——出现前已落地的（id 与出现基线相同）
+        // 与更早的历史行一律直出全文。资格由持有者的 lastSettledID
+        // （settle 同点位发布）与本视图的出现基线比对得出
+        let animate = hasAppeared
+            && session.lastSettledID == messageID
+            && settleBaseline != messageID
+        return VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+            TypewriterMarkdownText(markdown: text, animate: animate) {
+                // 滚动闸（v5.11.2 防御）：揭示期的钉底只许当前最后
+                // 一条执行——任何残余的中间行 onReveal 都不得抢走
+                // 落点（历史行已不重播，此闸是双保险）
+                guard messageID == session.messages.last?.id else { return }
                 // 打字机揭示期间把本条钉在底部，长回答不用手动追滚
                 if reduceMotion {
                     proxy.scrollTo(messageID, anchor: .bottom)
@@ -1299,8 +1341,16 @@ private struct CardInModifier: ViewModifier {
 /// 打字机只剩 revealed 化妆动画且取消即全显——v5.8 以前文本的存在
 /// 押在 .task 异步填的 @State full 上，task 被 settle 同轮的滚动/
 /// 布局反馈取消时纯文本回复整行塌空（docs/V58-WEATHER-DIAG.md）。
+/// v5.11.2 起加 animate 入参：仅本页出现期间新落地的那一条重播，
+/// 历史行直出全文不重播（docs/ADVISOR-SCROLL-DIAG.md）。
 private struct TypewriterMarkdownText: View {
     let markdown: String
+    /// 是否播放打字机揭示（v5.11.2）：仅「本页本次出现期间新落地」
+    /// 的那一条为 true（资格判定在 answerBlock）；其余历史行 false
+    /// ——revealed 初始即全文、直出全文、不重播、不发 onReveal。
+    /// 旧行为是每行进页全员从零重播，各自把列表往自己那行滚，
+    /// 最长的一条最后播完、落点被它抢走（docs/ADVISOR-SCROLL-DIAG）
+    var animate: Bool = true
     /// 揭示进度回调（节流后触发，父视图据此把本条钉在底部）
     var onReveal: () -> Void = {}
 
@@ -1309,10 +1359,15 @@ private struct TypewriterMarkdownText: View {
 
     var body: some View {
         let full = Self.render(markdown)
-        return Text(slice(full))
+        // v5.8.2 去门控红线不回退：全文同步在场、Text 常驻；
+        // animate=false 时 body 直接渲染全文（不经 revealed 切片），
+        // 行高自第一帧就是终态，不存在重播期的逐行变高与漂移
+        return Text(animate ? slice(full) : full)
             .task(id: markdown) {
                 let total = NSAttributedString(full).length
-                if reduceMotion {
+                if reduceMotion || !animate {
+                    // Reduce Motion 既有直出口径保持；历史行同路：
+                    // 直接终态，不重播、不发 onReveal
                     revealed = total
                     return
                 }
