@@ -128,6 +128,24 @@ public struct TypeSummary: Sendable, Equatable, Identifiable, Codable {
     }
 }
 
+/// 关系用量（v5.10，关系管理页行内「N 人 · M 笔」）：人数＝带该关系
+/// 记录的不重名人数，笔数＝该关系计入统计的记录数；口径与
+/// relationSummary 一致（待送出不计）。同一人可出现在多个关系下
+/// （关系是逐笔落的），各关系分别计数。
+public struct RelationUsage: Sendable, Equatable, Identifiable {
+    public var relation: String
+    public var people: Int
+    public var records: Int
+
+    public var id: String { relation }
+
+    public init(relation: String, people: Int = 0, records: Int = 0) {
+        self.relation = relation
+        self.people = people
+        self.records = records
+    }
+}
+
 public enum LedgerMath {
     /// 金额输出：¥ + 千分位（PRO-AUDIT §1.5 定版，如 ¥10,000 / ¥66.50）；
     /// 整数不带小数，非整保留两位；负数沿用旧口径 ¥-N。
@@ -270,6 +288,30 @@ public enum LedgerMath {
             map[e.relation]?.count += 1
         }
         return map.values.sorted { $0.total > $1.total }
+    }
+
+    /// 按关系用量（v5.10）：人数（不重名）＋笔数，口径与 relationSummary
+    /// 一致（待送出不计）。给关系管理页行内用量与改名/删除确认文案用——
+    /// 确认弹窗里的笔数必须与级联真正会改写的范围一致，故笔数按
+    /// 「全部记录（含待送出）」另给一版见 relationReferenceCounts。
+    public static func relationUsage(from entries: [EntrySnapshot]) -> [RelationUsage] {
+        var people: [String: Set<String>] = [:]
+        var counts: [String: Int] = [:]
+        for e in entries {
+            if e.isPendingSend { continue }
+            people[e.relation, default: []].insert(e.person)
+            counts[e.relation, default: 0] += 1
+        }
+        return counts.keys.map {
+            RelationUsage(relation: $0, people: people[$0]?.count ?? 0, records: counts[$0] ?? 0)
+        }.sorted { $0.records > $1.records }
+    }
+
+    /// 关系被引用次数（v5.10）：不分待送出与否，数的是「值等于该关系的
+    /// 记录条数」——改名级联与删除影响面按这个数说话（级联改写一切引用，
+    /// 包括待送出记录）。入参是关系字符串数组（记录与提醒分开数、口径同理）。
+    public static func relationReferenceCount(of name: String, in values: [String]) -> Int {
+        values.reduce(0) { $0 + ($1 == name ? 1 : 0) }
     }
 
     // MARK: - v4.7 图表补全聚合（纯函数，口径与上列一致：待送出不计金额/笔数）

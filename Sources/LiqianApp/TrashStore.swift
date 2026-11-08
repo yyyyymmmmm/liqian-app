@@ -212,6 +212,30 @@ enum TrashStore {
         save(list().filter { $0.id != id })
     }
 
+    /// 关系改名级联的一站（v5.10）：回收站快照里的关系值同步改写——
+    /// 否则恢复一条改名前的已删记录会把旧名带回库里，级联留残留。
+    /// 映射口径与 RelationCascade 一致（恰好等于旧名才换）。
+    static func renameRelation(from old: String, to new: String) {
+        var items = list()
+        var changed = false
+        for i in items.indices {
+            if let r = items[i].record,
+               RelationCascade.map(r.relation, from: old, to: new) != r.relation {
+                items[i].record?.relation = new
+                changed = true
+            }
+            if var recs = items[i].ledgerRecords {
+                for j in recs.indices
+                where RelationCascade.map(recs[j].relation, from: old, to: new) != recs[j].relation {
+                    recs[j].relation = new
+                    changed = true
+                }
+                items[i].ledgerRecords = recs
+            }
+        }
+        if changed { save(items) }
+    }
+
     /// 清掉超过 30 天的条目（App 启动时调用）
     static func purgeExpired() {
         let cutoff = Date().addingTimeInterval(-30 * 86_400)

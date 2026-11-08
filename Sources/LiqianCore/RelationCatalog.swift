@@ -89,6 +89,64 @@ public enum RelationCatalog {
         setCustom(custom(in: defaults).filter { $0 != name }, in: defaults)
     }
 
+    // MARK: - 改名（v5.10：用户拍板级联改变，历史记录随改名一起变）
+
+    /// 改名校验（纯函数，可单测）：规则与新增一致（去空白、≤6 字），
+    /// 但重名判定要把旧名自身排除——新名与旧名相同视为「不改」放行，
+    /// 与系统词表或其他自定义关系重名仍判 duplicate。
+    /// existing 传 all() 全量（含旧名）。
+    public static func validateRename(
+        from old: String, rawNew: String, existing: [String]
+    ) -> Result<String, RelationValidationError> {
+        let trimmed = rawNew.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .failure(.empty) }
+        if trimmed.count > maxLength { return .failure(.tooLong) }
+        if trimmed != old, existing.contains(trimmed) { return .failure(.duplicate) }
+        return .success(trimmed)
+    }
+
+    /// 目录内改名：把自定义列表里的旧名原位换成新名（顺序不变）。
+    /// 旧名不在自定义列表（系统关系/不存在）时返回 false、目录不动——
+    /// 系统关系不可改名由调用方在 UI 层拦下，这里是第二道防线。
+    /// 只动目录；记录/提醒/回收站快照的级联改写由 RelationCascade 在
+    /// 调用方逐处执行（值映射口径与本函数的新名一致）。
+    @discardableResult
+    public static func renameCustom(
+        from old: String, to new: String, in defaults: UserDefaults = .standard
+    ) -> Bool {
+        var list = custom(in: defaults)
+        guard let idx = list.firstIndex(of: old) else { return false }
+        list[idx] = new
+        setCustom(list, in: defaults)
+        // setCustom 会清洗：若新名与系统词表撞名会被剔除，改名即失败，回读确认
+        return custom(in: defaults).contains(new)
+    }
+
+    // MARK: - 排序（v5.10：自定义顺序就是选择器里自定义部分的顺序）
+
+    /// 从一份「全部关系」的新顺序里提取自定义关系的相对顺序（纯函数）。
+    /// 系统关系在 all() 里恒定居前、不参与排序持久化；管理页把整表拖动
+    /// 的结果传进来，这里只取自定义名在新顺序中的先后写回。
+    public static func extractCustomOrder(
+        from fullOrder: [String], customs: [String]
+    ) -> [String] {
+        let set = Set(customs)
+        var result = fullOrder.filter { set.contains($0) }
+        // 兜底：fullOrder 里缺失的自定义名按原序补回尾部，一个不丢
+        for name in customs where !result.contains(name) { result.append(name) }
+        return result
+    }
+
+    /// 按管理页拖动后的整表顺序重写自定义顺序（系统部分忽略）。
+    public static func applyOrder(
+        fullOrder: [String], in defaults: UserDefaults = .standard
+    ) {
+        setCustom(
+            extractCustomOrder(from: fullOrder, customs: custom(in: defaults)),
+            in: defaults
+        )
+    }
+
     /// 清洗：逐条去空白、去空、去掉与系统词表重名者、自身去重保序。
     private static func sanitized(_ list: [String]) -> [String] {
         var seen = Set(LiqianConstants.relations)
@@ -108,4 +166,23 @@ public enum RelationValidationError: Error, Equatable {
     case empty
     case tooLong
     case duplicate
+}
+
+// MARK: - 改名级联的值映射（v5.10）
+//
+// 用户拍板：改名＝级联改变。目录改名之外，所有落了旧名的引用都要改写：
+// 账目记录（GiftRecord.relation）、提醒（ReminderDay.relation）、回收站
+// 快照（BackupRecord.relation）。值映射只有一个口径——恰好等于旧名才换
+// 新名，其余原样——收敛在这里一处纯函数，App 层逐模型套用、单测证明
+// 套用后旧名零残留（old != new 时）。
+public enum RelationCascade {
+    /// 单值映射：等于旧名 → 新名；否则原样。
+    public static func map(_ value: String, from old: String, to new: String) -> String {
+        value == old ? new : value
+    }
+
+    /// 整列映射（校验/单测用）：对一组关系值套用级联。
+    public static func applied(to values: [String], from old: String, to new: String) -> [String] {
+        values.map { map($0, from: old, to: new) }
+    }
 }
