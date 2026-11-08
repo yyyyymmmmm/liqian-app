@@ -20,6 +20,9 @@ struct HomeView: View {
     @Query private var records: [GiftRecord]
     @Query private var allMembers: [LedgerMember]
     @Query private var allReminderDays: [ReminderDay]
+    /// 旗舰卡直达导出页要透传的活礼谱数据（与详情页同一口径）
+    @Query private var allSignatures: [GuestSignature]
+    @Query private var allBlessings: [VoiceBlessing]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
@@ -35,6 +38,10 @@ struct HomeView: View {
 
     @State private var personRoute: PeopleView.NameRoute?
     @State private var ledgerRoute: Ledger?
+    /// 成书旗舰卡升位态的直达落点（v5.11.6）：push 成书说明页
+    @State private var bookRoute: Ledger?
+    /// 成书旗舰卡常驻态的直达落点（v5.11.6）：sheet 导出礼谱页
+    @State private var exportTarget: Ledger?
     @State private var showNewLedger = false
     @State private var editingLedger: Ledger?
     @State private var ledgerToDelete: Ledger?
@@ -240,6 +247,17 @@ struct HomeView: View {
             .navigationDestination(item: $ledgerRoute) { ledger in
                 LedgerDetailView(ledger: ledger)
                     .navigationTransition(.zoom(sourceID: ledger.id, in: zoomSpace))
+            }
+            .navigationDestination(item: $bookRoute) { ledger in
+                BookBindingView(ledger: ledger, countedCount: countedCount(of: ledger))
+            }
+            .sheet(item: $exportTarget) { ledger in
+                LibuExportView(
+                    ledger: ledger,
+                    records: exportRecords(of: ledger),
+                    signatures: exportSignatures(of: ledger),
+                    blessings: exportBlessings(of: ledger)
+                )
             }
             .sheet(isPresented: $showNewLedger) {
                 LedgerFormView()
@@ -592,8 +610,8 @@ struct HomeView: View {
             .max { countedCount(of: $0) < countedCount(of: $1) }
     }
 
-    /// 常驻旗舰卡的落点：最近一本非示例礼簿（点卡进其详情，导出→
-    /// 装订成书在详情内）；一本真礼簿都没有时整卡不出。
+    /// 常驻旗舰卡的落点礼簿：最近一本非示例礼簿（点卡直达其导出
+    /// 礼谱页，v5.11.6）；一本真礼簿都没有时整卡不出。
     private var flagshipBookLedger: Ledger? {
         ledgers.first { !sampleIDs.contains($0.id) }
     }
@@ -602,7 +620,19 @@ struct HomeView: View {
     /// 与首页数据卡天然区分；存在感靠文案与视觉，不靠位置。
     private func bookFlagshipCard(ledger: Ledger, promoted: Bool) -> some View {
         Button {
-            ledgerRoute = ledger
+            // 落点按卡态分开（v5.11.6 成书路径缩层，BookFlagshipRouter
+            // 单测钉死）：升位＝push 直达成书说明页；常驻＝sheet 直达
+            // 导出礼谱页（与详情页导出同一呈现，装订成书行就在页内）。
+            // 旧路径（礼簿行进详情、详情内导出/成书入口）原样保留。
+            switch BookFlagshipRouter.destination(
+                state: promoted ? .promoted : .standing,
+                ledgerID: ledger.id
+            ) {
+            case .bookBinding:
+                bookRoute = ledger
+            case .export:
+                exportTarget = ledger
+            }
         } label: {
             HStack(alignment: .top, spacing: LiqianMetrics.spacingSM) {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
@@ -650,6 +680,23 @@ struct HomeView: View {
             )
         }
         .buttonStyle(ScaleOnPressButtonStyle())
+    }
+
+    // MARK: - 旗舰卡直达导出的数据透传（与 LedgerDetailView 同口径）
+
+    private func exportRecords(of ledger: Ledger) -> [GiftRecord] {
+        records
+            .filter { $0.ledgerID == ledger.id }
+            .sorted { $0.date > $1.date }
+    }
+
+    private func exportSignatures(of ledger: Ledger) -> [GuestSignature] {
+        allSignatures.filter { $0.ledgerID == ledger.id }
+    }
+
+    private func exportBlessings(of ledger: Ledger) -> [VoiceBlessing] {
+        let ids = Set(exportRecords(of: ledger).map(\.id))
+        return allBlessings.filter { ids.contains($0.recordID) }
     }
 
     // MARK: - 礼簿行口径（同 LedgersView）
