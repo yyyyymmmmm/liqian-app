@@ -90,14 +90,24 @@ widgetReceiptAt（时间戳）。App 侧 Writer 维持只写解析名一家，�
 - 备用通道里只有非第一家有数据：App 写入家不是自检解析的这家
   （解析名漂移），把该组名全文发回即可定位。
 
-## 验收（CI 侧，待回填）
+## 验收（CI 侧，实测回填）
 
-- CI run：（待回填）
-- 单测：（待回填；基线 293，新增候选集构造单测 8 例）
-- 解包验：（待回填；预期 App/Widget 均 5.11.1/72、PlugIns 仅
-  LiqianWidget.appex、无 LiqianShare.appex）
-- 零改动确认：AnalyzerFeeder、问账全链（Advisor*）、Widget 数据模型
-  与时间线策略未动（diff 文件清单可核）。
+- CI run：42464664239 completed/success。过程注记：首跑在 Install
+  Tuist 步因下载失败中断（基础设施抖动、与代码无关），同 run 重跑
+  后全步绿（SwiftLint／Build／单测／预签断言／打包／上传）。
+- 单测：日志最大 Executed 行＝**301 tests, 0 failures**（293 基线
+  ＋新增候选集构造单测 8 例，一例未掉），TEST SUCCEEDED 已核。
+- 解包验：App 与 Widget 均 **5.11.1/72**；PlugIns 仅
+  LiqianWidget.appex、**无 LiqianShare.appex**；AltIcon 18 个 PNG
+  在包内；App 与 Widget 两侧二进制均命中新回执键 widgetReceiptGroup
+  （新代码确已进包）。
+- IPA 归档：~/workspace/your_files/liqian-v5.11.1/
+  liqian-native-unsigned.ipa（4,487,752 字节，SideStore 覆盖安装、
+  数据不动）。
+- 零改动确认：git diff feat/v511-report-home..HEAD 仅 8 文件
+  （Project.swift 版本、MeView、WidgetDataView、WidgetSummary、
+  AppGroupResolver、WidgetShared、候选单测、本 NOTES）；AnalyzerFeeder、
+  问账全链（Advisor*）、语音链、Widget 数据模型与时间线策略未动。
 
 ## 真机待验（不宣称已验）
 
