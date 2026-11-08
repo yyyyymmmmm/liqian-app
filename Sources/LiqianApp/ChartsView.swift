@@ -17,6 +17,7 @@ struct ChartsView: View {
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var scope: ChartScope = .all
     @State private var selectedYear = ""
@@ -490,50 +491,49 @@ struct ChartsView: View {
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
             cardHeader("总览", caption: scope.caption(year: effectiveYear))
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                spacing: LiqianMetrics.spacingM
-            ) {
-                moneyMetric(label: "累计收", cents: totalReceived)
-                moneyMetric(label: "累计送", cents: totalGiven)
-                moneyMetric(label: "净往来（收 − 送）", cents: totalReceived - totalGiven)
-                moneyMetric(
+            // v5.3.2 统计格定版：等宽网格居中（旧 2 列左对齐、标签在上，
+            // 起始线不齐被用户圈图点名）。常规字号 3 列×2 行；无障碍
+            // 大字号退 2 列×3 行防大数字挤爆（StatCell 另有下限缩放兜底）。
+            StatGrid(columns: dynamicTypeSize.isAccessibilitySize ? 2 : 3) {
+                StatCell(
+                    label: "累计收",
+                    spokenValue: LedgerMath.fmtMoney(cents: totalReceived)
+                ) {
+                    RollingMoneyText(cents: totalReceived, style: .title2)
+                }
+                StatCell(
+                    label: "累计送",
+                    spokenValue: LedgerMath.fmtMoney(cents: totalGiven)
+                ) {
+                    RollingMoneyText(cents: totalGiven, style: .title2)
+                }
+                StatCell(
+                    label: "净往来（收 − 送）",
+                    spokenValue: LedgerMath.fmtMoney(cents: totalReceived - totalGiven)
+                ) {
+                    RollingMoneyText(cents: totalReceived - totalGiven, style: .title2)
+                }
+                StatCell(
                     label: "待回礼 · \(pendingPeople.count) 人",
-                    cents: pendingPeople.reduce(0) { $0 + $1.pendingCents }
+                    spokenValue: LedgerMath.fmtMoney(
+                        cents: pendingPeople.reduce(0) { $0 + $1.pendingCents }
+                    )
+                ) {
+                    RollingMoneyText(
+                        cents: pendingPeople.reduce(0) { $0 + $1.pendingCents },
+                        style: .title2
+                    )
+                }
+                StatCell(label: "往来人数", value: "\(people.count)", unit: "人", style: .title2)
+                StatCell(
+                    label: "场次（礼簿）",
+                    value: "\(Set(scopedRecords.map(\.ledgerID)).count)",
+                    unit: "场",
+                    style: .title2
                 )
-                countMetric(label: "往来人数", value: people.count, unit: "人")
-                countMetric(label: "场次（礼簿）", value: Set(scopedRecords.map(\.ledgerID)).count, unit: "场")
             }
         }
         .liqianCardSurface()
-    }
-
-    private func moneyMetric(label: String, cents: Int) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-            RollingMoneyText(cents: cents, style: .title2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func countMetric(label: String, value: Int, unit: String) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text("\(value)")
-                    .font(.liqianMoney(.title2, dark: colorScheme == .dark))
-                    .foregroundStyle(Palette.ink)
-                    .contentTransition(.numericText(value: Double(value)))
-                Text(unit)
-                    .font(.footnote)
-                    .foregroundStyle(Palette.stone)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 收送趋势 + 年度汇总

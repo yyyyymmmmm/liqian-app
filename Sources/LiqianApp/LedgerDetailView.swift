@@ -384,21 +384,20 @@ struct LedgerDetailView: View {
                     // 大字号下标题放行两行（v4.4），正常字号仍单行截断
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 headerSubtitle
-                HStack(spacing: LiqianMetrics.spacingM) {
-                    headerStat(label: "收礼", value: received, count: receivedCount)
-                    headerStat(label: "随礼", value: given, count: givenCount)
-                    VStack(spacing: LiqianMetrics.spacingXS) {
-                        Text("\(peopleCount)")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(Palette.ink)
-                            .contentTransition(.numericText())
-                            .animation(reduceMotion ? nil : .snappy, value: peopleCount)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        Text("人数")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                    }
+                // v5.3.2 统计格定版：三格等分居中（旧内容宽 HStack，
+                // 格子宽窄随数字长度浮动）；StatCell 自带 maxWidth
+                // .infinity，本行内自动等宽。字阶经组件与详情页统一
+                // （liqianMoney 暗色降字重，旧此处未传 dark 一并对齐）
+                HStack(spacing: LiqianMetrics.spacingS) {
+                    StatCell(
+                        label: "收礼 · \(receivedCount) 笔",
+                        value: LedgerMath.fmtMoney(cents: received)
+                    )
+                    StatCell(
+                        label: "随礼 · \(givenCount) 笔",
+                        value: LedgerMath.fmtMoney(cents: given)
+                    )
+                    StatCell(label: "人数", value: "\(peopleCount)")
                 }
             }
         }
@@ -426,20 +425,6 @@ struct LedgerDetailView: View {
         }
     }
 
-    private func headerStat(label: String, value: Int, count: Int) -> some View {
-        VStack(spacing: LiqianMetrics.spacingXS) {
-            Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianMoney(.title3))
-                .foregroundStyle(Palette.ink)
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .snappy, value: value)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text("\(label) · \(count) 笔")
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
-    }
 
     /// 封面满块 56×92（全 App 唯一满块）：朱砂 Fill 满底、竖排事由衬线（白名单
     /// moment）、印点、无高光。圆角 8 按同心公式：封面语境圆角 20 − 内边距 12 ＝ 8。

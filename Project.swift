@@ -8,8 +8,8 @@ let project = Project(
     settings: .settings(base: [
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1",
-        "MARKETING_VERSION": "5.3.1",
-        "CURRENT_PROJECT_VERSION": "57",
+        "MARKETING_VERSION": "5.3.2",
+        "CURRENT_PROJECT_VERSION": "58",
     ]),
     targets: [
         .target(
@@ -43,8 +43,8 @@ let project = Project(
                 // 版本号直写 Info.plist（v4.4 实证）：Tuist 默认模板不把
                 // 工程设置里的 MARKETING_VERSION 展开进 plist，只写字面量
                 // 才进包——首版 v4.4 解包验出仍是 1.0/1 后改走这条。
-                "CFBundleShortVersionString": "5.3.1",
-                "CFBundleVersion": "57",
+                "CFBundleShortVersionString": "5.3.2",
+                "CFBundleVersion": "58",
                 // 长按图标快捷菜单（v4.5）：静态两项——记一笔、查看待回礼。
                 // 承接在 AppDelegate（冷启动 launchOptions / 运行时 performActionFor）
                 // → ShortcutActions 写标记 → ContentView 消费，与小组件深链同守卫
@@ -67,7 +67,7 @@ let project = Project(
                 "UILaunchScreen": ["UIColorName": "LaunchBackground", "UIImageName": "LaunchImage"],
                 "NSFaceIDUsageDescription": "用 Face ID 保护你的人情账本不被旁人看到",
                 "NSSpeechRecognitionUsageDescription": "用于将语音转写为记账文字",
-                "NSMicrophoneUsageDescription": "用于语音记账，把你说的话转成文字",
+                "NSMicrophoneUsageDescription": "用于语音记账和录制语音祝福：把你说的话转成文字，或把祝福原声收进礼谱",
                 "NSCameraUsageDescription": "用于拍摄纸质礼单，识别姓名与金额",
                 // 现场模式 Live Activity（v4.5）：锁屏横幅显示本场收礼进度，
                 // 仅本地启动/更新（不走 APNs 推送），无此键 Activity.request 必失败
@@ -150,8 +150,8 @@ let project = Project(
             bundleId: "site.didichou.liqian.widget",
             deploymentTargets: iOS26,
             infoPlist: .extendingDefault(with: [
-                "CFBundleShortVersionString": "5.3.1",
-                "CFBundleVersion": "57",
+                "CFBundleShortVersionString": "5.3.2",
+                "CFBundleVersion": "58",
                 "NSExtension": [
                     "NSExtensionPointIdentifier": "com.apple.widgetkit-extension",
                 ],

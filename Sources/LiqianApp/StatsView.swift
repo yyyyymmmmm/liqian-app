@@ -49,14 +49,19 @@ struct StatsView: View {
     var body: some View {
         List {
             Section {
-                HStack(spacing: LiqianMetrics.spacingM) {
-                    summaryPair(label: "收礼", cents: yearSummary.recv)
-                    summaryPair(label: "随礼", cents: yearSummary.given)
-                    Text("共 \(yearSummary.count) 笔")
-                        .monospacedDigit()
-                        .foregroundStyle(Palette.stone)
+                // v5.3.2 统计格定版：三格等分居中（旧行内「标签＋数字」
+                // 横排配对按内容宽挤在一起，与全 App 统计排法脱节）
+                StatRow {
+                    StatCell(label: "收礼", value: LedgerMath.fmtMoney(cents: yearSummary.recv))
+                    StatCell(label: "随礼", value: LedgerMath.fmtMoney(cents: yearSummary.given))
+                    StatCell(label: "笔数", value: "\(yearSummary.count)", unit: "笔")
                 }
-                .font(.body)
+                .listRowInsets(EdgeInsets(
+                    top: LiqianMetrics.spacingSM,
+                    leading: LiqianMetrics.cardPadding,
+                    bottom: LiqianMetrics.spacingSM,
+                    trailing: LiqianMetrics.cardPadding
+                ))
             } header: {
                 Text("\(year) 年往来")
             } footer: {
@@ -163,17 +168,6 @@ struct StatsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $personRoute) { route in
             PersonDetailView(name: route.name)
-        }
-    }
-
-    private func summaryPair(label: String, cents: Int) -> some View {
-        HStack(spacing: LiqianMetrics.spacingS) {
-            Text(label)
-                .foregroundStyle(Palette.stone)
-            Text(LedgerMath.fmtMoney(cents: cents))
-                .font(.liqianMoney(.title3, dark: colorScheme == .dark))
-                .foregroundStyle(Palette.ink)
-                .contentTransition(.numericText())
         }
     }
 

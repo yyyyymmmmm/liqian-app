@@ -389,6 +389,138 @@ public struct AddFloatingButton: View {
     }
 }
 
+// MARK: - 统计格（v5.3.2 统一定版）：多指标统计块的唯一排法
+// 病根（用户圈图实锤）：旧各页统计格按内容宽度撑开——HStack 里几个
+// 内容宽 VStack 前挤后散、起始线不齐、标签与数字各行其是，看着乱。
+// 定版四条：①等宽分栏（每格 maxWidth .infinity 等分容器）；②格内
+// 数字在上、标签在下，全 App 统一（旧图表总览/问账卡的「标签在上」
+// 一并翻正）；③数字与标签均居中，中线对齐；④行列间距走
+// LiqianMetrics 令牌、数字等宽字（liqianMoney 自带 monospacedDigit）。
+// 口径红线：汇总数字颜色与字重沿用各页现状（默认墨色，v5.0.2 分界
+// 不破——本组件只是排版，不许借套组件改色）；逐笔列表行、条形图、
+// 静态成品（分享图卡固定画布）不是统计格，不入本组件。
+
+/// 统计格单元：数字（上）＋标签（下），居中，等宽分栏由本格
+/// maxWidth .infinity 与 StatRow/StatGrid 配合达成。
+public struct StatCell: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum ValueKind {
+        /// 纯文本数字：走 liqianMoney 字阶（暗色降字重）＋可选单位小字
+        case text(value: String, unit: String?, style: Font.TextStyle, color: Color)
+        /// 自定义数字视图（如图表总览的滚动金额）：调用方自备，
+        /// spokenValue 供 VoiceOver 读法（格子 combine 后默认读不到语义）
+        case custom(view: AnyView, spoken: String)
+    }
+
+    private let label: String
+    private let kind: ValueKind
+
+    public init(
+        label: String,
+        value: String,
+        unit: String? = nil,
+        style: Font.TextStyle = .title3,
+        color: Color = Palette.ink
+    ) {
+        self.label = label
+        self.kind = .text(value: value, unit: unit, style: style, color: color)
+    }
+
+    public init<V: View>(
+        label: String,
+        spokenValue: String,
+        @ViewBuilder value: () -> V
+    ) {
+        self.label = label
+        self.kind = .custom(view: AnyView(value()), spoken: spokenValue)
+    }
+
+    private var spokenValue: String {
+        switch kind {
+        case .text(let value, let unit, _, _):
+            return unit.map { "\(value)\($0)" } ?? value
+        case .custom(_, let spoken):
+            return spoken
+        }
+    }
+
+    public var body: some View {
+        VStack(spacing: LiqianMetrics.spacingXS) {
+            valueView
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(Palette.stone)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(spokenValue)")
+    }
+
+    @ViewBuilder
+    private var valueView: some View {
+        switch kind {
+        case .text(let value, let unit, let style, let color):
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.liqianMoney(style, dark: colorScheme == .dark))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    // 大数字（六位数）防挤爆格子：单行下限缩放，与
+                    // 礼簿封面卡金额同口径（0.7–0.75 带取下限更稳）
+                    .minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+                    // 数值变更过渡（旧人物/礼簿头部 headerStat 既有行为，
+                    // 随组件收敛进来；Reduce Motion 时关闭）
+                    .animation(reduceMotion ? nil : .snappy, value: value)
+                if let unit {
+                    Text(unit)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                }
+            }
+        case .custom(let view, _):
+            view
+        }
+    }
+}
+
+/// 统计单行：横排等分（格子自带 maxWidth .infinity，HStack 内自动等宽）
+public struct StatRow<Content: View>: View {
+    private let content: Content
+
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public var body: some View {
+        HStack(spacing: LiqianMetrics.spacingM) { content }
+    }
+}
+
+/// 统计网格：多行等宽分栏（列数由调用方按页面定版，行列间距同令牌）
+public struct StatGrid<Content: View>: View {
+    private let columns: Int
+    private let content: Content
+
+    public init(columns: Int, @ViewBuilder content: () -> Content) {
+        self.columns = columns
+        self.content = content()
+    }
+
+    public var body: some View {
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: LiqianMetrics.spacingM),
+                count: columns
+            ),
+            spacing: LiqianMetrics.spacingM
+        ) { content }
+    }
+}
+
 // MARK: - 按压反馈按钮样式：按下缩放 0.98（弹簧），减动效开启时不缩放
 
 public struct ScaleOnPressButtonStyle: ButtonStyle {

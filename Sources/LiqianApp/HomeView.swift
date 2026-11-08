@@ -395,36 +395,18 @@ struct HomeView: View {
                         .foregroundStyle(Palette.stone)
                         .accessibilityHidden(true)
                 }
-                HStack(spacing: LiqianMetrics.spacingL) {
-                    monthStat(label: "收礼", cents: monthReceived)
-                    monthStat(label: "随礼", cents: monthGiven)
-                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                        Text("\(monthRecords.count) 笔")
-                            .font(.liqianMoney(.title3, dark: colorScheme == .dark))
-                            .foregroundStyle(Palette.ink)
-                            .contentTransition(.numericText())
-                        Text("本月笔数")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                    }
+                // v5.3.2 统计格定版：三栏等分居中（旧内容宽 HStack
+                // 前挤后散被用户圈图点名）
+                StatRow {
+                    StatCell(label: "收礼", value: LedgerMath.fmtMoney(cents: monthReceived))
+                    StatCell(label: "随礼", value: LedgerMath.fmtMoney(cents: monthGiven))
+                    StatCell(label: "本月笔数", value: "\(monthRecords.count)", unit: "笔")
                 }
             }
             .liqianCardSurface()
         }
         // 整卡可点也要有按压反馈（与礼簿行 ScaleOnPress 同口径，不用 .plain 裸跳）
         .buttonStyle(ScaleOnPressButtonStyle())
-    }
-
-    private func monthStat(label: String, cents: Int) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(LedgerMath.fmtMoney(cents: cents))
-                .font(.liqianMoney(.title3, dark: colorScheme == .dark))
-                .foregroundStyle(Palette.ink)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
     }
 
     // MARK: - 快捷动作

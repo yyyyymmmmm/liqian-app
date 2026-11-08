@@ -120,10 +120,11 @@ struct AnnualReportView: View {
             Text("\(year) 年人情报告")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            HStack(spacing: LiqianMetrics.spacingL) {
-                headlineStat(label: "收礼", value: summary.recv, color: Palette.ink)
-                headlineStat(label: "随礼", value: summary.given, color: Palette.ink)
-                headlineStat(label: "往来人数", text: "\(peopleCount)", color: Palette.ink)
+            // v5.3.2 统计格定版：三格等分居中（旧内容宽 HStack 左排）
+            StatRow {
+                StatCell(label: "收礼", value: LedgerMath.fmtMoney(cents: summary.recv))
+                StatCell(label: "随礼", value: LedgerMath.fmtMoney(cents: summary.given))
+                StatCell(label: "往来人数", value: "\(peopleCount)")
             }
             Text("共 \(summary.count) 笔往来（待送出不计入，与全年口径一致）")
                 .font(.footnote)
@@ -134,29 +135,6 @@ struct AnnualReportView: View {
                 .lineSpacing(5)
         }
         .liqianCardSurface()
-    }
-
-    private func headlineStat(label: String, value: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianMoney(.title3))
-                .foregroundStyle(color)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
-    }
-
-    private func headlineStat(label: String, text: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-            Text(text)
-                .font(.liqianMoney(.title3))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
     }
 
     private var topCard: some View {

@@ -416,10 +416,11 @@ struct AdvisorView: View {
             cardTitle("时段对比")
             comparisonBlock(totals: payload.main, scale: scale)
             comparisonBlock(totals: payload.other, scale: scale)
-            HStack(alignment: .top, spacing: LiqianMetrics.spacingM) {
-                deltaItem(label: "收礼差", cents: payload.deltaReceivedCents)
-                deltaItem(label: "随礼差", cents: payload.deltaGivenCents)
-                deltaItem(label: "净差", cents: payload.deltaNetCents)
+            // v5.3.2 统计格定版：三项差值等分居中、数字在上
+            StatRow {
+                StatCell(label: "收礼差", value: deltaText(payload.deltaReceivedCents), style: .body)
+                StatCell(label: "随礼差", value: deltaText(payload.deltaGivenCents), style: .body)
+                StatCell(label: "净差", value: deltaText(payload.deltaNetCents), style: .body)
             }
         }
         .liqianCardSurface()
@@ -488,23 +489,19 @@ struct AdvisorView: View {
     private func totalsCard(_ payload: AdvisorTotalsCard) -> some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             cardTitle("汇总", detail: payload.totals.rangeLabel)
-            HStack(spacing: LiqianMetrics.spacingL) {
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                    Text("收礼")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.stone)
-                    Text(LedgerMath.fmtMoney(cents: payload.totals.receivedCents))
-                        .font(.liqianMoney(.title2))
-                        .foregroundStyle(Palette.ink)
-                }
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                    Text("随礼")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.stone)
-                    Text(LedgerMath.fmtMoney(cents: payload.totals.givenCents))
-                        .font(.liqianMoney(.title2))
-                        .foregroundStyle(Palette.ink)
-                }
+            // v5.3.2 统计格定版：两格等分居中、数字在上（旧标签在上
+            // 左排，与全 App 统一口径翻正）
+            StatRow {
+                StatCell(
+                    label: "收礼",
+                    value: LedgerMath.fmtMoney(cents: payload.totals.receivedCents),
+                    style: .title2
+                )
+                StatCell(
+                    label: "随礼",
+                    value: LedgerMath.fmtMoney(cents: payload.totals.givenCents),
+                    style: .title2
+                )
             }
             Text("共 \(payload.totals.recordCount) 笔")
                 .font(.footnote)
@@ -662,18 +659,6 @@ struct AdvisorView: View {
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1)
                 .frame(minWidth: 72, alignment: .trailing)
-        }
-    }
-
-    private func deltaItem(label: String, cents: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-            Text(deltaText(cents))
-                .font(.liqianMoney(.body))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(1)
         }
     }
 
@@ -862,23 +847,20 @@ struct AdvisorView: View {
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
             } else {
-                HStack(spacing: LiqianMetrics.spacingL) {
-                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                        Text("收礼")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                        Text(LedgerMath.fmtMoney(cents: received))
-                            .font(.liqianMoney(.title2))
-                            .foregroundStyle(Palette.primary)
-                    }
-                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                        Text("随礼")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
-                        Text(LedgerMath.fmtMoney(cents: given))
-                            .font(.liqianMoney(.title2))
-                            .foregroundStyle(Palette.ink)
-                    }
+                // v5.3.2 统计格定版：两格等分居中、数字在上；收礼数
+                // 沿用本卡现状 primary 色（口径沿用现状，不借机改色）
+                StatRow {
+                    StatCell(
+                        label: "收礼",
+                        value: LedgerMath.fmtMoney(cents: received),
+                        style: .title2,
+                        color: Palette.primary
+                    )
+                    StatCell(
+                        label: "随礼",
+                        value: LedgerMath.fmtMoney(cents: given),
+                        style: .title2
+                    )
                 }
                 Text("共 \(count) 笔")
                     .font(.footnote)

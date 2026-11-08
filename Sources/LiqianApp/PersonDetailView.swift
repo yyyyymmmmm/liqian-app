@@ -236,10 +236,11 @@ struct PersonDetailView: View {
 
     private var headerCard: some View {
         VStack(spacing: 0) {
-            HStack {
-                headerStat(label: "收礼合计", value: received)
-                Spacer()
-                headerStat(label: "随礼合计", value: given)
+            // v5.3.2 统计格定版：两格等分居中（旧 HStack＋Spacer 靠
+            // 格子各自 maxWidth 偶然等分，改走共享组件结构等宽）
+            StatRow {
+                StatCell(label: "收礼合计", value: LedgerMath.fmtMoney(cents: received))
+                StatCell(label: "随礼合计", value: LedgerMath.fmtMoney(cents: given))
             }
             Divider()
                 .overlay(Palette.hairline)
@@ -334,20 +335,6 @@ struct PersonDetailView: View {
         }
         .liqianCardSurface()
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func headerStat(label: String, value: Int) -> some View {
-        VStack(spacing: LiqianMetrics.spacingXS) {
-            Text(LedgerMath.fmtMoney(cents: value))
-                .font(.liqianMoney(.title3))
-                .foregroundStyle(Palette.ink)
-                .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .snappy, value: value)
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private var conclusion: String {
