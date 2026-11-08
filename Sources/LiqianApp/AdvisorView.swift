@@ -23,6 +23,10 @@ import LiqianDesign
 /// （账外问题模型直接用自身知识作答），管线末端加通用作答 lane＋
 /// AdvisorReplyConvergence 收敛裁决，任何出口必落一条可见回复；
 /// ②键盘收起三件套：滚动收键盘、点消息区收键盘、键盘附件栏收起钮。
+/// v5.8 交付机制（片一 P0，「半路丢单」根治）：会话状态与整条管线
+/// 移交 AdvisorSession（App 根持有的页面无关持有者），本视图只订阅
+/// 呈现——提问即落 pending 占位、完成原位替换、全链 45 秒总时限，
+/// 离页/切 Tab/杀进程都不再丢回复。
 struct AdvisorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
@@ -30,23 +34,19 @@ struct AdvisorView: View {
     @Query(sort: \Ledger.date, order: .reverse) private var ledgers: [Ledger]
     @StateObject private var transcriber = SpeechTranscriber()
 
-    @State private var messages: [AdvisorChatMessage] = []
-    /// 历史只在首次出现时恢复一次（之后以内存为准、每次变更回写文件）
-    @State private var loadedHistory = false
+    /// 问账会话持有者（v5.8）：消息/在途状态/落盘全在它那里（App 根
+    /// 注入），页面销毁不影响在途问答的完成与落地；本视图只订阅呈现。
+    /// 历史恢复在持有者 init 里完成，不再有视图侧 loadedHistory。
+    @EnvironmentObject private var session: AdvisorSession
     @State private var showClearConfirm = false
     /// 语音面板（v5.6）：点麦克风开会话＋面板，完成回填输入框、取消不落字
     @State private var showVoicePanel = false
     /// 回执卡点开的记录详情（既有 RecordFormView 编辑形态，与礼簿详情同口径）
     @State private var editingRecord: GiftRecord?
     @State private var input = ""
-    @State private var isAsking = false
     /// 键盘收起三件套的焦点锚（v5.7）：输入框绑定它，点空白/附件栏
     /// 收起钮都靠把这一位放掉来收键盘
     @FocusState private var composerFocused: Bool
-    /// 查账过程状态（v5.3）：按当前工具映射的人话文案，nil = 不在查账
-    @State private var activityText: String?
-    /// 答案落定触感（v4.7 审计补齐）：提问全程原无任何触感，答案 append 时 +1
-    @State private var answerTrigger = 0
     @State private var personRoute: PeopleView.NameRoute?
     /// 首屏入场（v5.3）：欢迎卡与示例签淡入上浮，Reduce Motion 时直达终态
     @State private var entered = false
@@ -77,7 +77,7 @@ struct AdvisorView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {
                         introBlock
-                        ForEach(messages) { message in
+                        ForEach(session.messages) { message in
                             messageRow(message, proxy: proxy)
                                 .id(message.id)
                                 .transition(
@@ -86,14 +86,11 @@ struct AdvisorView: View {
                                         : .opacity.combined(with: .offset(y: 8))
                                 )
                         }
-                        if isAsking {
-                            activityRow
-                        }
                     }
                     .padding(LiqianMetrics.spacingM)
                     .animation(
                         MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
-                        value: messages.count
+                        value: session.messages.count
                     )
                 }
                 // 键盘收起三件套 ①②（v5.7）：滑动消息流交互式收键盘；
@@ -103,8 +100,8 @@ struct AdvisorView: View {
                 .simultaneousGesture(
                     TapGesture().onEnded { composerFocused = false }
                 )
-                .onChange(of: messages.count) {
-                    if let last = messages.last {
+                .onChange(of: session.messages.count) {
+                    if let last = session.messages.last {
                         // Reduce Motion 时直接定位不滚动动画（v4.4）
                         if reduceMotion {
                             proxy.scrollTo(last.id, anchor: .bottom)
@@ -117,7 +114,7 @@ struct AdvisorView: View {
             composer
         }
         .background(Palette.pageBG.ignoresSafeArea())
-        .sensoryFeedback(.success, trigger: answerTrigger)
+        .sensoryFeedback(.success, trigger: session.answerTrigger)
         .navigationTitle("问账")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $personRoute) { route in
@@ -151,7 +148,7 @@ struct AdvisorView: View {
                     } label: {
                         Label("清空对话", systemImage: "trash")
                     }
-                    .disabled(messages.isEmpty)
+                    .disabled(session.messages.isEmpty)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -175,23 +172,13 @@ struct AdvisorView: View {
             titleVisibility: .visible
         ) {
             Button("清空", role: .destructive) {
-                messages = []
-                AdvisorChatStore.clear()
+                session.clear()
             }
             Button("取消", role: .cancel) {}
         } message: {
             Text("问答历史会从本机删除，账本记录不受影响。")
         }
-        .onChange(of: messages) { _, newValue in
-            AdvisorChatStore.save(newValue)
-        }
         .onAppear {
-            if !loadedHistory {
-                loadedHistory = true
-                if messages.isEmpty {
-                    messages = AdvisorChatStore.load()
-                }
-            }
             if !entered {
                 if reduceMotion {
                     entered = true
@@ -205,20 +192,22 @@ struct AdvisorView: View {
         }
     }
 
-    /// 查账过程行（v5.3）：转圈＋当前动作的人话状态（按工具映射），
-    /// 状态切换交叉淡化，不再是黑箱里的一句「正在查账…」到底
-    private var activityRow: some View {
+    /// 在途占位行（v5.8）：pending 消息的呈现——沿 v5.3 过程行样式
+    /// （转圈＋当前动作的人话状态，状态切换交叉淡化）；文案由会话
+    /// 持有者发布，离页回来照样是最新的那一句。链完成时本行被原位
+    /// 替换为正式回复（id 不变），不再有独立于消息列表的过程行。
+    private var pendingRow: some View {
         HStack(spacing: LiqianMetrics.spacingS) {
             ProgressView()
                 .controlSize(.small)
-            Text(activityText ?? "正在查账…")
+            Text(session.activityText ?? "正在查账…")
                 .font(.footnote)
                 .foregroundStyle(Palette.stone)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(
             MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
-            value: activityText
+            value: session.activityText
         )
         .transition(reduceMotion ? .identity : .opacity)
     }
@@ -274,7 +263,7 @@ struct AdvisorView: View {
                                 .liqianGlassSurface(.tinted, in: Capsule())
                         }
                         .buttonStyle(.plain)
-                        .disabled(isAsking)
+                        .disabled(session.isAsking)
                     }
                 }
             }
@@ -332,8 +321,8 @@ struct AdvisorView: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(isAsking || !inputEmpty ? Palette.primaryFill : Palette.line)
-                if isAsking {
+                    .fill(session.isAsking || !inputEmpty ? Palette.primaryFill : Palette.line)
+                if session.isAsking {
                     ProgressView()
                         .controlSize(.small)
                         .tint(.white)
@@ -346,7 +335,7 @@ struct AdvisorView: View {
             .frame(width: LiqianMetrics.minTapTarget, height: LiqianMetrics.minTapTarget)
         }
         .buttonStyle(.plain)
-        .disabled(inputEmpty || isAsking)
+        .disabled(inputEmpty || session.isAsking)
         .accessibilityLabel("发送问题")
     }
 
@@ -371,6 +360,8 @@ struct AdvisorView: View {
                         in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                     )
             }
+        case .pending:
+            pendingRow
         case .result(let result):
             resultCard(result)
         case .answer(let text, let cards):
@@ -791,7 +782,7 @@ struct AdvisorView: View {
                 Menu {
                     ForEach(draftLedgerCandidates) { ledger in
                         Button {
-                            updateDraft(messageID: messageID, draftID: draft.draftID) {
+                            session.updateDraft(messageID: messageID, draftID: draft.draftID) {
                                 $0.chosenLedgerID = ledger.id
                             }
                         } label: {
@@ -827,7 +818,7 @@ struct AdvisorView: View {
             .tint(Palette.primary)
             .disabled(target == nil)
             Button {
-                updateDraft(messageID: messageID, draftID: draft.draftID) { $0.state = .discarded }
+                session.updateDraft(messageID: messageID, draftID: draft.draftID) { $0.state = .discarded }
             } label: {
                 Text("算了")
                     .frame(minHeight: LiqianMetrics.minTapTarget)
@@ -913,30 +904,14 @@ struct AdvisorView: View {
         )
         modelContext.insert(record)
         try? modelContext.save()
-        updateDraft(messageID: messageID, draftID: draft.draftID) {
+        session.updateDraft(messageID: messageID, draftID: draft.draftID) {
             $0.state = .saved
             $0.chosenLedgerID = ledger.id
             $0.savedRecordID = record.id
         }
-        answerTrigger += 1
+        session.pulseAnswerFeedback()
     }
 
-    /// 按 draftID 定位并回写某张草稿卡的状态（改选礼簿/确认/取消共用）；
-    /// messages 变更会经 onChange 自动回写持久化文件
-    private func updateDraft(
-        messageID: AdvisorChatMessage.ID, draftID: UUID,
-        mutate: (inout AdvisorDraftRecordCard) -> Void
-    ) {
-        guard let mi = messages.firstIndex(where: { $0.id == messageID }),
-              case .answer(let text, var cards) = messages[mi].kind else { return }
-        for ci in cards.indices {
-            if case .draftRecord(var draft) = cards[ci], draft.draftID == draftID {
-                mutate(&draft)
-                cards[ci] = .draftRecord(draft)
-            }
-        }
-        messages[mi].kind = .answer(text: text, cards: cards)
-    }
 
     /// 卡片标题行（工具卡共用）：标题＋可选弱说明
     private func cardTitle(_ title: String, detail: String? = nil) -> some View {
@@ -1242,229 +1217,26 @@ struct AdvisorView: View {
         return text
     }
 
-    // MARK: - 提问管线：AI 解析意图 → 失败落规则 → 本地执行
+    // MARK: - 提问入口（v5.8：管线与状态全在 AdvisorSession）
 
+    /// 发送问题：视图只做三件事——停语音、清输入框、把账目快照与
+    /// 问题交给会话持有者；占位落盘、管线执行、45 秒时限、完成
+    /// 回写全在持有者那边，页面销毁不影响交付（见 AdvisorSession
+    /// 与 docs/V58-NOTES.md）。
     private func ask(_ raw: String) {
         let question = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty, !isAsking else { return }
+        guard !question.isEmpty, !session.isAsking else { return }
         transcriber.stop()
         input = ""
-        messages.append(AdvisorChatMessage(kind: .user(question)))
-        isAsking = true
-        activityText = "正在查账…"
-        let entries = snapshots
-        let names = peopleNames
-        let toolContext = AdvisorToolContext(
-            entries: entries,
+        session.ask(
+            question: question,
+            entries: snapshots,
             ledgers: ledgers.map {
                 AdvisorToolContext.LedgerInfo(id: $0.id, title: $0.title, type: $0.type, date: $0.date)
             },
-            today: LiqianDate.todayString()
+            people: peopleNames
         )
-        Task {
-            // v5.2 主路径：AI 就绪先走工具问答（模型调本地工具查数、再组织语言）；
-            // 工具路径任何失败（接口不支持 tools/网络/轮数耗尽）落回 v4.4
-            // 意图解析＋结构化卡片管线，卡片能力不回归。
-            if AIAccess.readiness() == .ready,
-               let answer = await answerWithTools(question: question, context: toolContext) {
-                isAsking = false
-                activityText = nil
-                messages.append(AdvisorChatMessage(kind: .answer(text: answer.text, cards: answer.cards)))
-                answerTrigger += 1
-                return
-            }
-            let intent = await resolveIntent(question: question, people: names)
-            if let intent {
-                isAsking = false
-                activityText = nil
-                messages.append(AdvisorChatMessage(kind: .result(
-                    AdvisorEngine.execute(intent, entries: entries)
-                )))
-                answerTrigger += 1
-                return
-            }
-            // v5.7 收敛段（永不沉默）：意图/规则都兜不住时，先过通用
-            // 作答 lane 让模型用自身知识回答账外问题；再由收敛器裁决
-            // 最终出口——通用回答 / 未开通兜底卡 / 真故障致歉，三者
-            // 必居其一，不再有「消息挂着没回复」的第四种结果。
-            let aiReady = AIAccess.readiness() == .ready
-            let general = aiReady ? await answerGenerally(question: question) : nil
-            isAsking = false
-            activityText = nil
-            switch AdvisorReplyConvergence.resolve(aiReady: aiReady, generalAnswer: general) {
-            case .generalAnswer(let text):
-                messages.append(AdvisorChatMessage(kind: .answer(text: text, cards: [])))
-            case .unsupportedWithoutAI:
-                messages.append(AdvisorChatMessage(kind: .result(.unsupported)))
-            case .failureApology:
-                messages.append(AdvisorChatMessage(kind: .note(
-                    AdvisorReplyConvergence.failureApologyText
-                )))
-            }
-            answerTrigger += 1
-        }
     }
-
-    /// 通用作答 lane（v5.7）：无工具的纯文本对话，账外问题（天气/
-    /// 常识/礼仪/闲聊/用法请教）在这里由模型用自身知识回答。
-    /// 任何失败（网络/接口/空回复）返回 nil，交收敛器落致歉兜底，
-    /// 本函数自己不吞不编。
-    private func answerGenerally(question: String) async -> String? {
-        guard let client = try? DeepSeekClient() else { return nil }
-        activityText = "正在整理回答…"
-        do {
-            let text = try await client.chatText(system: Self.generalSystemPrompt, user: question)
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        } catch {
-            return nil
-        }
-    }
-
-    /// 通用作答提示词：账外 lane 的纪律——用自身知识答、实时信息
-    /// 先声明拿不到再给常识、不编账目数据、不许诺没有的 App 功能。
-    private static let generalSystemPrompt = """
-        你是「礼记」的问账管家。用户刚问的这个问题与他的人情礼金账无关，或者账里没有答案。用你自己的知识直接、简洁、口语化地回答，不要提「查账」「工具」，不要假装查过他的账，也不要把用户推开说「我只管账目」。
-        需要实时信息才能答准的问题（实时天气、新闻、价格行情等）：先明说你拿不到实时数据，再给常识性的回答或建议；不许编造具体的实时数值，也不许只说「查不到」就结束。
-        不要编造用户账本里的任何金额、人名和记录。被问到这个 App 怎么用时，只介绍它确实有的功能：记人情账、问账查账、待回提醒、礼谱与报表导出、语音和拍照记账；没有的功能不要许诺。
-        """
-
-    /// 工具问答轮数上限：模型最多连查 4 轮工具，防死循环烧额度
-    private static let maxToolRounds = 4
-
-    /// 工具问答主循环：模型决定调什么工具 → 本地 AdvisorToolEngine 执行 →
-    /// 结果回填 → 直到模型给出文字答复。任何异常返回 nil（调用方降级）。
-    /// v5.3：执行走 executeDetailed 同步收集 UI 卡片（同次计算，不另查账），
-    /// 并按当前工具更新过程状态文案；轮数耗尽时卡片随 nil 一起丢弃，
-    /// 整条回答完整落回 v4.4 卡片管线，不拼半成品。
-    private func answerWithTools(
-        question: String, context: AdvisorToolContext
-    ) async -> (text: String, cards: [AdvisorCard])? {
-        guard let client = try? DeepSeekClient() else { return nil }
-        var thread: [DeepSeekChatMessage] = [
-            DeepSeekChatMessage(role: "system", content: Self.toolSystemPrompt(today: context.today)),
-            DeepSeekChatMessage(role: "user", content: question),
-        ]
-        var cards: [AdvisorCard] = []
-        for _ in 0..<Self.maxToolRounds {
-            let turn: DeepSeekTurn
-            do {
-                turn = try await client.chatTurn(
-                    messages: thread, toolsJSON: AdvisorTools.definitionsJSON()
-                )
-            } catch {
-                return nil
-            }
-            switch turn {
-            case .text(let text):
-                return (text, cards)
-            case .toolCalls(let calls):
-                if let first = calls.first {
-                    activityText = Self.activityLabel(for: first)
-                }
-                thread.append(DeepSeekChatMessage(role: "assistant", toolCalls: calls))
-                for call in calls {
-                    let outcome = AdvisorToolEngine.executeDetailed(
-                        AdvisorToolCall(name: call.name, argumentsJSON: call.arguments),
-                        context: context
-                    )
-                    if let card = outcome.card {
-                        cards.append(card)
-                    }
-                    thread.append(DeepSeekChatMessage(role: "tool", content: outcome.json, toolCallID: call.id))
-                }
-                activityText = "正在整理答案…"
-            }
-        }
-        return nil // 轮数耗尽还没结论：落回卡片管线，不硬编答案
-    }
-
-    /// 过程状态文案（按工具映射的人话）：让用户看见它正在翻哪本账，
-    /// 不再黑箱等。query_person 尽量带上人名（参数里解析，失败回通用文案）。
-    private static func activityLabel(for call: DeepSeekToolCallRef) -> String {
-        switch call.name {
-        case AdvisorTools.queryPerson:
-            if let name = toolArgString(call.arguments, key: "name") {
-                return "正在查「\(name)」的账…"
-            }
-            return "正在查这个人的账…"
-        case AdvisorTools.queryRecords:
-            return "正在逐笔翻记录…"
-        case AdvisorTools.aggregate:
-            return "正在汇总对比…"
-        case AdvisorTools.pendingList:
-            return "正在翻待回名单…"
-        case AdvisorTools.upcomingEvents:
-            return "正在看近期场次和备礼…"
-        case AdvisorTools.draftRecord:
-            return "正在整理成记账卡…"
-        default:
-            return "正在查账…"
-        }
-    }
-
-    /// 工具参数里取字符串字段（状态文案专用，宽容解析，取不到回 nil）
-    private static func toolArgString(_ argumentsJSON: String, key: String) -> String? {
-        guard let data = argumentsJSON.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let value = obj[key] as? String else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    /// 工具问答系统提示词：问答纪律写死——数字只能来自工具结果，
-    /// 查不到就明说，回答带数据口径出处。
-    private static func toolSystemPrompt(today: String) -> String {
-        """
-        你是「礼记」的问账管家，帮用户查他自己的人情礼金账。今天是 \(today)。
-        你有五个本地查账工具：query_person（查某个人）、query_records（按条件筛逐笔）、aggregate（分组汇总与两时段对比）、pending_list（待回名单）、upcoming_events（近期场次与备礼清单）。需要账目数据时必须先调工具查，不许凭印象回答。
-        另外有一个记账工具 draft_record：用户说要记一笔账（如「张三随礼了 500」「我给大舅回礼 800」「李四办满月我随了 1000」）时调它生成待确认记账卡。记账纪律：人名和金额有一项没说清，先向用户追问，绝不猜人名、绝不猜金额；金额只能用用户原话里的数字；方向分不清（是收到还是随出）也先问清再调。draft_record 只是草稿——只有用户在卡片上点「确认入账」才会真正记账，你不要说已经记好了。
-        铁律：
-        1. 回答里的每一个金额、笔数、日期、人名都只能来自工具返回的结果；工具没查到（ok 为 false、名单为空、账上没这个人）就直说「账里查不到」，绝不猜测、绝不编造、绝不拿别的数据凑。
-        2. 相对时间要换算成绝对日期再调工具：如「今年」是 \(today) 所在年份的 1 月 1 日到 12 月 31 日，「最近三个月」按今天往前推三个月。工具返回的金额单位是元。
-        3. 回答简洁口语、先给结论；涉及金额时带上口径出处，如「据你 2026 年的账」「你和大舅的全部往来里」。
-        4. 回礼建议类问题：先用 query_person 查清差额与最近往来，再结合差额给建议，并说明建议依据的数字来自账里哪笔/哪段汇总；建议金额只能引用工具结果里的数字或其明确加减，不要凭空报数。
-        5. 工具返回 ok:false 时，按 error 的意思如实告诉用户，或换个工具/参数再查一次；同一问题最多查 4 轮工具。
-        6. 账外问题（与人情账目无关的问题，如天气、常识、礼仪人情、闲聊、问这个 App 怎么用）：不要调任何查账工具，直接用你自己的知识简洁作答；不许说「我只管账目」把用户推开，也不许假装查过账。一句问题里账内账外都有时，账内部分按上面 1-5 条先查工具，账外部分在同一条回复里用自己的知识答。账外回答里不许出现编造的账目金额、人名和记录；被问到这个 App 怎么用时，只介绍它确实有的功能：记人情账、问账查账、待回提醒、礼谱与报表导出、语音和拍照记账，没有的功能不要许诺。需要实时信息才能答准的（实时天气、新闻、价格行情），先明说你拿不到实时数据，再给常识性的回答或建议，不许编一个具体的实时数值，也不许只说「查不到」就结束。
-        """
-    }
-
-    /// 意图来源顺序：AI 就绪先走 AI 解码 → 解码失败/听不懂/网络错，落规则兜底；
-    /// AI 未就绪直接规则。规则也兜不住返回 nil（UI 出 .unsupported 卡）。
-    private func resolveIntent(question: String, people: [String]) async -> AdvisorIntent? {
-        let currentYear = Calendar.current.component(.year, from: Date())
-        if AIAccess.readiness() == .ready {
-            do {
-                let client = try DeepSeekClient()
-                let data = try await client.chatJSON(system: Self.intentSystemPrompt, user: question)
-                let intent = try AdvisorIntentParse.decode(data, currentYear: currentYear)
-                if intent.kind != .unknown {
-                    return intent
-                }
-            } catch {
-                // 模型/网络/解码任一失败都不让用户白等，落规则兜底
-            }
-        }
-        return AdvisorRules.intent(from: question, people: people, currentYear: currentYear)
-    }
-
-    /// 只解析意图的提示词：明确不许输出任何金额——返回结构里也没有金额的位置，
-    /// 解码层（AdvisorIntentParse）根本不声明金额字段，模型夹带的数字会被直接丢弃。
-    private static let intentSystemPrompt = """
-        你是礼记的问账意图解析器。用户会用中文问一句关于人情礼金往来的问题，你只负责听懂他想查什么，不要回答问题本身，更不要计算或猜测任何金额。只输出一个 JSON 对象，不要输出任何其他文字：{"intent":"balance","person":null,"year":null,"direction":null,"type":null}
-        intent 取值与含义：
-        - "balance"：问和某个人谁欠谁、差额多少（如「我和大舅谁欠谁」「张三还欠我多少」），此时 person 必填；
-        - "person"：问某个人的往来明细（如「张三随了多少」「看看我和二姨的往来」），此时 person 必填；
-        - "pending"：问谁还没回礼、待回名单（如「谁还没回礼」）；
-        - "period"：问一段时间内的汇总（如「今年一共收了多少」「去年随出去多少」）；
-        - "type"：按事由问统计（如「婚礼一共收了多少」），此时 type 必填；
-        - "unknown"：以上都不是、或听不懂。
-        person：问题里的人名照抄原文，不在名单里也照抄，没有就给 null。
-        year：问今年给 "this"，去年给 "last"，明确年份给数字（如 2024），没提给 null。
-        direction：只问收礼给 "received"，只问随礼/送礼给 "given"，都问或没提给 null。
-        type：事由只能是 婚礼/满月/周岁/乔迁/寿宴/升学/开业/白事/其他 之一，没有就给 null。
-        重要：JSON 里只有 intent/person/year/direction/type 五个键，绝对不要添加金额、笔数等任何数字结果——账由 App 在本机计算。
-        """
 }
 
 /// 卡片依次浮入（v5.3）：按序号错开淡入＋轻上浮，走 Motion 令牌；

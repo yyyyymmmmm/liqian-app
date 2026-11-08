@@ -15,6 +15,10 @@ struct LiqianApp: App {
     /// Pro 权益单点（v5）：全 App 共用一个实例，各门控面只问它
     @StateObject private var entitlements = EntitlementCenter()
 
+    /// 问账会话持有者（v5.8）：页面无关地持有问账消息与在途问答，
+    /// 离页/杀进程不再丢回复（见 AdvisorSession 与 docs/V58-NOTES.md）
+    @StateObject private var advisorSession = AdvisorSession()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -23,6 +27,7 @@ struct LiqianApp: App {
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environmentObject(cloudSync)
                 .environmentObject(entitlements)
+                .environmentObject(advisorSession)
         }
         .modelContainer(cloudSync.container)
     }

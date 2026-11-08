@@ -140,20 +140,22 @@ struct DeepSeekClient {
     }
 
     /// JSON 模式对话：返回模型输出的 content 原始字节（调用方再做结构校验）
-    func chatJSON(system: String, user: String) async throws -> Data {
-        let content = try await chat(system: system, user: user, jsonMode: true)
+    /// timeout 是本腿的请求超时（v5.8：问账管线按全链总预算分腿传入，
+    /// 缺省 30 秒与旧口径一致，其他调用方不变）。
+    func chatJSON(system: String, user: String, timeout: TimeInterval = 30) async throws -> Data {
+        let content = try await chat(system: system, user: user, jsonMode: true, timeout: timeout)
         return Data(content.utf8)
     }
 
-    /// 普通文本对话（贺词生成用）
-    func chatText(system: String, user: String) async throws -> String {
-        try await chat(system: system, user: user, jsonMode: false)
+    /// 普通文本对话（贺词生成用）；timeout 口径同 chatJSON
+    func chatText(system: String, user: String, timeout: TimeInterval = 30) async throws -> String {
+        try await chat(system: system, user: user, jsonMode: false, timeout: timeout)
     }
 
-    private func chat(system: String, user: String, jsonMode: Bool) async throws -> String {
+    private func chat(system: String, user: String, jsonMode: Bool, timeout: TimeInterval) async throws -> String {
         var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -176,7 +178,7 @@ struct DeepSeekClient {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch let error as URLError {
             if error.code == .timedOut {
-                throw DeepSeekError.network("请求超时（30 秒）")
+                throw DeepSeekError.network("请求超时（\(Int(timeout.rounded())) 秒）")
             }
             throw DeepSeekError.network(error.localizedDescription)
         }
@@ -255,10 +257,11 @@ enum DeepSeekTurn {
 extension DeepSeekClient {
     /// 工具对话一轮：带 tools 定义请求，回来或文字或工具调用。
     /// 任何协议异常都抛 DeepSeekError，由调用方决定降级路径。
-    func chatTurn(messages: [DeepSeekChatMessage], toolsJSON: String) async throws -> DeepSeekTurn {
+    /// timeout 口径同 chatJSON（v5.8 分腿预算，缺省 30 秒）。
+    func chatTurn(messages: [DeepSeekChatMessage], toolsJSON: String, timeout: TimeInterval = 30) async throws -> DeepSeekTurn {
         var request = URLRequest(url: URL(string: "https://api.deepseek.com/chat/completions")!)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -281,7 +284,7 @@ extension DeepSeekClient {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch let error as URLError {
             if error.code == .timedOut {
-                throw DeepSeekError.network("请求超时（30 秒）")
+                throw DeepSeekError.network("请求超时（\(Int(timeout.rounded())) 秒）")
             }
             throw DeepSeekError.network(error.localizedDescription)
         }

@@ -14,6 +14,12 @@ import Foundation
 public struct AdvisorChatMessage: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: Codable, Equatable, Sendable {
         case user(String)
+        /// v5.8 在途占位：提问发出即与用户气泡同批落盘，链完成时由
+        /// 会话持有者原位替换为正式回复（answer/result/note）；读回时
+        /// 若仍是 pending，说明上个进程没答完（中途离页不影响、中途
+        /// 被杀才留它），由 reconcilingOrphanedPending 收敛成提示文案，
+        /// 永不留死占位。无关联值，老版本文件解码不受影响。
+        case pending
         /// v4.4 降级管线的结构化结果卡
         case result(AdvisorResult)
         /// 工具问答：结论引子文字＋同源结构化卡片
@@ -34,6 +40,25 @@ public struct AdvisorChatMessage: Codable, Equatable, Sendable, Identifiable {
 public enum AdvisorChatStore {
     /// 历史上限：超出丢最旧的，防文件无限长（对话是辅助，不是账本）
     public static let maxMessages = 120
+
+    /// 被中断占位的收敛文案（单点定义，持有者与单测共用，不在视图里散写）
+    public static let orphanedPendingNoteText =
+        "上次这个问题没答完（App 中途被关掉了），再问我一次就好。"
+
+    /// 把读回消息里的遗孤占位收敛成提示文案：在途占位只属于活着的
+    /// 进程——活进程完成时会原位替换它，凡是从磁盘读到的 pending
+    /// 都是上个进程被杀时留下的。id 与顺序不变，非 pending 消息
+    /// 原样通过；活进程内的占位不经此函数。
+    public static func reconcilingOrphanedPending(
+        _ messages: [AdvisorChatMessage]
+    ) -> [AdvisorChatMessage] {
+        messages.map { message in
+            guard case .pending = message.kind else { return message }
+            return AdvisorChatMessage(
+                id: message.id, kind: .note(orphanedPendingNoteText)
+            )
+        }
+    }
 
     /// 默认存储位置：Application Support/liqian-advisor-chat.json
     public static var defaultFileURL: URL {
