@@ -508,7 +508,7 @@ final class SpeechTranscriber: ObservableObject {
     nonisolated static func requestRecordPermissionBridge(
         completion: @escaping @Sendable (Bool) -> Void
     ) {
-        AVAudioApplication.requestRecordPermission(completion)
+        AVAudioApplication.requestRecordPermission(completionHandler: completion)
     }
 
     private func beginSession(generation gen: Int) {
