@@ -115,6 +115,30 @@ calling：请求体带 `tools`（函数定义数组）与 `tool_choice`，模型
 - 结构化卡片渲染路径（resultCard 全套）零改动，工具答复与其共存；
 - LedgerMath 既有口径零改动；意图解析/规则兜底零改动（降级依赖它们）。
 
-## 八、验收实测
+## 八、验收实测（2026-11-08 本机亲验）
 
-（CI 跑完回填）
+- CI：run 42443484957 **success**（手动 workflow_dispatch 于本分支；
+  工作流仅 main 推送自动触发——与历版同口径）。日志含
+  `** BUILD SUCCEEDED **`、`** TEST SUCCEEDED **`、
+  `presign assertions passed (2 binaries)`。
+- 单测：日志逐条去重计数 **175 个唯一用例全过、0 失败**（基线 163
+  ＋新增 AdvisorToolsTests 12 例：五工具各有正常例与空/错例）。
+- 解包验：App 与 Widget 均 **5.2.0/54**；PlugIns 只有 LiqianWidget，
+  **无 LiqianShare.appex**；二进制 strings 抽查含 query_person /
+  query_records / aggregate / pending_list / upcoming_events。
+- IPA：`~/workspace/your_files/liqian-v5.2/liqian-native-unsigned.ipa`
+  （3,646,128 字节）。
+
+## 九、真机待验（未验，不宣称已验）
+
+1. 七类问题各实测一例（覆盖表问法照问）：查人（大舅差额）、查账
+   （三月随礼名单）、对比（今年 vs 去年）、待回（名单与总额）、
+   趋势（按月）、回礼建议（先查后建议）、场合统计（婚礼汇总）——
+   核对数字与 App 内页面一致、无编造；
+2. 工具调用失败时的表现：故意断网问一句 → 应落回结构化卡片或规则
+   答复，不白屏不转圈到底；接口侧若不支持 tools（400），同理验降级；
+3. 无 Key / 未开启 AI 时的引导：清掉 Key 问一句 → 仍走规则兜底，
+   且「我的 → AI 智能助手」引导文案正常；
+4. 轮数上限：问需要多轮组合查的问题（如先筛人再比时段），确认 4 轮
+   内出答复、超限时降级而非死循环；
+5. 隐私文案与实际行为一致：输入区新文案显示正确。
