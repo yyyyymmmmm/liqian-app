@@ -57,9 +57,9 @@ enum AIReadiness {
         case .ready:
             return ""
         case .noKey:
-            return "还没填 DeepSeek 的 API Key。先到「我的 → AI 智能助手」里填上你自己的 API Key，存在本机钥匙串里，不会上传。"
+            return "还没填 DeepSeek 的 API Key。先到「我的 → AI 管家」里填上你自己的 API Key，存在本机钥匙串里，不会上传。"
         case .notEnabled:
-            return "AI 功能还没打开。先到「我的 → AI 智能助手」里把开关打开。"
+            return "AI 功能还没打开。先到「我的 → AI 管家」里把开关打开。"
         }
     }
 }
@@ -91,7 +91,7 @@ enum DeepSeekError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noKey:
-            return "还没填 DeepSeek 的 API Key，先到「我的 → AI 智能助手」里填上。"
+            return "还没填 DeepSeek 的 API Key，先到「我的 → AI 管家」里填上。"
         case .http(let code):
             if code == 401 || code == 403 {
                 return "API Key 被拒绝，请检查是否填写正确、账户余额是否充足。"

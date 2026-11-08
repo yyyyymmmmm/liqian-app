@@ -245,7 +245,7 @@ struct LibuExportView: View {
             if AIAccess.readiness() == .ready {
                 return "用你启用的 AI（DeepSeek）现写一篇，只给它事由、日期、地点、主家名和人数，不给金额。"
             }
-            return "AI 还没启用，会用内置的典雅模板成序（到「我的 → AI 智能助手」启用后可现写）。"
+            return "AI 还没启用，会用内置的典雅模板成序（到「我的 → AI 管家」启用后可现写）。"
         }
     }
 

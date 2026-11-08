@@ -349,7 +349,7 @@ struct MeView: View {
                     } label: {
                         entryLabel(
                             icon: "wand.and.stars",
-                            title: "AI 智能助手",
+                            title: "AI 管家",
                             subtitle: aiStatusText
                         )
                     }

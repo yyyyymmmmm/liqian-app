@@ -479,7 +479,7 @@ struct AdvisorView: View {
     private var unsupportedText: String {
         var text = "这个问法我还不会，去往来页搜人名也可以。"
         if AIAccess.readiness() != .ready {
-            text += "在「我的 → AI 智能助手」开通 AI 后，我能听懂更多问法。"
+            text += "在「我的 → AI 管家」开通 AI 后，我能听懂更多问法。"
         }
         return text
     }
