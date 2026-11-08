@@ -7,7 +7,8 @@ import LiqianCore
 /// 屏幕版管线（GiftBookPDF）一字不动，这里只做印厂交付层：
 /// ① 首页＝封面展开图（封面＋书脊＋封底一页，含出血；右开本排版：
 ///    左封面、右封底，下单须与印厂书面确认与本图一致）；
-/// ② 内页逐页套 3mm 出血页盒（内容原样，出血环以同纸色延展）；
+/// ② 内页逐页套 3mm 出血页盒（内容原样，出血环以同纸色延展；
+///    自第 1 页起，第 0 页封面只进展开图，不重复嵌回——v5.11.5）；
 /// ③ 末页＝「印刷参数说明」（右开本、RGB 转档打样认色、纸张建议等，
 ///    口径引 POD 调研，见 V5-NOTES）。
 /// 内页以 4 倍分辨率栅格化嵌回——印刷锐度够用且实现稳妥；封面展开图的
@@ -38,8 +39,10 @@ enum GiftBookPrintPDF {
                     context: context, doc: doc, ledger: ledger,
                     spinePt: spinePt, spreadSize: CGSize(width: spreadW, height: spreadH)
                 )
-                // ② 内页（套出血）
-                for index in 0..<doc.pageCount {
+                // ② 内页（套出血）：从屏幕版第 1 页起——第 0 页封面已进
+                // 展开图左区，再嵌一遍就是封面重复（v5.11.5 修复，取页
+                // 口径以 PrintBookSpec 为唯一事实源）
+                for index in PrintBookSpec.interiorSourceIndices(sourcePageCount: doc.pageCount) {
                     guard let page = doc.page(at: index) else { continue }
                     context.beginPage(withBounds: bleedBounds, pageInfo: [:])
                     let cg = context.cgContext
@@ -57,7 +60,8 @@ enum GiftBookPrintPDF {
                 )
                 drawSpecPage(
                     context: context, ledger: ledger,
-                    interiorPages: doc.pageCount, spineWidthMM: spineWidthMM
+                    interiorPages: PrintBookSpec.interiorPageCount(sourcePageCount: doc.pageCount),
+                    spineWidthMM: spineWidthMM
                 )
             }
         } catch {

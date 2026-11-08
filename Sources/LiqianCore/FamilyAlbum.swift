@@ -101,6 +101,28 @@ public enum PrintBookSpec {
         return max(6, Double(pageCount) * paperPerPageMM + allowanceMM)
     }
 
+    /// 印刷版内页页数（v5.11.5 修复口径）：屏幕版第 0 页是封面，已进
+    /// 封面展开图左区，不算内页。此前装配循环从第 0 页起全嵌、参数页
+    /// 与书脊估算也按全页数计，封面在印刷版里出现两次且页数多算 1。
+    /// 这里是唯一事实源——装配循环、参数页、书脊估算全取自此处，
+    /// 单测在此层钉死，装配层不许再自己数页。
+    public static func interiorPageCount(sourcePageCount: Int) -> Int {
+        max(0, sourcePageCount - 1)
+    }
+
+    /// 印刷版内页要嵌回的屏幕版页序号：从第 1 页起（跳过封面页）
+    public static func interiorSourceIndices(sourcePageCount: Int) -> [Int] {
+        guard sourcePageCount > 1 else { return [] }
+        return Array(1..<sourcePageCount)
+    }
+
+    /// 印刷版总页数＝封面展开图 1＋内页＋参数页 1；
+    /// 源为空时装配直接失败（makePrintPDF 返回 nil），总页数记 0
+    public static func assembledPageCount(sourcePageCount: Int) -> Int {
+        guard sourcePageCount > 0 else { return 0 }
+        return 1 + interiorPageCount(sourcePageCount: sourcePageCount) + 1
+    }
+
     /// 毫米 → pt
     public static func points(fromMM mm: Double) -> Double {
         mm / 25.4 * 72

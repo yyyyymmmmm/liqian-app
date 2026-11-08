@@ -26,6 +26,9 @@ struct LibuExportView: View {
     @State private var showPaywall = false
     @State private var showAlbum = false
     @State private var printURL: URL?
+    /// 印刷装配的源谱（含補記页，v5.11.5）：与屏幕版同一次生成、同一
+    /// 份谱序，只差補記开关；屏幕版（pdfURL）不带補記，给印厂的源谱带。
+    @State private var printSourceURL: URL?
     @State private var printGenerating = false
     @State private var printErrorText: String?
     /// 先点印刷版、还没生成预览时置位：预览生成完自动接着装配印刷版
@@ -224,6 +227,7 @@ struct LibuExportView: View {
                 fallbackNote = nil
                 // 印刷版沿用同一谱面，谱序变了它也一并作废
                 printURL = nil
+                printSourceURL = nil
                 printErrorText = nil
             }
             .sheet(isPresented: $showPaywall) {
@@ -279,20 +283,46 @@ struct LibuExportView: View {
                 // 没有 AI 调用时让 ProgressView 先转起来再渲染
                 await Task.yield()
             }
+            // 同一份谱序生成两份谱（v5.11.5）：印刷源谱带補記、屏幕版
+            // 不带。makePDF 按簿名写同一临时文件，先生成的印刷源谱须
+            // 立刻转存独立文件名，否则会被随后的屏幕版覆写掉。
+            var printSource: URL? = nil
+            var printSourcePages = 0
+            if let fullURL = GiftBookPDF.makePDF(
+                ledger: ledger, records: records,
+                prefaceText: preface,
+                signatures: signatures, blessings: blessings,
+                includesSupplement: true
+            ) {
+                let dest = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("print-source-\(ledger.id.uuidString).pdf")
+                try? FileManager.default.removeItem(at: dest)
+                if (try? FileManager.default.copyItem(at: fullURL, to: dest)) != nil {
+                    printSource = dest
+                    printSourcePages = PDFDocument(url: dest)?.pageCount ?? 0
+                }
+            }
             let url = GiftBookPDF.makePDF(
                 ledger: ledger, records: records,
                 prefaceText: preface,
-                signatures: signatures, blessings: blessings
+                signatures: signatures, blessings: blessings,
+                includesSupplement: false
             )
             generating = false
             if let url {
                 pdfURL = url
+                printSourceURL = printSource
                 exportTrigger += 1
                 maybeRequestReview()
-                // 书脊宽按真实页数估算（用户可在成书区手调）
-                if let doc = PDFDocument(url: url) {
-                    spineMM = PrintBookSpec.spineWidthMM(pageCount: doc.pageCount)
-                }
+                // 书脊宽按印刷源谱的内页数估算（用户可在成书区手调）：
+                // 含補記、不含封面，与印刷版参数页同口径（v5.11.5，
+                // PrintBookSpec 单点）；源谱转存失败时退屏幕版页数兜底
+                let spinePages = printSourcePages > 0
+                    ? PrintBookSpec.interiorPageCount(sourcePageCount: printSourcePages)
+                    : PrintBookSpec.interiorPageCount(
+                        sourcePageCount: PDFDocument(url: url)?.pageCount ?? 0
+                    )
+                spineMM = PrintBookSpec.spineWidthMM(pageCount: spinePages)
                 if pendingPrint {
                     pendingPrint = false
                     assemblePrint()
@@ -318,16 +348,20 @@ struct LibuExportView: View {
         }
     }
 
-    /// 装配印刷版：屏幕版 PDF 原样套出血＋封面展开图＋参数页（屏幕版不动）
+    /// 装配印刷版：源谱用含補記的印刷源谱（printSourceURL，与预览的
+    /// 屏幕版同一次生成、同一份谱序），套出血＋封面展开图＋参数页
     private func assemblePrint() {
-        guard let pdfURL else { return }
+        guard let printSourceURL else {
+            printErrorText = "印刷版装配失败，请重试。"
+            return
+        }
         printGenerating = true
         printErrorText = nil
         let spine = spineMM
         Task {
             await Task.yield()
             let url = GiftBookPrintPDF.makePrintPDF(
-                screenPDF: pdfURL, ledger: ledger, spineWidthMM: spine
+                screenPDF: printSourceURL, ledger: ledger, spineWidthMM: spine
             )
             printGenerating = false
             if let url {

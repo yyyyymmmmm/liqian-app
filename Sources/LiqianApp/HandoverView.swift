@@ -188,7 +188,8 @@ struct HandoverView: View {
         errorText = nil
         memorialURL = nil
         let url = GiftBookPDF.makePDF(
-            ledger: ledger, records: records, memorial: true
+            ledger: ledger, records: records, memorial: true,
+            includesSupplement: false
         )
         generating = false
         if let url {

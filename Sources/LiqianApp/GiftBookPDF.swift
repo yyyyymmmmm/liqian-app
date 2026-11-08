@@ -24,6 +24,10 @@ import LiqianCore
 /// 姓名列旁出「聲」小印记；汇总后、答谢前插入「簽名頁」（来宾签名图＋
 /// 姓名小字，无签名的不占位）；卷末補記之后加「祝福索引」页（姓名＋
 /// 深链二维码，需装 App 扫码聆听，页上已注明）。
+/// v5.11.5（用户 2026-11-09 拍板，修订 v2.8 定版）：補記页改为只进
+/// 印刷装配的源谱（makePDF 的 includesSupplement 参数），屏幕/基础
+/// 导出、纪念版与家族汇册不再生成——电子版末页一页空栏会被读成
+/// 空白页；drawSupplementPage 本体保留，位置口径不变。
 /// 免费版每页地脚带「礼记 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -93,7 +97,8 @@ enum GiftBookPDF {
         prefaceText: String? = nil,
         memorial: Bool = false,
         signatures: [GuestSignature] = [],
-        blessings: [VoiceBlessing] = []
+        blessings: [VoiceBlessing] = [],
+        includesSupplement: Bool
     ) -> URL? {
         let bai = ledger.isBai
         let ledgerHost = (ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -212,7 +217,14 @@ enum GiftBookPDF {
                     )
                 }
                 drawThanksPage(context: context, ledger: ledger, bai: bai, hostName: host)
-                drawSupplementPage(context: context, ledger: ledger, bai: bai)
+                // 補記页：只随印刷装配的源谱生成（v5.11.5 修订 v2.8
+                // 定版，用户 2026-11-09 拍板）——屏幕导出带它时，电子版
+                // 末页一页空栏会被读成空白页；印刷成书则需要这页手写
+                // 补记。位置不变：答谢之后、祝福索引之前（印刷内页末位
+                // 或次末位）。函数本体保留，只在此处按参数开关。
+                if includesSupplement {
+                    drawSupplementPage(context: context, ledger: ledger, bai: bai)
+                }
                 // 祝福索引（v4.2）：卷末最后；没有祝福整段不出
                 if !orderedBlessings.isEmpty {
                     drawBlessingIndexPages(

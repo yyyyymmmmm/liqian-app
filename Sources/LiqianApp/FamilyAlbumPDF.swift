@@ -35,8 +35,10 @@ enum FamilyAlbumPDF {
                 guestCount: guests,
                 location: (item.ledger.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             )
+            // 汇册各簿走屏幕版礼谱管线：補記同样不带（v5.11.5 屏幕口径）
             guard let url = GiftBookPDF.makePDF(
-                ledger: item.ledger, records: item.countedRecords, prefaceText: preface
+                ledger: item.ledger, records: item.countedRecords, prefaceText: preface,
+                includesSupplement: false
             ), let doc = PDFDocument(url: url) else { return nil }
             ledgerDocs.append(doc)
         }
