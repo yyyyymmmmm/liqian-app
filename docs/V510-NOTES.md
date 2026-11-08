@@ -3,14 +3,18 @@
 分支 `feat/v510-stats-relations`（基线 feat/v59-appearance@2be48b9），
 版本 5.10.0/70（Project.swift 六处字面量）。
 
-> **状态：代码完成并已推送，CI/IPA 未完成——被 GitHub 账户计费拦截。**
-> 两次触发 workflow_dispatch（run 42461783875 及 rerun），job 均在 1–3 秒
-> 内被平台拒绝启动，annotation 原文：「The job was not started because
-> recent account payments have failed or your spending limit needs to be
-> increased.」——不是代码失败。计费恢复后对本分支重跑 workflow 即可续完：
-> CI 真绿核验、单测数核验、解包验 5.10.0/70×2 与无 LiqianShare.appex、
-> IPA 归档到 ~/workspace/your_files/liqian-v5.10/。本机无 Swift 工具链，
-> 本地编译/单测未跑，以上验收项全部待 CI 恢复后回填。
+> **状态：验收已完成（2026-11-08）。** 仓库改公开后 Actions 拦截解除，
+> 重跑 workflow_dispatch 成功：CI run **42462059333** 全绿（build-native
+> 全步通过，含 SwiftLint／Build／预签断言／打包）；单测日志实测
+> **Executed 285 tests, 0 failures**、** TEST SUCCEEDED **（基线 271＋
+> RelationRenameTests 实测 14 例，此前简报记 13 例系少计 1 例，无缺测）；
+> 解包验：App 与 Widget 均 **5.10.0/70**，PlugIns 仅 LiqianWidget.appex、
+> 无 LiqianShare.appex，AltIcon 18 个 PNG 在包、声明 8 键与 v5.9 一致；
+> IPA 已归档 ~/workspace/your_files/liqian-v5.10/liqian-native-unsigned.ipa
+> （4,412,875 字节）。历史阻塞记录保留：先前 run 42461783875 及 rerun 曾
+> 被 GitHub 计费拦截拒绝启动（annotation：「The job was not started
+> because recent account payments have failed or your spending limit
+> needs to be increased.」），与代码无关。
 
 ## #7 人情总览（StatsView 整页重写）
 
