@@ -26,6 +26,8 @@ struct QuickSentenceView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var transcriber = SpeechTranscriber()
     @State private var text = ""
+    /// 语音面板（v5.6）：点麦克风开会话＋面板，完成回填、取消不落字
+    @State private var showVoicePanel = false
     @State private var isParsing = false
     @State private var errorText: String?
     @State private var showGuide = false
@@ -85,13 +87,11 @@ struct QuickSentenceView: View {
                     .lineLimit(2...4)
                     HStack(spacing: LiqianMetrics.spacingSM) {
                         Button {
-                            transcriber.toggle()
+                            openVoicePanel()
                         } label: {
                             Label(
-                                transcriber.isRecording
-                                    ? "停止录音"
-                                    : (transcriber.isStarting ? "正在启动…" : "语音输入"),
-                                systemImage: transcriber.isRecording ? "stop.circle.fill" : "mic"
+                                transcriber.isStarting ? "正在启动…" : "语音输入",
+                                systemImage: "mic"
                             )
                             // 符号动效枚举点：录音中麦克风 .pulse（审计 §3.5）
                             .symbolEffect(.pulse, isActive: transcriber.isRecording)
@@ -101,15 +101,6 @@ struct QuickSentenceView: View {
                         .buttonStyle(.plain)
                         .disabled(transcriber.isStarting)
                         Spacer()
-                        if transcriber.isRecording {
-                            Text("正在听，说完点停止…")
-                                .font(.footnote)
-                                .foregroundStyle(Palette.stone)
-                        } else if transcriber.isStarting {
-                            Text("正在启动麦克风…")
-                                .font(.footnote)
-                                .foregroundStyle(Palette.stone)
-                        }
                     }
                     if let speechError = transcriber.errorText {
                         Text(speechError)
@@ -165,13 +156,36 @@ struct QuickSentenceView: View {
             } message: {
                 Text(AIAccess.readiness().guideMessage)
             }
-            .onAppear {
-                transcriber.onText = { text = $0 }
+            .sheet(isPresented: $showVoicePanel, onDismiss: {
+                // 兜底：面板被非正常关掉（系统回收等）时若会话还在，
+                // 按取消处理——停录且不交付，本次文本丢弃
+                if transcriber.isRecording || transcriber.isStarting {
+                    transcriber.cancelTranscription()
+                }
+            }) {
+                VoiceInputPanel(
+                    transcriber: transcriber,
+                    onFinish: { finalText in
+                        // 提交语义同 v5.5.1 的 onText 末态：全文进
+                        // 文本框，待用户点「解析」走原解析流
+                        text = finalText
+                        showVoicePanel = false
+                    },
+                    onCancel: { showVoicePanel = false }
+                )
             }
             .onDisappear {
                 transcriber.stop()
             }
         }
+    }
+
+    /// 语音面板入口（v5.6）：先启动转写会话、再上面板；启动即失败
+    /// （设备不支持等）时面板呈现异常态＋关闭钮，不静默无反应
+    private func openVoicePanel() {
+        guard !transcriber.isRecording, !transcriber.isStarting else { return }
+        transcriber.start()
+        showVoicePanel = true
     }
 
     // MARK: - 待确认列表：逐行可改可删，底部一次保存全部
@@ -362,6 +376,18 @@ struct QuickSentenceView: View {
 // 24 音频会话已激活 → 25 输入格式 → 26 已装 tap → 27 分析器已启动 →
 // 28 首个音频已喂入 → 29 首个识别结果 → 30 结果流结束/异常；
 // 98 启动失败 / 99 启动异常。旧链步号 2–19 退役对照表见 V55-NOTES。
+//
+// 【v5.6 面板数据面】用户真机反馈 v5.5.1「能用但不专业：没有实时
+// 转文字的可见过程、没有声纹」。本类在原有编排之上多发布四样东西
+// 给 VoiceInputPanel：波形电平历史（feeder 在 tap 内算 RMS、经新增
+// @Sendable 电平钩子推送，口径见 LiqianCore.VoiceLevelMath 与
+// docs/V56-NOTES）、定稿/未定稿两段文本（累积器本来就分两段，本
+// 轮只是同步发布）、已录秒数；并新增两个面板出口语义：
+// finishTranscription（收尾冲刷后交付最终全文）与
+// cancelTranscription（丢弃不交付）。onText 保留原语义继续回调
+// （面板不再依赖它回填，两个调用方改走完成回调，见 V56-NOTES）。
+// MicTrace 步号一字未动；feeder 隔离结构一字未动（电平钩子是既有
+// @Sendable 钩子范式的第三个实例，tap 捕获名单只增两个 Sendable 值）。
 
 @MainActor
 final class SpeechTranscriber: ObservableObject {
@@ -370,6 +396,19 @@ final class SpeechTranscriber: ObservableObject {
     @Published var isStarting = false
     @Published var errorText: String?
     var onText: ((String) -> Void)?
+
+    // MARK: 语音面板数据面（v5.6）
+    /// 波形电平历史（旧→新）：feeder 经电平钩子推送、本类回主执行者
+    /// 追加，环形保留最近 waveformCapacity 个（面板柱数同一口径）
+    @Published private(set) var waveformLevels: [Float] = []
+    /// 已定稿文本（面板墨色段）：与 TranscriptAccumulator.finalizedText 同步
+    @Published private(set) var finalizedText = ""
+    /// 未定稿文本（面板灰色段）：与 TranscriptAccumulator.volatileText 同步
+    @Published private(set) var volatileText = ""
+    /// 已录秒数（面板计时）：录音开始点起算、0.25 秒刷新
+    @Published private(set) var elapsedSeconds = 0
+    /// 波形柱数＝环形缓冲容量（面板 VoiceWaveformView 引用同一口径）
+    static let waveformCapacity = 42
 
     /// 采音喂入（nonisolated，v5.5.1）：引擎/tap/转换/输入流全在
     /// AnalyzerFeeder 里，本类只同步调它的启动/收尾方法——隔离
@@ -397,6 +436,14 @@ final class SpeechTranscriber: ObservableObject {
     /// 结果消费令牌：stop 收尾的 finalize flush 完成前保持有效，让
     /// 最后一句的 final 结果仍能送达 onText；收尾完成后推进作废
     private var sessionToken = 0
+    /// 计时任务（v5.6）：录音开始时建、收尾时取消；起点单独存，
+    /// elapsedSeconds 只是它的显示值
+    private var elapsedTask: Task<Void, Never>?
+    private var recordingStartedAt: Date?
+    /// 面板「完成」的待交付回调（v5.6）：点完成时登记、收尾 finalize
+    /// 冲刷完成后以 accumulator 全文交付一次；「取消」不登记，文本
+    /// 随会话丢弃、不落任何输入框
+    private var pendingFinish: ((String) -> Void)?
 
     func toggle() {
         if isRecording {
@@ -409,6 +456,11 @@ final class SpeechTranscriber: ObservableObject {
     func start() {
         guard !isRecording, !isStarting else { return }
         errorText = nil
+        // 面板数据面清零（v5.6）：面板一打开就是干净的波形/文本/计时
+        waveformLevels = []
+        finalizedText = ""
+        volatileText = ""
+        elapsedSeconds = 0
         module = nil
         analyzer = nil
         analyzerStarted = false
@@ -592,6 +644,9 @@ final class SpeechTranscriber: ObservableObject {
                         text: String(result.text.characters),
                         isFinal: result.isFinal
                     )
+                    // 面板两段文本与累积器同步（v5.6）：定稿墨、未定稿灰
+                    self.finalizedText = self.accumulator.finalizedText
+                    self.volatileText = self.accumulator.volatileText
                     self.onText?(self.accumulator.text)
                 }
                 self.resultsEnded(token: token, error: nil)
@@ -619,6 +674,20 @@ final class SpeechTranscriber: ObservableObject {
                         guard let self, self.generation == gen else { return }
                         MicTrace.mark(step: 28, "首个音频已喂入分析器")
                     }
+                },
+                onLevel: { [weak self] level in
+                    // 电平钩子（@Sendable，音频线程触发，v5.6）：同
+                    // 首包钩子范式——只许建 Task 回主执行者追加波形
+                    // 历史（环形截断），不许直接碰隔离状态
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == gen else { return }
+                        self.waveformLevels.append(level)
+                        if self.waveformLevels.count > Self.waveformCapacity {
+                            self.waveformLevels.removeFirst(
+                                self.waveformLevels.count - Self.waveformCapacity
+                            )
+                        }
+                    }
                 }
             )
             try await analyzer.start(inputSequence: stream)
@@ -637,6 +706,19 @@ final class SpeechTranscriber: ObservableObject {
         MicTrace.mark(step: 27, "分析器已启动")
         isRecording = true
         isStarting = false
+        // 面板计时（v5.6）：自录音开始点起算，0.25 秒一刷新；
+        // teardownSession 收尾时取消。实时转写链没有 app 侧时长
+        // 上限（既有口径即无上限），计时只报已录时长、不自设截断。
+        recordingStartedAt = Date()
+        elapsedSeconds = 0
+        elapsedTask?.cancel()
+        elapsedTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, let startedAt = self.recordingStartedAt else { return }
+                self.elapsedSeconds = Int(Date().timeIntervalSince(startedAt))
+            }
+        }
     }
 
     /// 结果流结束/异常的统一入口：正常收尾时 teardown 已在跑，这里
@@ -662,16 +744,51 @@ final class SpeechTranscriber: ObservableObject {
         teardownSession()
     }
 
+    /// 面板「完成」（v5.6）：停录，并在收尾 finalize 冲刷完成后以
+    /// 最终全文回调交付一次——交付时点在 teardown 末尾，保证最后
+    /// 一句的 final 结果也在内。语义与 v5.5.1 的 onText 末态一致：
+    /// 一句话记账＝全文进文本框待解析、AI 问账＝全文进输入框待发送。
+    /// 不在录音中调用时直接交付当前累积全文（面板只在录音中亮此钮，
+    /// 此分支仅作兜底）。
+    func finishTranscription(_ completion: @escaping (String) -> Void) {
+        guard isRecording else {
+            completion(accumulator.text)
+            return
+        }
+        pendingFinish = completion
+        stop()
+    }
+
+    /// 面板「取消」（v5.6）：停录并丢弃本次文本——不登记交付回调，
+    /// 已转出的文字只活在面板展示状态里，下一轮 start() 即清零，
+    /// 任何输入框都不会被它改动。
+    func cancelTranscription() {
+        pendingFinish = nil
+        stop()
+    }
+
+    /// 「完成」交付的统一出口：登记过才交付、交付一次即注销
+    private func deliverPendingFinish() {
+        guard let finish = pendingFinish else { return }
+        pendingFinish = nil
+        finish(accumulator.text)
+    }
+
     /// 收尾（幂等，stop 与结果流自发结束共用）：关接受旗 → 停引擎 →
     /// 摘 tap → finish 输入流 → finalize 冲刷最后结果（flush 期间结果
     /// 消费令牌保持有效，最后一句不丢）→ 取消消费任务 → 停用会话。
     private func teardownSession() {
         guard teardownTask == nil else { return }
+        // 计时先停（v5.6）：无论有无会话残留都不许悬挂
+        elapsedTask?.cancel()
+        elapsedTask = nil
+        recordingStartedAt = nil
         let hasSession = analyzer != nil || feeder.hasSessionArtifacts
             || isRecording
         isRecording = false
         guard hasSession else {
             isStarting = false
+            deliverPendingFinish()
             return
         }
         // 收尾完成前保持 isStarting，挡住立刻重开与收尾打架
@@ -704,6 +821,9 @@ final class SpeechTranscriber: ObservableObject {
                 self.traceArmed = false
                 MicTrace.close(reason: "会话正常结束")
             }
+            // 面板「完成」的全文交付（v5.6）：冲刷已完成、消费任务
+            // 已取消，此刻的 accumulator.text 就是最终全文
+            self.deliverPendingFinish()
         }
     }
 }

@@ -19,18 +19,19 @@ import Speech
 //
 // 【修法】采音喂入整体搬进本类：显式 nonisolated、无任何全局执行者
 // 隔离（本工程亦无默认隔离设置，隔离只来自显式 @MainActor——本类
-// 不带）。tap 闭包只在本类方法里形成，捕获列表是显式白名单：两个
-// 锁、本次调用的局部值（converter/目标格式/continuation/首包钩子），
-// 绝不捕获 SpeechTranscriber、绝不捕获本类实例（self）——框架在任何
-// 线程调用它都没有隔离序言可断言。SpeechTranscriber（@MainActor、
-// 只管 UI 状态与编排）只同步调用本类的 start/stop 方法。
+// 不带）。tap 闭包只在本类方法里形成，捕获列表是显式白名单：三个
+// 锁、本次调用的局部值（converter/目标格式/continuation/首包钩子/
+// 电平钩子），绝不捕获 SpeechTranscriber、绝不捕获本类实例（self）
+// ——框架在任何线程调用它都没有隔离序言可断言。SpeechTranscriber
+// （@MainActor、只管 UI 状态与编排）只同步调用本类的 start/stop 方法。
 //
 // 【线程模型】状态字段（continuation/tapInstalled/sessionActivated）
 // 只在调用方串行上下文里读写：SpeechTranscriber 在 MainActor 上同步
 // 直调 start/stop 系列方法，调用不跨 await、不换线程。音频（tap）
-// 线程只碰两样东西：OSAllocatedUnfairLock 保护的接受旗/首包旗，以及
-// tap 闭包捕获的局部值（continuation 是 Sendable 结构体、converter
-// 只在 tap 串行调用里用）。类标 @unchecked Sendable 即按此模型担责。
+// 线程只碰三样东西：OSAllocatedUnfairLock 保护的接受旗/首包旗/电平
+// 表状态，以及 tap 闭包捕获的局部值（continuation 是 Sendable 结构体、
+// converter 只在 tap 串行调用里用）。类标 @unchecked Sendable 即按此
+// 模型担责。
 
 nonisolated final class AnalyzerFeeder: @unchecked Sendable {
 
@@ -41,6 +42,11 @@ nonisolated final class AnalyzerFeeder: @unchecked Sendable {
     typealias TraceHook = @Sendable (
         _ step: Int, _ name: String, _ detail: String
     ) -> Void
+
+    /// 电平钩子（v5.6 面板声纹）：tap 在音频线程算好归一化电平
+    /// （0...1、已过惯性平滑与推送节流）后触发，调用方据此回主
+    /// 执行者追加波形历史——与 onFirstBuffer 同一 @Sendable 钩子范式。
+    typealias LevelHook = @Sendable (_ level: Float) -> Void
 
     private let engine = AVAudioEngine()
 
@@ -55,6 +61,14 @@ nonisolated final class AnalyzerFeeder: @unchecked Sendable {
     /// 首个 buffer 旗：音频线程置位、每轮 startCapture 重置，只触发一次
     private let firstBufferGate = OSAllocatedUnfairLock<Bool>(initialState: false)
 
+    /// 电平表状态（v5.6）：平滑后电平＋距上次推送的累计帧数。只在
+    /// tap 音频线程读写（startCapture 在调用方线程重置），全程走锁。
+    private struct MeterState {
+        var smoothed: Float = 0
+        var framesSincePush = 0
+    }
+    private let meterState = OSAllocatedUnfairLock<MeterState>(initialState: MeterState())
+
     /// 收尾判「有没有会话残留」用（口径同 v5.5：装过 tap 或还持有
     /// 输入流 continuation 即算有残留）
     var hasSessionArtifacts: Bool { tapInstalled || continuation != nil }
@@ -67,7 +81,8 @@ nonisolated final class AnalyzerFeeder: @unchecked Sendable {
         analyzerFormat: AVAudioFormat,
         continuation: AsyncStream<Speech.AnalyzerInput>.Continuation,
         trace: TraceHook,
-        onFirstBuffer: @escaping @Sendable () -> Void
+        onFirstBuffer: @escaping @Sendable () -> Void,
+        onLevel: @escaping LevelHook
     ) throws {
         // 输入流 continuation 先接管：中途抛错时收尾仍能 finish 它
         // （口径同 v5.5——转写器在装配前已把 continuation 存好）
@@ -121,15 +136,38 @@ nonisolated final class AnalyzerFeeder: @unchecked Sendable {
         gate.withLock { $0 = true }
         let firstFlag = firstBufferGate
         firstFlag.withLock { $0 = false }
+        let meter = meterState
+        meter.withLock { $0 = MeterState() }
         // 【隔离红线】下面这个闭包的显式捕获列表就是审计面：只许有
-        // 两个锁与本次调用的局部值，绝不许出现 self（本类实例）、
+        // 锁与本次调用的局部值，绝不许出现 self（本类实例）、
         // 更绝不许出现 SpeechTranscriber 或任何 @MainActor 状态。
         // 改这个闭包的人先读文件头与 docs/V551-NOTES.md 的清点表。
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [
-            gate, firstFlag, converter, analyzerFormat, continuation, onFirstBuffer
+        // bufferSize 2048（v5.6 由 4096 改小）：48kHz 下约 43ms 一个
+        // buffer，电平推送天然落在约 23 次/秒；喂入语义不变（分析器
+        // 按流消费，不按 buffer 边界对齐）。
+        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [
+            gate, firstFlag, meter, converter, analyzerFormat, continuation, onFirstBuffer, onLevel
         ] buffer, _ in
             // 接受旗已关（收尾中）就不再喂入
             guard gate.withLock({ $0 }) else { return }
+            // 电平（v5.6 面板声纹）：对原始输入 buffer 算 RMS → dB
+            // 归一化，在锁内做惯性平滑与推送节流（间隔 ≥ 约 1/30
+            // 秒），钩子在锁外触发。音频线程只做逐采样算数与原子
+            // 写：不分配大对象、不碰 UI 状态（口径见 LiqianCore
+            // .VoiceLevelMath）。
+            let target = VoiceLevelMath.normalizedLevel(rms: Self.rms(of: buffer))
+            let pushLevel: Float? = meter.withLock { state in
+                state.smoothed = VoiceLevelMath.ballistic(
+                    previous: state.smoothed, target: target
+                )
+                state.framesSincePush += Int(buffer.frameLength)
+                guard state.framesSincePush
+                    >= VoiceLevelMath.minimumPushFrames(sampleRate: buffer.format.sampleRate)
+                else { return nil }
+                state.framesSincePush = 0
+                return state.smoothed
+            }
+            if let pushLevel { onLevel(pushLevel) }
             let converted: AVAudioPCMBuffer?
             if let converter {
                 converted = Self.convertBuffer(buffer, with: converter, to: analyzerFormat)
@@ -182,6 +220,44 @@ nonisolated final class AnalyzerFeeder: @unchecked Sendable {
                 .setActive(false, options: .notifyOthersOnDeactivation)
             sessionActivated = false
         }
+    }
+
+    /// 输入 buffer 的均方根幅度（全通道）：float 直读，int16/int32
+    /// 按满量程归一。逐采样累加（平方和用 Double 防精度溢出），不
+    /// 分配任何对象。tap 音频线程调用，供电平表换算（v5.6）。
+    static func rms(of buffer: AVAudioPCMBuffer) -> Float {
+        let frames = Int(buffer.frameLength)
+        let channels = Int(buffer.format.channelCount)
+        guard frames > 0, channels > 0 else { return 0 }
+        var sumSquares: Double = 0
+        if let data = buffer.floatChannelData {
+            for ch in 0..<channels {
+                let samples = data[ch]
+                for i in 0..<frames {
+                    let v = Double(samples[i])
+                    sumSquares += v * v
+                }
+            }
+        } else if let data = buffer.int16ChannelData {
+            for ch in 0..<channels {
+                let samples = data[ch]
+                for i in 0..<frames {
+                    let v = Double(samples[i]) / 32768.0
+                    sumSquares += v * v
+                }
+            }
+        } else if let data = buffer.int32ChannelData {
+            for ch in 0..<channels {
+                let samples = data[ch]
+                for i in 0..<frames {
+                    let v = Double(samples[i]) / 2147483648.0
+                    sumSquares += v * v
+                }
+            }
+        } else {
+            return 0
+        }
+        return Float(sqrt(sumSquares / Double(frames * channels)))
     }
 
     /// AVAudioConverter 单 buffer 转换（官方示例的 inputBlock 形状：

@@ -30,6 +30,8 @@ struct AdvisorView: View {
     /// 历史只在首次出现时恢复一次（之后以内存为准、每次变更回写文件）
     @State private var loadedHistory = false
     @State private var showClearConfirm = false
+    /// 语音面板（v5.6）：点麦克风开会话＋面板，完成回填输入框、取消不落字
+    @State private var showVoicePanel = false
     /// 回执卡点开的记录详情（既有 RecordFormView 编辑形态，与礼簿详情同口径）
     @State private var editingRecord: GiftRecord?
     @State private var input = ""
@@ -110,6 +112,23 @@ struct AdvisorView: View {
         .sheet(item: $editingRecord) { record in
             RecordFormView(existing: record)
         }
+        .sheet(isPresented: $showVoicePanel, onDismiss: {
+            // 兜底：面板被非正常关掉时若会话还在，按取消处理（不落字）
+            if transcriber.isRecording || transcriber.isStarting {
+                transcriber.cancelTranscription()
+            }
+        }) {
+            VoiceInputPanel(
+                transcriber: transcriber,
+                onFinish: { finalText in
+                    // 提交语义同 v5.5.1 的 onText 末态：全文进输入框
+                    // 待发送，不自动发问
+                    input = finalText
+                    showVoicePanel = false
+                },
+                onCancel: { showVoicePanel = false }
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -148,7 +167,6 @@ struct AdvisorView: View {
                     messages = AdvisorChatStore.load()
                 }
             }
-            transcriber.onText = { input = $0 }
             if !entered {
                 if reduceMotion {
                     entered = true
@@ -203,6 +221,14 @@ struct AdvisorView: View {
         .offset(y: reduceMotion ? 0 : (entered ? 0 : 10))
     }
 
+    /// 语音面板入口（v5.6）：先启动转写会话、再上面板；启动即失败
+    /// 时面板呈现异常态＋关闭钮，不静默无反应
+    private func openVoicePanel() {
+        guard !transcriber.isRecording, !transcriber.isStarting else { return }
+        transcriber.start()
+        showVoicePanel = true
+    }
+
     // MARK: - 输入区（示例 chips + 输入坞）
     // v5.3：示例签走 Mat.tinted 染色玻璃、麦克风落玻璃圆、发送键三态。
     // v5.4 收拾成一坨：签行贴在坞上方，坞（玻璃圆角容器）内只装
@@ -230,7 +256,7 @@ struct AdvisorView: View {
             .opacity(entered ? 1 : 0)
             .offset(y: reduceMotion ? 0 : (entered ? 0 : 8))
             if transcriber.isRecording {
-                Text("正在听，说完点停止…")
+                Text("正在录音，识别在语音面板里进行…")
                     .font(.footnote)
                     .foregroundStyle(Palette.stone)
             } else if let speechError = transcriber.errorText {
@@ -240,9 +266,9 @@ struct AdvisorView: View {
             }
             HStack(spacing: LiqianMetrics.spacingS) {
                 Button {
-                    transcriber.toggle()
+                    openVoicePanel()
                 } label: {
-                    Image(systemName: transcriber.isRecording ? "stop.circle.fill" : "mic")
+                    Image(systemName: "mic")
                         .font(.title3)
                         // 符号动效枚举点：录音中麦克风 .pulse（审计 §3.5）
                         .symbolEffect(.pulse, isActive: transcriber.isRecording)
