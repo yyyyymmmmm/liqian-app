@@ -73,9 +73,23 @@
 
 AnalyzerFeeder 零改动（diff 名单实查不在内）。
 
-## 验收（实测回填）
+## 验收（实测）
 
-（待 CI 与解包后回填）
+- CI：run 42535658738（workflow_dispatch @ feat/v5115-print-cover-fix），
+  attempt 1 经 API 逐 attempt 实查 completed/success，job build-native
+  全部步骤 success（一次通过、无重跑）；日志实查「** BUILD
+  SUCCEEDED **」「presign assertions passed (2 binaries)」。
+- 单测：日志总计行「Executed 306 tests, with 0 failures」＋
+  「** TEST SUCCEEDED **」（300 ＋ 本版新增 6，与预期一致）。
+  新增 6 个用例逐个实查 passed、无一 skipped：产物指纹用例
+  testAssembledPrintPDFCoverOnceSupplementLastInterior（0.205s）、
+  源码守卫两件（testPrintAssemblyConsumesPlanAndSkipsCover /
+  testBasePDFPageOrderAndSupplementSwitch）与调用点开关断言
+  （testSupplementSwitchAtCallSites）均实际 executed——守卫读到了
+  CI 工作区内的仓库源码，不是跳过。
+- 解包验（IPA 4,083,483 字节）：App 与 Widget 的 Info.plist 均为
+  5.11.5/76；PlugIns 仅 LiqianWidget.appex，无 LiqianShare.appex。
+- AnalyzerFeeder 零改动：本版 diff 文件名单实查不含该文件。
 
 ## 真机未验（待用户验）
 
