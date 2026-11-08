@@ -101,3 +101,17 @@ PendingPeopleView/PrepListView 均只被 MeView 引用），删不得；
 5. 家庭协作行点开是礼簿列表，任选一本进详情能看到「礼簿班子」。
 6. 示例礼簿行在数据组底部，生成/清除照常，副标题带「示例」字样。
 7. CSV 行 Pro 门控行为不变（机主构建放行直达分享；未开通走付费墙）。
+
+## 五、验收实测（2026-11-08）
+
+- 分支 feat/v501-settings-ia（基线 feat/v5-jiandao），提交 08f3328；
+  CI run 42441465340 **success**（BUILD/TEST SUCCEEDED、日志含
+  `presign assertions passed (2 binaries)`）。
+- 单测：聚合口径 **Executed 158 tests, with 0 failures**，与 v5.0
+  基线 158 一致、一例未掉。
+- 解包验：App 与 Widget 的 Info.plist 均为 **5.0.1/51**；PlugIns
+  只有 LiqianWidget.appex，**无 LiqianShare.appex**。
+- IPA：~/workspace/your_files/liqian-v5.0.1/liqian-native-unsigned.ipa
+  （3,559,951 字节）。
+- 本版无新增/删除任何子页与跳转目标，MeView 之外零文件逻辑改动
+  （仅 Project.swift 版本字面量与本文档）。
