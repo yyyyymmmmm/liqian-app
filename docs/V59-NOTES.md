@@ -146,3 +146,11 @@ ensuringNonEmpty/answerTrigger 标记在位、TypewriterMarkdownText
 真机口径分清：天气热修已在 v5.8.2 真机验过、本版原样带入；
 外观（自定义主题/换图标）与法务新文本未真机验，待验清单
 沿本 NOTES 前文各节。
+
+整合构建验收（回填）：CI run 42461200345 绿（build-native
+2m25s 全步通过）；单测 271 个、0 失败（267 外观基线＋热修带入
+4 个 ensuringNonEmpty 单测）；解包验：App/Widget 均 5.9.0/69、
+PlugIns 仅 LiqianWidget.appex、AltIcon 18 个 PNG 在包根目录、
+CFBundleAlternateIcons 8 键；App 二进制内「一句话先说清」0 处、
+新语体「你应仅邀请」命中、旧表述「请只邀请」0 处。
+整合 IPA 已覆写至 your_files/liqian-v5.9/（4,308,316 字节）。
