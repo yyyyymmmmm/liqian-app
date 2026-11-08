@@ -146,4 +146,44 @@ final class AdvisorDeliveryTests: XCTestCase {
         let reread = AdvisorChatStore.load(from: url)
         XCTAssertFalse(reread.contains { $0.kind == .pending })
     }
+
+    // MARK: - 落地断言（v5.8.2）：空回复不许落盘/呈现
+
+    /// 空 text＋无卡的 .answer 等于不存在 → 改落兜底 note
+    func testEmptyAnswerWithoutCardsBecomesApologyNote() {
+        XCTAssertEqual(
+            AdvisorChatStore.ensuringNonEmpty(.answer(text: "", cards: [])),
+            .note(AdvisorReplyConvergence.failureApologyText)
+        )
+        XCTAssertEqual(
+            AdvisorChatStore.ensuringNonEmpty(.answer(text: "  \n ", cards: [])),
+            .note(AdvisorReplyConvergence.failureApologyText)
+        )
+    }
+
+    /// 有 text 的纯文本回复原样通过（账外回答的正常形态）
+    func testTextOnlyAnswerPassesThrough() {
+        let kind = AdvisorChatMessage.Kind.answer(text: "明天多云，记得添衣。", cards: [])
+        XCTAssertEqual(AdvisorChatStore.ensuringNonEmpty(kind), kind)
+    }
+
+    /// text 为空但有卡片：卡片本身就是回复，原样通过
+    func testEmptyTextWithCardsPassesThrough() {
+        let card = AdvisorCard.totals(AdvisorTotalsCard(totals: AdvisorMoneyTotals(
+            rangeLabel: "全部时段", receivedCents: 100, givenCents: 0, recordCount: 1
+        )))
+        let kind = AdvisorChatMessage.Kind.answer(text: "", cards: [card])
+        XCTAssertEqual(AdvisorChatStore.ensuringNonEmpty(kind), kind)
+    }
+
+    /// 其余 kind 一律原样通过，断言只管 .answer
+    func testOtherKindsPassThrough() {
+        for kind in [
+            AdvisorChatMessage.Kind.user("在吗"),
+            .pending,
+            .note("查不到这个人"),
+        ] {
+            XCTAssertEqual(AdvisorChatStore.ensuringNonEmpty(kind), kind)
+        }
+    }
 }

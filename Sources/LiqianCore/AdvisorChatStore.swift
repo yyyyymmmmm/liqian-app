@@ -60,6 +60,24 @@ public enum AdvisorChatStore {
         }
     }
 
+    /// 落地前断言（v5.8.2 防御纵深）：一条 .answer 若 text 去空白后
+    /// 为空、且没有任何卡片，它在屏上等于不存在——无论今后哪条新
+    /// 路径造出这种回复，会话持有者 settle 落地前一律改落 .note
+    /// 兜底文案，绝不落空回复。数据层本已三重验空（chatTurn 空
+    /// content 抛错、通用 lane trim 验空、收敛器再验），此为呈现前
+    /// 最后一道（见 docs/V58-WEATHER-DIAG.md 修复 2）。其余 kind
+    /// 与「有字或有卡」的 .answer 一律原样通过。
+    public static func ensuringNonEmpty(
+        _ kind: AdvisorChatMessage.Kind
+    ) -> AdvisorChatMessage.Kind {
+        if case .answer(let text, let cards) = kind,
+           text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           cards.isEmpty {
+            return .note(AdvisorReplyConvergence.failureApologyText)
+        }
+        return kind
+    }
+
     /// 默认存储位置：Application Support/liqian-advisor-chat.json
     public static var defaultFileURL: URL {
         let base = FileManager.default.urls(
