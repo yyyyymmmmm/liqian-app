@@ -145,7 +145,7 @@ struct VoiceInputPanel: View {
         if reduceMotion {
             proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
         } else {
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(.default) {
                 proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
             }
         }

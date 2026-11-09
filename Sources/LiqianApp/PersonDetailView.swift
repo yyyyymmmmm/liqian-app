@@ -97,64 +97,76 @@ struct PersonDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: LiqianMetrics.spacingSM) {
-                headerCard
-                if !personDays.isEmpty {
-                    reminderDaysCard
-                }
-                suggestionCard
-                if personRecords.isEmpty {
+        // v5.14 全原生整改：整页 ScrollView＋VStack 手堆卡片 → List＋
+        // insetGrouped（与 LedgerDetailView 等其余详情页同构）；统计头、
+        // 重要日子、回礼参考各成 Section，往来记录是真正的列表行
+        // （系统分隔/复用，左滑与长按菜单同 LedgerDetail 口径）。
+        List {
+            Section {
+                headerContent
+            }
+            if !personDays.isEmpty {
+                reminderDaysSection
+            }
+            suggestionSection
+            if personRecords.isEmpty {
+                Section {
                     ContentUnavailableView {
                         Label("还没有往来记录", systemImage: "person.crop.circle")
                     } description: {
                         Text("与这位亲友的往来会记在这里。")
                     }
-                    .padding(.top, LiqianMetrics.spacingXL)
-                } else {
-                    // 时间线＝单张分组容器：一张卡内 hairline 分隔的行列，不再每笔一张浮卡
-                    VStack(spacing: 0) {
-                        ForEach(Array(personRecords.enumerated()), id: \.element.id) { idx, r in
-                            if idx > 0 {
-                                Divider()
-                                    .overlay(Palette.hairline)
-                                    .padding(.leading, LiqianMetrics.spacingM)
-                            }
-                            timelineRow(r)
-                                // 长按菜单四动作（v4.4 与礼簿详情页同口径同序）：
-                                // 编辑（与点行同效）/签名/语音祝福/删除（垫底标红）
-                                .contextMenu {
-                                    Button {
-                                        formMode = .edit(r)
-                                    } label: {
-                                        Label("编辑", systemImage: "pencil")
-                                    }
-                                    Button {
-                                        signatureRecord = r
-                                    } label: {
-                                        Label("请来宾签名", systemImage: "signature")
-                                    }
-                                    Button {
-                                        blessingRecord = r
-                                    } label: {
-                                        Label("语音祝福", systemImage: "waveform")
-                                    }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        recordToDelete = r
-                                    } label: {
-                                        Label("删除", systemImage: "trash")
-                                    }
-                                }
-                        }
-                    }
-                    .liqianCardSurface(padding: 0)
-                    // 时间线行增删动画（v4.4）
-                    .animation(reduceMotion ? nil : .snappy, value: personRecords.map(\.id))
+                    .listRowBackground(Color.clear)
                 }
+            } else {
+                Section {
+                    ForEach(personRecords) { r in
+                        timelineRow(r)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    recordToDelete = r
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                                Button {
+                                    formMode = .edit(r)
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
+                            }
+                            // 长按菜单四动作（v4.4 与礼簿详情页同口径同序）：
+                            // 编辑（与点行同效）/签名/语音祝福/删除（垫底标红）
+                            .contextMenu {
+                                Button {
+                                    formMode = .edit(r)
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
+                                Button {
+                                    signatureRecord = r
+                                } label: {
+                                    Label("请来宾签名", systemImage: "signature")
+                                }
+                                Button {
+                                    blessingRecord = r
+                                } label: {
+                                    Label("语音祝福", systemImage: "waveform")
+                                }
+                                Divider()
+                                Button(role: .destructive) {
+                                    recordToDelete = r
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                    }
+                }
+                // 时间线行增删动画（v4.4，与 LedgerDetail 同口径）
+                .animation(reduceMotion ? nil : .snappy, value: personRecords.map(\.id))
             }
-            .padding(LiqianMetrics.spacingM)
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
         .background(Palette.groupedBackground.ignoresSafeArea())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
@@ -234,7 +246,7 @@ struct PersonDetailView: View {
         deleteTrigger += 1
     }
 
-    private var headerCard: some View {
+    private var headerContent: some View {
         VStack(spacing: 0) {
             // v5.3.2 统计格定版：两格等分居中（旧 HStack＋Spacer 靠
             // 格子各自 maxWidth 偶然等分，改走共享组件结构等宽）
@@ -257,16 +269,13 @@ struct PersonDetailView: View {
                     .contentTransition(.numericText())
             }
         }
-        .liqianCardSurface()
     }
 
     /// 重要日子只读区（v3.0）：只展示这个人的日子与下一次时间，
     /// 编辑走「管理提醒」进人情提醒页，不在本页改数据。
-    private var reminderDaysCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            Text("重要日子")
-                .font(.headline)
-                .foregroundStyle(Palette.ink)
+    @ViewBuilder
+    private var reminderDaysSection: some View {
+        Section {
             ForEach(personDays) { day in
                 let occurrence = ReminderMath.nextOccurrence(
                     calendarKind: day.calendarKind, month: day.month, day: day.day, from: Date()
@@ -293,48 +302,49 @@ struct PersonDetailView: View {
                     .font(.subheadline)
             }
             .tint(Palette.primary)
+        } header: {
+            Text("重要日子")
         }
-        .liqianCardSurface()
     }
 
-    /// 回礼参考卡（v4.3）：有依据出区间＋建议值＋理由逐行；
+    /// 回礼参考区（v4.3）：有依据出区间＋建议值＋理由逐行；
     /// 没收过他的礼（advice == nil）出回退文案，不瞎给数
-    private var suggestionCard: some View {
-        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            Text("回礼参考")
-                .font(.headline)
-                .foregroundStyle(Palette.ink)
-            if let a = advice {
-                HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
-                    Text("\(LedgerMath.fmtMoney(cents: a.lowerCents)) – \(LedgerMath.fmtMoney(cents: a.upperCents))")
-                        .font(.liqianMoney(.title3))
-                        .foregroundStyle(Palette.ink)
-                        .contentTransition(.numericText())
-                    Text("可参考 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.primary)
-                        .contentTransition(.numericText())
-                }
-                VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
-                    ForEach(a.reasons, id: \.self) { reason in
-                        Text("· \(reason)")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.stone)
+    @ViewBuilder
+    private var suggestionSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                if let a = advice {
+                    HStack(alignment: .firstTextBaseline, spacing: LiqianMetrics.spacingS) {
+                        Text("\(LedgerMath.fmtMoney(cents: a.lowerCents)) – \(LedgerMath.fmtMoney(cents: a.upperCents))")
+                            .font(.liqianMoney(.title3))
+                            .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
+                        Text("可参考 \(LedgerMath.fmtMoney(cents: a.suggestedCents))")
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.primary)
+                            .contentTransition(.numericText())
                     }
+                    VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
+                        ForEach(a.reasons, id: \.self) { reason in
+                            Text("· \(reason)")
+                                .font(.footnote)
+                                .foregroundStyle(Palette.stone)
+                        }
+                    }
+                    Text("只是按你和 \(name) 的往来记录算的，仅供参考，量力而行。")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.stone)
+                } else {
+                    Text("还没收过 \(name) 的礼，没有可参考的往来记录。下次他办事，按当地通常的份量和你们的关系拿捏即可。")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.stone)
+                        .lineSpacing(5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text("只是按你和 \(name) 的往来记录算的，仅供参考，量力而行。")
-                    .font(.footnote)
-                    .foregroundStyle(Palette.stone)
-            } else {
-                Text("还没收过 \(name) 的礼，没有可参考的往来记录。下次他办事，按当地通常的份量和你们的关系拿捏即可。")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.stone)
-                    .lineSpacing(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+        } header: {
+            Text("回礼参考")
         }
-        .liqianCardSurface()
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var conclusion: String {
@@ -368,8 +378,6 @@ struct PersonDetailView: View {
                 Spacer()
                 SignedMoneyText(cents: r.amountCents, direction: r.direction, bai: isBai)
             }
-            .padding(.horizontal, LiqianMetrics.spacingM)
-            .padding(.vertical, LiqianMetrics.spacingSM)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
