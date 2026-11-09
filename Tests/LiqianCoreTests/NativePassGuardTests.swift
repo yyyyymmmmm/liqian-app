@@ -117,7 +117,7 @@ final class NativePassGuardTests: XCTestCase {
         XCTAssertFalse(window.contains("extraBounce"), "落印不得再有自研曲线参数")
         XCTAssertFalse(window.contains("interactiveSpring"), "落印不得再有自研弹簧参数")
         let tokens = try repoSource("Sources/LiqianDesign/DesignTokens.swift")
-        XCTAssertFalse(tokens.contains("sealIn"), "DesignTokens 不得再定义 sealIn 令牌")
+        XCTAssertFalse(tokens.contains("let sealIn"), "DesignTokens 不得再定义 sealIn 令牌（退役注释提及旧名不算定义）")
     }
 
     // MARK: - 金额输入净化（纯函数）
