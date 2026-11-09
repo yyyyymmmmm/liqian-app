@@ -78,16 +78,35 @@
   与进页 .task）、ContentView（加 modelContext 与三处同步钩子）、
   CloudSync（Schema 加两模型）、Project.swift（版本号）。
 - 婚礼独立页服务 wish.inkroot.cn 未动（两套独立服务）。
-- AnalyzerFeeder 零改动（diff 名单实查，验收段回填）。
+- AnalyzerFeeder 零改动（已按提交 diff 名单实查，不在改动清单内）。
 
 ## 真链路自测（脚本层，键从 secrets 文件读、只记状态不记键值）
-（待回填）
+2026-11-09 本机脚本（curl＋浏览器 UA；python urllib 被 Cloudflare
+1010 拦截后改此通道）按 App 同款流程全 8 步 PASS：
+1. POST /api/events（Bearer 配发键）→ 201，hostSecret 43 字符、
+   publicToken 32 字符，字段齐全；
+2. POST /g/<token>/submit（500 元）→ 200 ok；
+3. GET submissions 全量 → count=1、amountCents=50000、closed=false；
+4. since=游标原文（+ 编码为 %2B）增量拉取 → count=0（严格晚于口径成立）；
+5. 错 secret → 401；
+6. DELETE submission → deleted=true；
+7. POST close → closed=true（幂等）；
+8. 清理后 GET → count=0、closed=true。
+另：首个试建的孤儿场次已 close 清理，自测不留生产数据。
 
-## 验收（待回填）
-- CI：
-- 单测：
-- 解包验：
-- IPA：
+## 验收
+- CI：run 42538284505 attempt 1 completed/success（首跑 42537763588
+  因 GuestTime 静态 formatter 触 Swift 6 Sendable 检查失败，
+  改现构造后修复提交 982797e 重跑通过）；workflow 内
+  「Generate guest secrets」「Assert guest secrets generated」两步 success。
+- 单测：Executed 324 tests, 0 failures（310 基线＋新增 GuestSyncTests 14 例：
+  去重 3／游标 3／编码 1／时间 2／映射 2／DTO 解码 2／模型状态 1）。
+- 解包验：App 与 Widget 均 5.12.0/78；PlugIns 只有 LiqianWidget.appex、
+  无 LiqianShare.appex；全包 grep 配发键明文零命中；按掩码算法
+  （XOR＋base64）复算的 blob 在 App 二进制中命中——证 CI 产物
+  内嵌真键的掩码形态、非占位。
+- IPA：~/workspace/your_files/liqian-v5.12.0/liqian-native-unsigned.ipa
+  （4,270,761 字节）。
 
 ## 如实声明：真机未验
 待验（真机）：生成宾客码并出码、微信扫码打开宾客页填写提交、
