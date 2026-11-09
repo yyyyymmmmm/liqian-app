@@ -34,6 +34,8 @@ struct AppearanceView: View {
     @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
     /// 语言偏好（v5.13）：三档即时生效（根视图据存储重挂子树）
     @AppStorage(AppLanguagePreference.storageKey) private var languageRaw = AppLanguagePreference.system.rawValue
+    /// 界面字号档（v5.13）：三档即时生效（根视图据存储算保底注入）
+    @AppStorage(AppTextSizeTier.storageKey) private var textSizeTierRaw = AppTextSizeTier.standard.rawValue
     @AppStorage(AppTheme.customBaseStorageKey) private var customBaseHexString = ""
 
     /// ColorPicker 草稿色：拖动中只改草稿（整 App 重挂不能被拖动连续
@@ -80,6 +82,36 @@ struct AppearanceView: View {
                 Text("语言")
             } footer: {
                 Text("界面、引导和导出的礼谱都用所选语言；礼簿名、人名、备注是你填的内容，不转换。")
+            }
+
+            // 字号（v5.13）：系统字号之上三档保底，只放大界面；
+            // 导出的礼谱与图卡是定版版式，字号不跟随。
+            Section {
+                ForEach(AppTextSizeTier.allCases, id: \.rawValue) { tier in
+                    Button {
+                        textSizeTierRaw = tier.rawValue
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            Text(textSizeLabel(tier))
+                                .foregroundStyle(Palette.ink)
+                            Spacer()
+                            if textSizeTierRaw == tier.rawValue {
+                                Image(systemName: "checkmark")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Palette.primary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(textSizeTierRaw == tier.rawValue ? "当前字号" : "")
+                }
+            } header: {
+                Text("字号")
+            } footer: {
+                Text("在系统字号之上放大界面文字；系统字号更大时按系统的来。导出的礼谱、图卡字号不变。")
             }
 
             Section {
@@ -139,6 +171,15 @@ struct AppearanceView: View {
         case .system: return "跟随系统"
         case .simplified: return "简体"
         case .traditional: return "繁体"
+        }
+    }
+
+    /// 字号档位名
+    private func textSizeLabel(_ tier: AppTextSizeTier) -> String {
+        switch tier {
+        case .standard: return "标准"
+        case .large: return "大"
+        case .extraLarge: return "特大"
         }
     }
 

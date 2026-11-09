@@ -16,6 +16,21 @@ struct ContentView: View {
     /// 语言偏好（v5.13）：纳入根身份键，切换即重挂整棵子树，
     /// 代码拼装的串（L10n）与静态字面一并即时换语言，不必重启
     @AppStorage(AppLanguagePreference.storageKey) private var languageRaw = AppLanguagePreference.system.rawValue
+    /// 界面字号档（v5.13）：与系统 Dynamic Type 取大（只设保底），
+    /// 环境注入在根视图修饰链上即时生效
+    @AppStorage(AppTextSizeTier.storageKey) private var textSizeTierRaw = AppTextSizeTier.standard.rawValue
+    @Environment(\.dynamicTypeSize) private var systemTypeSize
+
+    /// 生效字号：系统值与所选档保底的较大者（Core 纯函数定口径）
+    private var effectiveTypeSize: DynamicTypeSize {
+        let all = DynamicTypeSize.allCases
+        let systemIndex = all.firstIndex(of: systemTypeSize) ?? 3
+        let target = TextSizeScale.targetIndex(
+            systemIndex: systemIndex,
+            tier: AppTextSizeTier(storedRaw: textSizeTierRaw)
+        )
+        return all[min(target, all.count - 1)]
+    }
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Query private var allRecords: [GiftRecord]
@@ -150,6 +165,9 @@ struct ContentView: View {
         // 让 Palette 的主题动态色即时重解析（切换无须重启）。
         // v5.9：自定义主题下身份键拼入基色——只换基色不换主题也要重挂。
         .preferredColorScheme(appTheme.colorScheme)
+        // 界面字号三档（v5.13）：系统 Dynamic Type 之上设保底（Core
+        // TextSizeScale），语义字体的主要界面随之缩放；导出字号不经此路。
+        .dynamicTypeSize(effectiveTypeSize)
         .id((appTheme == .custom ? "custom-\(customThemeBaseHex)" : appThemeRaw) + "-lang-" + languageRaw)
         .onAppear {
             if privacyLockEnabled {
