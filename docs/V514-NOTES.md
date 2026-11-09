@@ -47,4 +47,8 @@
 - ConcentricRectangle 在礼簿卡上的实际推导圆角（须真机/渲染核对与旧 4pt 的差异）；
 - 记一笔 Form 化后的整页观感、decimalPad 输入与净化函数的跟手程度、落印 .bouncy 的盖印观感与旧曲线差异。
 
-（CI/解包回填见下方追记）
+验收追记（实际结果）：
+- CI：run 42548138112，attempt 级 API 实查 attempt 1 = completed/success（首轮 42547365157 曾因守卫断言过宽——`tokens.contains("sealIn")` 命中退役注释文字——1 例失败，已收窄为查定义后绿）。
+- 单测：372 例执行、0 失败（363 基线＋9 例 NativePassGuardTests）。
+- 解包验：App Info.plist = 5.14.0/81；Widget Info.plist = 5.14.0/81；PlugIns 仅 LiqianWidget.appex，无 LiqianShare.appex；IPA 4,420,086 字节，落 `~/workspace/your_files/liqian-v5.14.0/liqian-native-unsigned.ipa`。
+- diff 名单自查：AnalyzerFeeder 不在改动名单内（零改动红线守住）。
