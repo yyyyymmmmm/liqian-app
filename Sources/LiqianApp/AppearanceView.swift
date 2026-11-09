@@ -32,6 +32,8 @@ private struct AccentPreset: Identifiable {
 /// 小组件读不到 App 主题，用固定默认色对（v5.1 既定边界，自定义色同理）。
 struct AppearanceView: View {
     @AppStorage(AppTheme.storageKey) private var appThemeRaw = AppTheme.day.rawValue
+    /// 语言偏好（v5.13）：三档即时生效（根视图据存储重挂子树）
+    @AppStorage(AppLanguagePreference.storageKey) private var languageRaw = AppLanguagePreference.system.rawValue
     @AppStorage(AppTheme.customBaseStorageKey) private var customBaseHexString = ""
 
     /// ColorPicker 草稿色：拖动中只改草稿（整 App 重挂不能被拖动连续
@@ -50,6 +52,36 @@ struct AppearanceView: View {
 
     var body: some View {
         List {
+            // 语言（v5.13 语言全跟随）：界面、首开引导与导出的礼谱
+            // 都跟随；人名、礼簿名、备注等用户填写的内容不转换。
+            Section {
+                ForEach(AppLanguagePreference.allCases, id: \.rawValue) { pref in
+                    Button {
+                        languageRaw = pref.rawValue
+                    } label: {
+                        HStack(spacing: LiqianMetrics.spacingSM) {
+                            Text(L10n.string(languageLabel(pref)))
+                                .foregroundStyle(Palette.ink)
+                            Spacer()
+                            if languageRaw == pref.rawValue {
+                                Image(systemName: "checkmark")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Palette.primary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .frame(minHeight: LiqianMetrics.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(languageRaw == pref.rawValue ? "当前语言" : "")
+                }
+            } header: {
+                Text("语言")
+            } footer: {
+                Text("界面、引导和导出的礼谱都用所选语言；礼簿名、人名、备注是你填的内容，不转换。")
+            }
+
             Section {
                 ForEach(AppTheme.allCases) { theme in
                     Button {
@@ -98,6 +130,15 @@ struct AppearanceView: View {
         .onDisappear {
             commitTask?.cancel()
             commitDraftIfNeeded()
+        }
+    }
+
+    /// 语言档位名（字面走本地化表：繁体档下自动出繁體字形）
+    private func languageLabel(_ pref: AppLanguagePreference) -> String {
+        switch pref {
+        case .system: return "跟随系统"
+        case .simplified: return "简体"
+        case .traditional: return "繁体"
         }
     }
 

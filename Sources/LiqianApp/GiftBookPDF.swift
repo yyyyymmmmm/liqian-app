@@ -63,6 +63,15 @@ enum GiftBookPDF {
 
     private static let footerBrand = "禮錢賬本 · 導出" // 会员版置 ""（固定品牌串，繁体）
 
+    /// 谱面脚本（v5.13 语言全跟随）：makePDF 入口按语言设置置位；
+    /// 生成全程在调用线程同步串行、无并发，静态上下文安全。
+    /// 缺省繁体＝历史定版口径（旧调用点/测试不传时行为不变）。
+    /// 固定文案一律经 t() 按脚本取字，用户数据永不经 t()。
+    private static var script: LibuScript = .traditional
+    private static func t(_ traditionalForm: String) -> String {
+        LibuBookText.fixed(traditionalForm, script: script)
+    }
+
     // 印刷色（PRO-AUDIT §3.2 整改）：与 Palette v3 浅色令牌逐项同值，改色先改
     // docs/DESIGN.md 与 Palette 再同步此处；PDF 是留存物，只用浅色值不跟深色模式。
     // 对应关系：paper/cardInk/stone/cinnabar/gold = Palette 的 paper/ink/stone/primary/gold；
@@ -104,8 +113,10 @@ enum GiftBookPDF {
         memorial: Bool = false,
         signatures: [GuestSignature] = [],
         blessings: [VoiceBlessing] = [],
-        includesSupplement: Bool
+        includesSupplement: Bool,
+        libuScript: LibuScript = .traditional
     ) -> URL? {
+        script = libuScript
         let bai = ledger.isBai
         let ledgerHost = (ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let host = ledgerHost.isEmpty
@@ -248,14 +259,14 @@ enum GiftBookPDF {
     /// 题字闲章吉语（按事由匹配简体词表键，印文固定串用繁体；白事不用闲章，返回 nil）
     private static func idleSealText(for type: String) -> String? {
         switch type {
-        case "婚礼": return "百年好合"
-        case "寿宴": return "福壽康寧"
-        case "乔迁": return "喬遷之喜"
-        case "满月", "周岁": return "平安喜樂"
-        case "升学": return "金榜題名"
-        case "开业": return "開業大吉"
+        case "婚礼": return t("百年好合")
+        case "寿宴": return t("福壽康寧")
+        case "乔迁": return t("喬遷之喜")
+        case "满月", "周岁": return t("平安喜樂")
+        case "升学": return t("金榜題名")
+        case "开业": return t("開業大吉")
         case LiqianConstants.baiType: return nil
-        default: return "吉祥如意"
+        default: return t("吉祥如意")
         }
     }
 
@@ -288,7 +299,7 @@ enum GiftBookPDF {
             signPath.lineWidth = 1
             signPath.stroke()
             _ = drawVertical(
-                "紀念",
+                t("紀念"),
                 centerX: signCenterX, topY: signTop,
                 font: kaitiFont(19),
                 color: UIColor.white.withAlphaComponent(0.92), step: signStep
@@ -318,8 +329,8 @@ enum GiftBookPDF {
         )
         // 题字左列：事由（用户数据原样） + 公历 + 干支全日期（生成串转繁体，全谱统一写法）；
         // 地点非空时缀于末（固定词「於」繁体＋地点原文，地点是用户数据不转繁体）
-        var info = "\(ledger.type) · \(ledger.date) · \(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)))"
-        if !location.isEmpty { info += " · 於\(location)" }
+        var info = "\(ledger.type) · \(ledger.date) · \(LibuText.generated(LiqianDate.ganzhiFullDate(for: ledger.date), script: script))"
+        if !location.isEmpty { info += " · \(t("於"))\(location)" }
         _ = drawVertical(
             info,
             centerX: pageW / 2 - 76, topY: 176,
@@ -339,13 +350,13 @@ enum GiftBookPDF {
 
         // 右下落款 + 主家印（落款用语为固定串用繁体；姓名为用户数据原样）
         _ = drawVertical(
-            "\(colophonName(hostName: hostName))謹識",
+            "\(colophonName(hostName: hostName))\(t("謹識"))",
             centerX: pageW - 148, topY: pageH - 268,
             font: kaitiFont(15), color: UIColor.white.withAlphaComponent(0.9), step: 21
         )
         drawSeal(
             center: CGPoint(x: pageW - 98, y: pageH - 108),
-            size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
+            size: 54, text: hostName.isEmpty ? t("主家謹識") : hostName,
             fill: bai ? baiDeep : cinnabarDeep,
             stroke: UIColor.white.withAlphaComponent(0.65),
             speck: main
@@ -383,13 +394,13 @@ enum GiftBookPDF {
         columns.append(PrefaceColumn())
         let colophonIndex = columns.count
         columns.append(PrefaceColumn(runs: [
-            ("\(colophonName(hostName: hostName)) 謹識", kaitiFont(15), ink, 20),
-            (LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)), serifFont(10.5), sub, 15),
+            ("\(colophonName(hostName: hostName)) \(t("謹識"))", kaitiFont(15), ink, 20),
+            (LibuText.generated(LiqianDate.ganzhiFullDate(for: ledger.date), script: script), serifFont(10.5), sub, 15),
         ]))
 
         drawColumnPages(
             context: context, ledger: ledger, bai: bai,
-            columns: columns, pageLabel: "譜序",
+            columns: columns, pageLabel: t("譜序"),
             colophonIndex: colophonIndex, hostName: hostName
         )
     }
@@ -410,7 +421,7 @@ enum GiftBookPDF {
             drawPaperBase(bai: bai)
             drawHeaderFooter(
                 ledger: ledger, bai: bai,
-                pageLabel: pi == 0 ? pageLabel : "\(pageLabel)（續）"
+                pageLabel: pi == 0 ? pageLabel : "\(pageLabel)\(t("（續）"))"
             )
             for (ci, col) in pageCols.enumerated() {
                 let centerX = contentRight - colW * (CGFloat(ci) + 0.5)
@@ -426,7 +437,7 @@ enum GiftBookPDF {
                 if pi * columnsPerPage + ci == colophonIndex {
                     drawSeal(
                         center: CGPoint(x: centerX, y: min(y + 30, contentBottom - 4)),
-                        size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
+                        size: 54, text: hostName.isEmpty ? t("主家謹識") : hostName,
                         fill: bai ? baiPrimary : cinnabar,
                         stroke: bai ? nil : gold,
                         speck: bai ? baiPaper : paper
@@ -441,16 +452,12 @@ enum GiftBookPDF {
     /// 答谢辞正文（繁体固定模板，写死在 PDF 层）：只插值主家名与事由原文
     /// （均为用户数据，照原样、不转繁体）。白事版素语，全篇不用「賀/喜」字眼。
     private static func thanksText(ledger: Ledger, bai: Bool, hostName: String) -> String {
-        let host = colophonName(hostName: hostName)
-        if bai {
-            return "諸位親朋，於家中有故之時，親臨弔唁，扶持相助，\(host)銘感五內。"
-                + "哀痛之際，賴諸位慰藉，方得稍安。此恩此德，無以為報，唯銘諸心版。"
-                + "謹彙此譜，非徒記數，實誌厚誼。他年展卷，當念今日諸位之情。"
-        }
-        return "諸位親朋，遠道而來，厚禮隆情，\(host)銘感於心。"
-            + "\(ledger.type)之日，蓬蓽生輝，笑語盈堂；所記者非簿上之數，乃平生之厚誼也。"
-            + "謹彙此譜，藏之箱篋，傳之子孫。他年展卷，猶見今日之盛；"
-            + "諸位有用得著主家之處，但憑吩咐，必當竭誠以報。"
+        // v5.13：模板双写在 Core LibuBookText（简繁各一份逐句校），
+        // 主家名与事由为用户数据、照原样插值不转换。
+        LibuBookText.thanksText(
+            bai: bai, hostName: colophonName(hostName: hostName),
+            type: ledger.type, script: script
+        )
     }
 
     private static func drawThanksPage(
@@ -478,12 +485,12 @@ enum GiftBookPDF {
         let colophonIndex = columns.count
         columns.append(PrefaceColumn(runs: [
             ("\(colophonName(hostName: hostName)) 謹謝", kaitiFont(15), ink, 20),
-            (LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: ledger.date)), serifFont(10.5), sub, 15),
+            (LibuText.generated(LiqianDate.ganzhiFullDate(for: ledger.date), script: script), serifFont(10.5), sub, 15),
         ]))
 
         drawColumnPages(
             context: context, ledger: ledger, bai: bai,
-            columns: columns, pageLabel: bai ? "銘謝" : "答謝",
+            columns: columns, pageLabel: bai ? t("銘謝") : t("答謝"),
             colophonIndex: colophonIndex, hostName: hostName
         )
     }
@@ -503,10 +510,10 @@ enum GiftBookPDF {
         let ink = bai ? baiInk : cardInk
         let sub = bai ? baiPrimary : stone
 
-        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "第 \(pageIndex) 頁")
+        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: LibuBookText.pageLabel(index: pageIndex, script: script))
 
         // 欄題：版框内顶端居中（红事「賀儀」/白事「奠儀」；白事全谱禁用賀字）
-        let columnTitle = bai ? "奠儀" : "賀儀"
+        let columnTitle = bai ? t("奠儀") : t("賀儀")
         let titleAttr = NSAttributedString(
             string: columnTitle,
             attributes: [.font: kaitiFont(15), .foregroundColor: main]
@@ -587,7 +594,7 @@ enum GiftBookPDF {
                 box.lineWidth = 0.9
                 box.stroke()
                 let mark = NSAttributedString(
-                    string: "聲",
+                    string: t("聲"),
                     attributes: [.font: kaitiFont(10.5), .foregroundColor: main]
                 )
                 let ms = mark.size()
@@ -616,7 +623,7 @@ enum GiftBookPDF {
             y += LibuColumnMetrics.gapAfterAmount
             // 小字：阿拉伯金额 + 方式（随礼另注方向，避免混册时看错；方式为记录数据原样）
             var small = "\(LedgerMath.fmtMoney(cents: r.amountCents)) · \(r.method)"
-            if r.direction == LiqianConstants.given { small += " · 隨禮" }
+            if r.direction == LiqianConstants.given { small += " · \(t("隨禮"))" }
             y = drawVertical(
                 small,
                 centerX: centerX, topY: y,
@@ -626,7 +633,7 @@ enum GiftBookPDF {
             if firstOfDayIDs.contains(r.id) {
                 y += LibuColumnMetrics.gapBeforeDate
                 _ = drawVertical(
-                    LibuText.traditionalGenerated(LiqianDate.lunarMonthDay(for: r.date)),
+                    LibuText.generated(LiqianDate.lunarMonthDay(for: r.date), script: script),
                     centerX: centerX, topY: y,
                     font: kaitiFont(10.5), color: sub,
                     step: LibuColumnMetrics.dateStep
@@ -652,7 +659,8 @@ enum GiftBookPDF {
     /// 笔数仍为整节总数、只在节首题签列出（续页不重复）。横排时代的
     /// 「 · 」分隔符在竖排里不成字，略去（v5.12.1）。
     private static func verticalSectionTitleText(relation: String, count: Int) -> String {
-        "\(traditionalRelation(relation))\(LibuText.chineseCount(count))筆"
+        let name = script == .traditional ? traditionalRelation(relation) : relation
+        return "\(name)\(LibuText.chineseCount(count, script: script))\(t("筆"))"
     }
 
     /// 姓名列：竖排全名（v5.12.1 起不再截断——旧版只取前四字会静默
@@ -693,8 +701,12 @@ enum GiftBookPDF {
     /// 金额大写分派：红事走正式财务繁体（圓整），白事走奠儀版（不缀整）
     private static func upperAmount(cents: Int, bai: Bool) -> String {
         bai
-            ? MoneyText.chineseUppercaseTraditionalBai(cents: cents)
-            : MoneyText.chineseUppercaseTraditional(cents: cents)
+            ? (script == .traditional
+                ? MoneyText.chineseUppercaseTraditionalBai(cents: cents)
+                : MoneyText.chineseUppercaseBai(cents: cents))
+            : (script == .traditional
+                ? MoneyText.chineseUppercaseTraditional(cents: cents)
+                : MoneyText.chineseUppercase(cents: cents))
     }
 
     // MARK: - 汇总页（封底）
@@ -718,7 +730,7 @@ enum GiftBookPDF {
         let main = bai ? baiPrimary : cinnabar
         let ink = bai ? baiInk : cardInk
         // 页题：白事用奠儀口径（繁体固定串）；红事「彙總」
-        let title = bai ? "奠儀總計" : "彙總"
+        let title = bai ? t("奠儀總計") : t("彙總")
 
         let receivedList = counted.filter { $0.direction == LiqianConstants.received }
         let givenList = counted.filter { $0.direction == LiqianConstants.given }
@@ -734,17 +746,17 @@ enum GiftBookPDF {
                 text: s, size: size, isHeader: header, dy: dy, group: currentGroup
             ))
         }
-        add("總人數 \(peopleCount) 人 · 總筆數 \(counted.count) 筆")
+        add(LibuBookText.summaryPeopleLine(people: peopleCount, count: counted.count, script: script))
         if !receivedList.isEmpty {
-            add("收禮合計 \(LedgerMath.fmtMoney(cents: totalReceived))")
-            add("大寫：\(upperAmount(cents: totalReceived, bai: bai))", dy: 40)
+            add("\(t("收禮合計")) \(LedgerMath.fmtMoney(cents: totalReceived))")
+            add("\(t("大寫："))\(upperAmount(cents: totalReceived, bai: bai))", dy: 40)
         }
         if !givenList.isEmpty {
-            add("隨禮合計 \(LedgerMath.fmtMoney(cents: totalGiven))")
-            add("大寫：\(upperAmount(cents: totalGiven, bai: bai))", dy: 40)
+            add("\(t("隨禮合計")) \(LedgerMath.fmtMoney(cents: totalGiven))")
+            add("\(t("大寫："))\(upperAmount(cents: totalGiven, bai: bai))", dy: 40)
         }
         if pendingCount > 0 {
-            add("另有待送出 \(pendingCount) 筆，未計入本譜。", dy: 40)
+            add(LibuBookText.summaryPendingLine(count: pendingCount, script: script), dy: 40)
         }
 
         // 按方式分布（口径同上：只计已成册记录）
@@ -761,9 +773,9 @@ enum GiftBookPDF {
         }
         if !byMethod.isEmpty {
             currentGroup = 1
-            add("按方式", size: 16, header: true, dy: 36)
+            add(t("按方式"), size: 16, header: true, dy: 36)
             for item in byMethod {
-                add("\(item.method)：\(LedgerMath.fmtMoney(cents: item.cents)) · \(item.count) 筆", dy: 30)
+                add("\(item.method)：\(LedgerMath.fmtMoney(cents: item.cents)) · \(item.count) \(t("筆"))", dy: 30)
             }
         }
 
@@ -773,15 +785,15 @@ enum GiftBookPDF {
             .sorted { $0.key < $1.key }
         if dayGroups.count > 1 {
             currentGroup = 2
-            add("按日小計", size: 16, header: true, dy: 36)
+            add(t("按日小計"), size: 16, header: true, dy: 36)
             for (date, list) in dayGroups {
                 let rec = list.filter { $0.direction == LiqianConstants.received }
                     .reduce(0) { $0 + $1.amountCents }
                 let giv = list.filter { $0.direction == LiqianConstants.given }
                     .reduce(0) { $0 + $1.amountCents }
-                var s = "\(LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: date))) · \(list.count) 筆"
+                var s = "\(LibuText.generated(LiqianDate.ganzhiFullDate(for: date), script: script)) · \(list.count) \(t("筆"))"
                 if rec > 0 { s += " 收 \(LedgerMath.fmtMoney(cents: rec))" }
-                if giv > 0 { s += " 隨 \(LedgerMath.fmtMoney(cents: giv))" }
+                if giv > 0 { s += " \(t("隨")) \(LedgerMath.fmtMoney(cents: giv))" }
                 add(s, size: 13.5, dy: 28)
             }
         }
@@ -792,7 +804,7 @@ enum GiftBookPDF {
         let relGroups = Dictionary(grouping: counted, by: \.relation)
         if relGroups.count > 1 {
             currentGroup = 3
-            add("按關係小計", size: 16, header: true, dy: 36)
+            add(t("按關係小計"), size: 16, header: true, dy: 36)
             let catalog = RelationCatalog.all()
             let orderedRelations = catalog.filter { relGroups[$0] != nil }
                 + relGroups.keys.filter { !catalog.contains($0) }.sorted()
@@ -802,9 +814,9 @@ enum GiftBookPDF {
                     .reduce(0) { $0 + $1.amountCents }
                 let giv = list.filter { $0.direction == LiqianConstants.given }
                     .reduce(0) { $0 + $1.amountCents }
-                var s = "\(relation)：\(list.count) 筆"
+                var s = "\(relation)：\(list.count) \(t("筆"))"
                 if rec > 0 { s += " 收 \(LedgerMath.fmtMoney(cents: rec))" }
-                if giv > 0 { s += " 隨 \(LedgerMath.fmtMoney(cents: giv))" }
+                if giv > 0 { s += " \(t("隨")) \(LedgerMath.fmtMoney(cents: giv))" }
                 add(s, size: 13.5, dy: 28)
             }
         }
@@ -837,7 +849,7 @@ enum GiftBookPDF {
             drawPaperBase(bai: bai)
             drawHeaderFooter(
                 ledger: ledger, bai: bai,
-                pageLabel: pi == 0 ? title : "\(title)（續）"
+                pageLabel: pi == 0 ? title : "\(title)\(t("（續）"))"
             )
             if pi == 0 {
                 // 线装暗示（汇总首页沿旧封底规格）
@@ -857,7 +869,7 @@ enum GiftBookPDF {
 
         // 校對空行（纸礼簿的手工仪式感）
         let checkY: CGFloat = pageH - 268
-        drawText("校對：", at: CGPoint(x: contentLeft, y: checkY), font: kaitiFont(15), color: ink)
+        drawText(t("校對："), at: CGPoint(x: contentLeft, y: checkY), font: kaitiFont(15), color: ink)
         main.withAlphaComponent(0.6).setStroke()
         let underline = UIBezierPath()
         underline.move(to: CGPoint(x: contentLeft + 52, y: checkY + 22))
@@ -869,7 +881,7 @@ enum GiftBookPDF {
         // 汇总页落款区（左下），各一行小字＋姓名首字小方印位；姓名是用户数据
         // 照原样。未设则整行不出；两行皆无时落款区即现状（仅主家落款与印）。
         var staffY = checkY + 44
-        for (label, person) in [("書記", ledger.scribe), ("核實", ledger.verifier)] {
+        for (label, person) in [(t("書記"), ledger.scribe), (t("核實"), ledger.verifier)] {
             let name = (person ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { continue }
             let lineText = "\(label) \(name)"
@@ -890,20 +902,21 @@ enum GiftBookPDF {
 
         // 落款 + 主家印 + 纪年印（干支年 + 月雅称，如「丙午冬月」，生成串转繁体）
         _ = drawVertical(
-            "\(colophonName(hostName: hostName))謹識",
+            "\(colophonName(hostName: hostName))\(t("謹識"))",
             centerX: pageW - 148, topY: pageH - 268,
             font: kaitiFont(15), color: ink, step: 21
         )
         drawSeal(
             center: CGPoint(x: pageW - 98, y: pageH - 120),
-            size: 54, text: hostName.isEmpty ? "主家謹識" : hostName,
+            size: 54, text: hostName.isEmpty ? t("主家謹識") : hostName,
             fill: main,
             stroke: bai ? nil : gold,
             speck: bai ? baiPaper : paper
         )
-        let eraText = LibuText.traditionalGenerated(
+        let eraText = LibuText.generated(
             LiqianDate.ganzhiYear(for: ledger.date)
-                + LiqianDate.lunarMonthAlias(for: ledger.date)
+                + LiqianDate.lunarMonthAlias(for: ledger.date),
+            script: script
         )
         drawSeal(
             center: CGPoint(x: pageW - 184, y: pageH - 120),
@@ -924,11 +937,11 @@ enum GiftBookPDF {
         drawPaperBase(bai: bai)
         let main = bai ? baiPrimary : cinnabar
 
-        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "補記")
+        drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: t("補記"))
 
         // 页题：版框内顶端居中，与内页欄題同位同式
         let titleAttr = NSAttributedString(
-            string: "補記",
+            string: t("補記"),
             attributes: [.font: kaitiFont(15), .foregroundColor: main]
         )
         let titleSize = titleAttr.size()
@@ -967,10 +980,10 @@ enum GiftBookPDF {
             let chunk = Array(signatures[start..<min(start + perPage, signatures.count)])
             context.beginPage()
             drawPaperBase(bai: bai)
-            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "簽名")
+            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: t("簽名"))
 
             let titleAttr = NSAttributedString(
-                string: "簽名",
+                string: t("簽名"),
                 attributes: [.font: kaitiFont(15), .foregroundColor: main]
             )
             let titleSize = titleAttr.size()
@@ -1033,10 +1046,10 @@ enum GiftBookPDF {
             let chunk = Array(entries[start..<min(start + rowsPerPage, entries.count)])
             context.beginPage()
             drawPaperBase(bai: bai)
-            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: "祝福索引")
+            drawHeaderFooter(ledger: ledger, bai: bai, pageLabel: t("祝福索引"))
 
             let titleAttr = NSAttributedString(
-                string: "祝福索引",
+                string: t("祝福索引"),
                 attributes: [.font: kaitiFont(15), .foregroundColor: main]
             )
             let titleSize = titleAttr.size()
@@ -1044,7 +1057,7 @@ enum GiftBookPDF {
 
             // 诚实注记：二维码需装 App 才能扫开（固定串，繁体）
             let noteAttr = NSAttributedString(
-                string: "掃碼聆聽來賓祝福（需安裝『禮錢賬本』App 方可打開）",
+                string: t("掃碼聆聽來賓祝福（需安裝『禮錢賬本』App 方可打開）"),
                 attributes: [.font: serifFont(9.5), .foregroundColor: sub]
             )
             let noteSize = noteAttr.size()
@@ -1064,8 +1077,9 @@ enum GiftBookPDF {
                     attributes: [.font: kaitiFont(14.5), .foregroundColor: ink]
                 )
                 nameAttr.draw(at: CGPoint(x: textX, y: rowY))
-                let meta = LibuText.traditionalGenerated(
-                    "\(dateFormatter.string(from: entry.blessing.createdAt)) · \(blessingDurationText(entry.blessing.duration))"
+                let meta = LibuText.generated(
+                    "\(dateFormatter.string(from: entry.blessing.createdAt)) · \(blessingDurationText(entry.blessing.duration))",
+                    script: script
                 )
                 let metaAttr = NSAttributedString(
                     string: meta,
@@ -1162,7 +1176,7 @@ enum GiftBookPDF {
         drawFishTail(center: CGPoint(x: pageW / 2, y: footY + 5), color: main)
         if !footerBrand.isEmpty {
             let brand = NSAttributedString(
-                string: footerBrand,
+                string: t(footerBrand),
                 attributes: [.font: serifFont(7), .foregroundColor: sub.withAlphaComponent(0.8)]
             )
             let bs = brand.size()

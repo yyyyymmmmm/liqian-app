@@ -19,7 +19,10 @@ enum GiftBookPrintPDF {
     private static let bleed = CGFloat(PrintBookSpec.bleedPoints)
 
     /// 由已生成的屏幕版礼谱装配印刷版，返回临时文件 URL（失败 nil）
-    static func makePrintPDF(screenPDF: URL, ledger: Ledger, spineWidthMM: Double) -> URL? {
+    static func makePrintPDF(
+        screenPDF: URL, ledger: Ledger, spineWidthMM: Double,
+        libuScript: LibuScript = .traditional
+    ) -> URL? {
         guard let doc = PDFDocument(url: screenPDF), doc.pageCount > 0 else { return nil }
         let bai = ledger.isBai
         let spinePt = CGFloat(PrintBookSpec.points(fromMM: spineWidthMM))
@@ -61,7 +64,7 @@ enum GiftBookPrintPDF {
                 drawSpecPage(
                     context: context, ledger: ledger,
                     interiorPages: PrintBookSpec.interiorPageCount(sourcePageCount: doc.pageCount),
-                    spineWidthMM: spineWidthMM
+                    spineWidthMM: spineWidthMM, script: libuScript
                 )
             }
         } catch {
@@ -125,8 +128,11 @@ enum GiftBookPrintPDF {
 
     private static func drawSpecPage(
         context: UIGraphicsPDFRendererContext, ledger: Ledger,
-        interiorPages: Int, spineWidthMM: Double
+        interiorPages: Int, spineWidthMM: Double, script: LibuScript
     ) {
+        // v5.13：参数页随谱面脚本出字（简繁双写逐句校；旧版只有简体
+        // 一份、夹在繁体谱里属单语言时代的遗留，不再保留）。
+        let trad = script == .traditional
         let cg = context.cgContext
         let bai = ledger.isBai
         let bounds = CGRect(x: 0, y: 0, width: pageW, height: pageH)
@@ -146,14 +152,14 @@ enum GiftBookPrintPDF {
             y += CGFloat(lines) * (size + 5) + gap
         }
 
-        block("印刷参数说明", size: 20, bold: true, gap: 16)
-        block("本书：\(ledger.title)（\(ledger.type)）· 内页 \(interiorPages) 页 · 另封面展开图 1 页（本文件第 1 页）· 参数页 1 页（本页）")
-        block("一、开本方向：右开本。本书为竖排右起的传统礼谱，装订边在右侧，与 POD 常规的左开本相反——下单时请务必书面确认按右开本装订，封面展开图（第 1 页）按右开本排版：左为封面、右为封底。", gap: 12)
-        block("二、出血与尺寸：成品 A4（210×297mm）。内页与封面展开图均已含 3mm 出血，请勿再调整页边距或二次裁切内容区；出血环为纸色延展。文件未附裁切标记，按出血边裁切即可。", gap: 12)
-        block("三、色彩：文件为 RGB。朱砂、素蓝等颜色转 CMYK 后会有可感色差，请先打一页样张认色（重点看封面朱砂与内页版框），确认后再整本印制；不要直接整本出片。", gap: 12)
-        block("四、书脊：本文件书脊宽按 \(String(format: "%.1f", spineWidthMM))mm 制作（按 \(interiorPages) 页估算）。实际纸张厚度不同会有出入，请印厂按所选纸张复算后回确认，书脊文字居中即可。", gap: 12)
-        block("五、纸张与装订建议：锁线精装；内页米白胶版纸或轻型纸 80–100g（勿用纯白铜版纸，太亮失礼谱气）；封面硬纸板裱印。内页满版纸色为浅米色，印厂若建议改用米白纸实物呈色、内页改白底，请先打样对比再定。", gap: 12)
-        block("六、页序：第 1 页封面展开图 → 内页（礼谱正文，顺序与屏幕版一致）→ 本参数页（本页不装订进书，仅作交付说明）。", gap: 12)
-        block("—— 礼记 导出 · 印刷版礼谱", size: 11)
+        block(trad ? "印刷參數說明" : "印刷参数说明", size: 20, bold: true, gap: 16)
+        block(trad ? "本書：\(ledger.title)（\(ledger.type)）· 內頁 \(interiorPages) 頁 · 另封面展開圖 1 頁（本文件第 1 頁）· 參數頁 1 頁（本頁）" : "本书：\(ledger.title)（\(ledger.type)）· 内页 \(interiorPages) 页 · 另封面展开图 1 页（本文件第 1 页）· 参数页 1 页（本页）")
+        block(trad ? "一、開本方向：右開本。本書為豎排右起的傳統禮譜，裝訂邊在右側，與 POD 常規的左開本相反——下單時請務必書面確認按右開本裝訂，封面展開圖（第 1 頁）按右開本排版：左為封面、右為封底。" : "一、开本方向：右开本。本书为竖排右起的传统礼谱，装订边在右侧，与 POD 常规的左开本相反——下单时请务必书面确认按右开本装订，封面展开图（第 1 页）按右开本排版：左为封面、右为封底。", gap: 12)
+        block(trad ? "二、出血與尺寸：成品 A4（210×297mm）。內頁與封面展開圖均已含 3mm 出血，請勿再調整頁邊距或二次裁切內容區；出血環為紙色延展。文件未附裁切標記，按出血邊裁切即可。" : "二、出血与尺寸：成品 A4（210×297mm）。内页与封面展开图均已含 3mm 出血，请勿再调整页边距或二次裁切内容区；出血环为纸色延展。文件未附裁切标记，按出血边裁切即可。", gap: 12)
+        block(trad ? "三、色彩：文件為 RGB。朱砂、素藍等顏色轉 CMYK 後會有可感色差，請先打一頁樣張認色（重點看封面朱砂與內頁版框），確認後再整本印製；不要直接整本出片。" : "三、色彩：文件为 RGB。朱砂、素蓝等颜色转 CMYK 后会有可感色差，请先打一页样张认色（重点看封面朱砂与内页版框），确认后再整本印制；不要直接整本出片。", gap: 12)
+        block(trad ? "四、書脊：本文件書脊寬按 \(String(format: "%.1f", spineWidthMM))mm 製作（按 \(interiorPages) 頁估算）。實際紙張厚度不同會有出入，請印廠按所選紙張復算後回確認，書脊文字居中即可。" : "四、书脊：本文件书脊宽按 \(String(format: "%.1f", spineWidthMM))mm 制作（按 \(interiorPages) 页估算）。实际纸张厚度不同会有出入，请印厂按所选纸张复算后回确认，书脊文字居中即可。", gap: 12)
+        block(trad ? "五、紙張與裝訂建議：鎖線精裝；內頁米白膠版紙或輕型紙 80–100g（勿用純白銅版紙，太亮失禮譜氣）；封面硬紙板裱印。內頁滿版紙色為淺米色，印廠若建議改用米白紙實物呈色、內頁改白底，請先打樣對比再定。" : "五、纸张与装订建议：锁线精装；内页米白胶版纸或轻型纸 80–100g（勿用纯白铜版纸，太亮失礼谱气）；封面硬纸板裱印。内页满版纸色为浅米色，印厂若建议改用米白纸实物呈色、内页改白底，请先打样对比再定。", gap: 12)
+        block(trad ? "六、頁序：第 1 頁封面展開圖 → 內頁（禮譜正文，順序與屏幕版一致）→ 本參數頁（本頁不裝訂進書，僅作交付說明）。" : "六、页序：第 1 页封面展开图 → 内页（礼谱正文，顺序与屏幕版一致）→ 本参数页（本页不装订进书，仅作交付说明）。", gap: 12)
+        block(trad ? "—— 禮記 導出 · 印刷版禮譜" : "—— 礼记 导出 · 印刷版礼谱", size: 11)
     }
 }

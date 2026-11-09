@@ -10,6 +10,14 @@ import LiqianCore
 /// 自制页（总目/章题/索引）走汇册自有版式：纸面＋版框＋楷体题字，
 /// 与礼谱同族但不冒充礼谱内页形制。
 enum FamilyAlbumPDF {
+    /// 谱面脚本（v5.13，同 GiftBookPDF 口径）：makeAlbum 入口置位，
+    /// 自制页固定文案经 t() 取字；内嵌各簿由 GiftBookPDF 按同一
+    /// 脚本生成。缺省繁体＝历史定版。
+    private static var script: LibuScript = .traditional
+    private static func t(_ traditionalForm: String) -> String {
+        LibuBookText.fixed(traditionalForm, script: script)
+    }
+
     private static let pageW = CGFloat(PrintBookSpec.trimWidthPoints)
     private static let pageH = CGFloat(PrintBookSpec.trimHeightPoints)
     private static var bounds: CGRect { CGRect(x: 0, y: 0, width: pageW, height: pageH) }
@@ -20,7 +28,8 @@ enum FamilyAlbumPDF {
         let countedRecords: [GiftRecord]
     }
 
-    static func makeAlbum(items: [Item]) -> URL? {
+    static func makeAlbum(items: [Item], libuScript: LibuScript = .traditional) -> URL? {
+        script = libuScript
         // 编章口径：按礼簿日期升序（家族编年），同日按簿名
         let ordered = items.sorted { ($0.ledger.date, $0.ledger.title) < ($1.ledger.date, $1.ledger.title) }
         guard !ordered.isEmpty else { return nil }
@@ -33,12 +42,14 @@ enum FamilyAlbumPDF {
                 type: item.ledger.type, date: item.ledger.date,
                 hostName: (item.ledger.hostName ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
                 guestCount: guests,
-                location: (item.ledger.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                location: (item.ledger.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                script: libuScript
             )
             // 汇册各簿走屏幕版礼谱管线：補記同样不带（v5.11.5 屏幕口径）
             guard let url = GiftBookPDF.makePDF(
                 ledger: item.ledger, records: item.countedRecords, prefaceText: preface,
-                includesSupplement: false
+                includesSupplement: false,
+                libuScript: libuScript
             ), let doc = PDFDocument(url: url) else { return nil }
             ledgerDocs.append(doc)
         }
@@ -113,16 +124,16 @@ enum FamilyAlbumPDF {
             PDFPageDrawing.drawFrame(in: bounds, bai: false, cg: cg)
             if pageIndex == 0 {
                 PDFPageDrawing.drawParagraph(
-                    "家族禮譜", in: CGRect(x: 64, y: 110, width: pageW - 128, height: 30),
+                    t("家族禮譜"), in: CGRect(x: 64, y: 110, width: pageW - 128, height: 30),
                     fontSize: 15, color: PDFPageDrawing.stone, serif: true
                 )
                 PDFPageDrawing.drawParagraph(
-                    "總目", in: CGRect(x: 64, y: 140, width: pageW - 128, height: 52),
+                    t("總目"), in: CGRect(x: 64, y: 140, width: pageW - 128, height: 52),
                     fontSize: 34, color: PDFPageDrawing.ink, bold: true, serif: true
                 )
             } else {
                 PDFPageDrawing.drawParagraph(
-                    "總目（續）", in: CGRect(x: 64, y: 110, width: pageW - 128, height: 40),
+                    t("總目（續）"), in: CGRect(x: 64, y: 110, width: pageW - 128, height: 40),
                     fontSize: 22, color: PDFPageDrawing.ink, bold: true, serif: true
                 )
             }
@@ -137,14 +148,14 @@ enum FamilyAlbumPDF {
                     fontSize: 15.5, color: PDFPageDrawing.ink, serif: true
                 )
                 PDFPageDrawing.drawParagraph(
-                    "\(item.ledger.type) · \(LiqianDate.displayString(for: item.ledger.date)) · \(item.countedRecords.count) 筆 · \(guests) 人",
+                    "\(item.ledger.type) · \(LiqianDate.displayString(for: item.ledger.date)) · \(item.countedRecords.count) \(t("筆")) · \(guests) 人",
                     in: CGRect(x: pageW - 372, y: y + 2, width: 300, height: 24),
                     fontSize: 12, color: PDFPageDrawing.stone, alignment: .right
                 )
                 y += 34
             }
             PDFPageDrawing.drawParagraph(
-                "—— 共 \(items.count) 簿 · 按年份編章 ——",
+                "—— 共 \(items.count) 簿 · \(t("按年份編章")) ——",
                 in: CGRect(x: 64, y: pageH - 120, width: pageW - 128, height: 22),
                 fontSize: 11.5, color: PDFPageDrawing.stone, alignment: .center
             )
@@ -180,7 +191,7 @@ enum FamilyAlbumPDF {
         }
         let guests = Set(item.countedRecords.map(\.person)).count
         PDFPageDrawing.drawParagraph(
-            "第\(chapterNumeral(chapter))章 · 共 \(item.countedRecords.count) 筆 · \(guests) 人",
+            "第\(chapterNumeral(chapter))章 · 共 \(item.countedRecords.count) \(t("筆")) · \(guests) 人",
             in: CGRect(x: 64, y: pageH - 130, width: pageW - 128, height: 24),
             fontSize: 12.5, color: PDFPageDrawing.stone, alignment: .center
         )
@@ -198,13 +209,13 @@ enum FamilyAlbumPDF {
             PDFPageDrawing.fillPage(bounds, bai: false, in: cg)
             PDFPageDrawing.drawFrame(in: bounds, bai: false, cg: cg)
             PDFPageDrawing.drawParagraph(
-                pageIndex == 0 ? "人物總索引" : "人物總索引（續）",
+                pageIndex == 0 ? t("人物總索引") : t("人物總索引（續）"),
                 in: CGRect(x: 64, y: 110, width: pageW - 128, height: 44),
                 fontSize: 26, color: PDFPageDrawing.ink, bold: true, serif: true
             )
             if pageIndex == 0 {
                 PDFPageDrawing.drawParagraph(
-                    "姓名之後為其出現的禮簿與筆數；同名即同人（與 App 內口徑一致）。",
+                    t("姓名之後為其出現的禮簿與筆數；同名即同人（與 App 內口徑一致）。"),
                     in: CGRect(x: 64, y: 158, width: pageW - 128, height: 22),
                     fontSize: 11.5, color: PDFPageDrawing.stone
                 )
@@ -222,7 +233,7 @@ enum FamilyAlbumPDF {
                     fontSize: 13, color: PDFPageDrawing.ink, bold: true
                 )
                 PDFPageDrawing.drawParagraph(
-                    "\(detail)（共 \(entry.totalCount) 筆）",
+                    "\(detail)（共 \(entry.totalCount) \(t("筆"))）",
                     in: CGRect(x: 168, y: y + 1, width: pageW - 240, height: 22),
                     fontSize: 12, color: PDFPageDrawing.stone
                 )

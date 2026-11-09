@@ -124,7 +124,7 @@ struct FamilyAlbumView: View {
         errorText = nil
         Task {
             await Task.yield()
-            let url = FamilyAlbumPDF.makeAlbum(items: items)
+            let url = FamilyAlbumPDF.makeAlbum(items: items, libuScript: AppLanguage.resolved().libuScript)
             generating = false
             if let url {
                 albumURL = url

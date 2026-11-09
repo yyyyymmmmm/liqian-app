@@ -189,7 +189,8 @@ struct HandoverView: View {
         memorialURL = nil
         let url = GiftBookPDF.makePDF(
             ledger: ledger, records: records, memorial: true,
-            includesSupplement: false
+            includesSupplement: false,
+            libuScript: AppLanguage.resolved().libuScript
         )
         generating = false
         if let url {

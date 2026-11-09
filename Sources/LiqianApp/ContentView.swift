@@ -13,6 +13,9 @@ struct ContentView: View {
     /// 自定义主题基色（v5.9）：主题值不变（恒 custom）时基色变化也要
     /// 触发重挂，故纳入根视图身份键计算
     @AppStorage(AppTheme.customBaseStorageKey) private var customThemeBaseHex = ""
+    /// 语言偏好（v5.13）：纳入根身份键，切换即重挂整棵子树，
+    /// 代码拼装的串（L10n）与静态字面一并即时换语言，不必重启
+    @AppStorage(AppLanguagePreference.storageKey) private var languageRaw = AppLanguagePreference.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Query private var allRecords: [GiftRecord]
@@ -147,7 +150,7 @@ struct ContentView: View {
         // 让 Palette 的主题动态色即时重解析（切换无须重启）。
         // v5.9：自定义主题下身份键拼入基色——只换基色不换主题也要重挂。
         .preferredColorScheme(appTheme.colorScheme)
-        .id(appTheme == .custom ? "custom-\(customThemeBaseHex)" : appThemeRaw)
+        .id((appTheme == .custom ? "custom-\(customThemeBaseHex)" : appThemeRaw) + "-lang-" + languageRaw)
         .onAppear {
             if privacyLockEnabled {
                 isLocked = true

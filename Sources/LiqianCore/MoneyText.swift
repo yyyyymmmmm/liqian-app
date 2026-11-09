@@ -59,6 +59,20 @@ public enum MoneyText {
         uppercase(cents: cents, tables: traditionalTables)
     }
 
+    /// 白事奠仪版（简体，v5.13 谱面简体档用）：字表同简体正式版，
+    /// 唯不缀「整」字（口径同繁体奠儀版）。
+    private static let simplifiedBaiTables = Tables(
+        digits: ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"],
+        sectionUnits: ["", "万", "亿", "兆"],
+        innerUnits: ["", "拾", "佰", "仟"],
+        yuan: "元", jiao: "角", fen: "分", zheng: "", negative: "负"
+    )
+
+    /// 分 → 白事奠仪简体大写：读法同简体正式版，唯不缀「整」字。
+    public static func chineseUppercaseBai(cents: Int) -> String {
+        uppercase(cents: cents, tables: simplifiedBaiTables)
+    }
+
     /// 分 → 白事奠儀繁体大写（礼谱 PDF 白事专用）：读法同上，唯不缀「整」字。
     public static func chineseUppercaseTraditionalBai(cents: Int) -> String {
         uppercase(cents: cents, tables: traditionalBaiTables)

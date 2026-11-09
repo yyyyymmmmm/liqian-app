@@ -268,12 +268,15 @@ struct LibuExportView: View {
             ? (UserDefaults.standard.string(forKey: "hostName") ?? "")
             : ledgerHost
         let location = (ledger.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // 谱面脚本跟随语言设置（v5.13）：生成一刻解析，整批导出同脚本
+        let libuScript = AppLanguage.resolved().libuScript
         Task {
             var preface: String? = nil
             if chosenStyle != .none {
                 let resolved = await LibuPreface.resolve(
                     type: ledger.type, date: ledger.date, style: chosenStyle,
-                    hostName: host, guestCount: guests, location: location
+                    hostName: host, guestCount: guests, location: location,
+                    script: libuScript
                 )
                 preface = resolved.text
                 if resolved.usedTemplate {
@@ -292,7 +295,8 @@ struct LibuExportView: View {
                 ledger: ledger, records: records,
                 prefaceText: preface,
                 signatures: signatures, blessings: blessings,
-                includesSupplement: true
+                includesSupplement: true,
+                libuScript: libuScript
             ) {
                 let dest = FileManager.default.temporaryDirectory
                     .appendingPathComponent("print-source-\(ledger.id.uuidString).pdf")
@@ -306,7 +310,8 @@ struct LibuExportView: View {
                 ledger: ledger, records: records,
                 prefaceText: preface,
                 signatures: signatures, blessings: blessings,
-                includesSupplement: false
+                includesSupplement: false,
+                libuScript: libuScript
             )
             generating = false
             if let url {
@@ -361,7 +366,8 @@ struct LibuExportView: View {
         Task {
             await Task.yield()
             let url = GiftBookPrintPDF.makePrintPDF(
-                screenPDF: printSourceURL, ledger: ledger, spineWidthMM: spine
+                screenPDF: printSourceURL, ledger: ledger, spineWidthMM: spine,
+                libuScript: AppLanguage.resolved().libuScript
             )
             printGenerating = false
             if let url {
@@ -438,7 +444,8 @@ enum LibuPreface {
 
     static func resolve(
         type: String, date: String, style: LibuPrefaceStyle,
-        hostName: String, guestCount: Int, location: String = ""
+        hostName: String, guestCount: Int, location: String = "",
+        script: LibuScript = .traditional
     ) async -> Resolved {
         if AIAccess.readiness() == .ready, let client = try? DeepSeekClient() {
             do {
@@ -457,13 +464,13 @@ enum LibuPreface {
                 // 落到模板回退
             }
             return Resolved(
-                text: template(type: type, date: date, hostName: hostName, guestCount: guestCount, location: location),
+                text: template(type: type, date: date, hostName: hostName, guestCount: guestCount, location: location, script: script),
                 usedTemplate: true,
                 note: "AI 这次没写成，谱序用了内置模板，礼谱本身不受影响。"
             )
         }
         return Resolved(
-            text: template(type: type, date: date, hostName: hostName, guestCount: guestCount, location: location),
+            text: template(type: type, date: date, hostName: hostName, guestCount: guestCount, location: location, script: script),
             usedTemplate: true,
             note: nil
         )
@@ -491,10 +498,16 @@ enum LibuPreface {
     /// （主家名＝用户数据、干支日期、地点原文、人數）照旧插值，其中干支日期只做生成串
     /// 字形映射（LibuText），主家名与地点严禁转换。AI 谱序正文不经此处、不转换。
     /// 地点非空时以「於＋地点」缀在岁在句后（v2.10）。
-    static func template(type: String, date: String, hostName: String, guestCount: Int, location: String = "") -> String {
+    static func template(
+        type: String, date: String, hostName: String, guestCount: Int,
+        location: String = "", script: LibuScript = .traditional
+    ) -> String {
         let host = hostName.isEmpty ? "主家" : hostName
-        let gz = LibuText.traditionalGenerated(LiqianDate.ganzhiFullDate(for: date))
-        let place = location.isEmpty ? "" : "於\(location)，"
+        let gz = LibuText.generated(LiqianDate.ganzhiFullDate(for: date), script: script)
+        let place = location.isEmpty ? "" : "\(script == .traditional ? "於" : "于")\(location)，"
+        if script == .simplified {
+            return simplifiedTemplate(type: type, gz: gz, place: place, host: host, guestCount: guestCount)
+        }
         switch type {
         case "婚礼":
             return "歲在\(gz)，\(place)\(host)之府，佳兒淑女，結縭於斯。是日高朋滿座，親眷雲集，"
@@ -528,6 +541,47 @@ enum LibuPreface {
             return "歲在\(gz)，\(place)\(host)之府有喜，親朋咸集，到場者凡\(guestCount)人。"
                 + "遠者跋涉而至，近者比鄰而來，所贈非物，皆一片心也。"
                 + "謹列芳名於左，誌厚誼於右，彙成此譜。異日展卷，猶憶今朝；傳之子孫，永念斯情。"
+        }
+    }
+
+    /// 内置谱序模板·简体版（v5.13）：与繁体原稿逐句同构，只换字形
+    /// （歲→岁、誌→志、彙→汇、於→于 等），文言句式与礼俗用词不动。
+    private static func simplifiedTemplate(
+        type: String, gz: String, place: String, host: String, guestCount: Int
+    ) -> String {
+        switch type {
+        case "婚礼":
+            return "岁在\(gz)，\(place)\(host)之府，佳儿淑女，结缡于斯。是日高朋满座，亲眷云集，"
+                + "到场者凡\(guestCount)人，笙歌起于堂前，笑语闻于巷陌。远者千里而至，近者比邻而来，"
+                + "所赠非物，皆一片心也。谨列芳名于左，志厚谊于右，汇成此谱。"
+                + "异日展卷，犹忆今朝；传之子孙，永念斯情。"
+        case "寿宴":
+            return "岁在\(gz)，\(place)\(host)为亲设宴，祝寿于堂。到场亲友凡\(guestCount)人，"
+                + "儿孙绕膝，故旧登门，或携酒，或捧桃，言笑晏晏，共庆长者之福。"
+                + "人生之乐，莫过于骨肉团圆、亲朋无恙。谨列芳名，汇成此谱。"
+                + "他年展读之时，福泽绵长之象，宛然在目。"
+        case "乔迁":
+            return "岁在\(gz)，\(place)\(host)乔迁新居，燕贺之宾凡\(guestCount)人，盈于门庭。"
+                + "栋宇初成，亲朋咸集，置酒高堂，共话家常。新居之喜，不在广厦，"
+                + "而在故人皆至、笑语如旧。谨列芳名，汇成此谱，以志今日之聚，以念平生之谊。"
+        case "满月", "周岁":
+            return "岁在\(gz)，\(place)\(host)家中新添稚子，亲朋闻讯，咸来道贺，"
+                + "是日到场者凡\(guestCount)人。襁褓小儿，未知人间之谊，"
+                + "而满堂宾客，皆他日护持之念。谨列芳名，汇成此谱。"
+                + "待儿长成，展卷而读，当知自家根系之深、人情之厚。"
+        case "升学", "开业":
+            return "岁在\(gz)，\(place)\(host)之府，鹏程初展，新程方启，"
+                + "登门道贺者凡\(guestCount)人，络绎于途。所贺者非一时之成，所期者乃长远之业；"
+                + "所记者非簿上之数，乃平生之扶持。谨列芳名，汇成此谱。他年回首来路，皆见于此。"
+        case LiqianConstants.baiType:
+            return "岁在\(gz)，\(place)\(host)家中有故，亲朋闻讣，咸来吊唁，"
+                + "执绋登堂者凡\(guestCount)人。生者之恸，赖故旧之慰而稍解；"
+                + "逝者之名，因众人之念而不朽。扶柩送行、登堂行礼者，皆平生之厚谊也。"
+                + "谨列芳名，汇成此谱，以志哀思，以谢亲朋。"
+        default:
+            return "岁在\(gz)，\(place)\(host)之府有喜，亲朋咸集，到场者凡\(guestCount)人。"
+                + "远者跋涉而至，近者比邻而来，所赠非物，皆一片心也。"
+                + "谨列芳名于左，志厚谊于右，汇成此谱。异日展卷，犹忆今朝；传之子孙，永念斯情。"
         }
     }
 }

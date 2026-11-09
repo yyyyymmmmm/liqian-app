@@ -2,6 +2,10 @@ import SwiftData
 import SwiftUI
 import LiqianCore
 
+/// 界面语言（v5.13 语言全跟随）：偏好存 UserDefaults（Core
+/// AppLanguage 单点口径），根视图据此定环境 locale——SwiftUI
+/// 字面文案查表、DatePicker 等系统控件的语言都随之切换，即时生效。
+
 @main
 struct LiqianApp: App {
     /// 长按快捷菜单承接（v4.5）：回调只在 AppDelegate 里有，见 ShortcutActions.swift
@@ -19,12 +23,18 @@ struct LiqianApp: App {
     /// 离页/杀进程不再丢回复（见 AdvisorSession 与 docs/V58-NOTES.md）
     @StateObject private var advisorSession = AdvisorSession()
 
+    @AppStorage(AppLanguagePreference.storageKey) private var languageRaw = AppLanguagePreference.system.rawValue
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // 全 App 固定中文区域：DatePicker 等系统控件跟随显示中文日期
-                // （v2.4 必修：此前日期选择器显示 "Nov 7, 2026" 英文格式）
-                .environment(\.locale, Locale(identifier: "zh_CN"))
+                // 全 App 语言（v5.13 修订 v2.4 固定 zh_CN）：按语言偏好
+                // 解析——简体 zh_CN（日期控件中文格式，与旧版一致）、
+                // 繁体 zh-Hant；跟随系统时非中文/简体中文回落简体。
+                .environment(\.locale, Locale(identifier: AppLanguage.resolve(
+                    preference: AppLanguagePreference(storedRaw: languageRaw),
+                    preferredLanguages: Locale.preferredLanguages
+                ).localeIdentifier))
                 .environmentObject(cloudSync)
                 .environmentObject(entitlements)
                 .environmentObject(advisorSession)
