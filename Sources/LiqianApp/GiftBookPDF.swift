@@ -67,7 +67,8 @@ enum GiftBookPDF {
     /// 生成全程在调用线程同步串行、无并发，静态上下文安全。
     /// 缺省繁体＝历史定版口径（旧调用点/测试不传时行为不变）。
     /// 固定文案一律经 t() 按脚本取字，用户数据永不经 t()。
-    private static var script: LibuScript = .traditional
+    /// Swift 6 下用 nonisolated(unsafe) 承接这一既定用法（同 CloudSync 先例）。
+    nonisolated(unsafe) private static var script: LibuScript = .traditional
     private static func t(_ traditionalForm: String) -> String {
         LibuBookText.fixed(traditionalForm, script: script)
     }

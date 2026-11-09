@@ -25,9 +25,11 @@ plain headline）；②占比与总额条去朱砂改墨灰阶（Charts 场合·
   `L10n.string/format`（App 层，按解析语言取对应 .lproj；缺条目回退键本身＝
   简体原文，不丢字）。简体档不建表——缺表即显示简体原文，与旧版一致。
 
-### 界面繁体表（zh-Hant.lproj/Localizable.strings，435 条）
+### 界面繁体表（zh-Hant.lproj/Localizable.strings，431 条）
 抽取口径：全 App 无插值 SwiftUI 字面量（Text/Button/Label/navigationTitle/
-Toggle/Picker/无障碍与对话框标题）426 条全覆盖＋L10n 键与 v5.13 新增串 9 条。
+Toggle/Picker/无障碍与对话框标题）426 条全覆盖＋L10n 键与 v5.13 新增串 9 条；其中 4 条与同组近重复键在 Tuist
+  类型化生成时标识符重名（仅差标点/换行，如「关闭收集」与「关闭收集？」），
+  各退一条出表——退表的那处在繁体档回退显示简体原文，不丢字（细节见已知边界）。
 逐词人工校，礼俗词从谱面定版口径。术语对照（节选）：
 
 | 简体 | 繁體 | 说明 |

@@ -9,7 +9,9 @@ enum L10n {
     /// 当前解析语言（偏好＋系统首选语言，口径在 Core AppLanguage）
     static var resolved: ResolvedLanguage { AppLanguage.resolved() }
 
-    private static var bundleCache: [String: Bundle] = [:]
+    /// 取串只发生在主线程的界面/导出路径；Swift 6 下用
+    /// nonisolated(unsafe) 承接缓存（同 CloudSync 既定先例）。
+    nonisolated(unsafe) private static var bundleCache: [String: Bundle] = [:]
 
     /// 按当前语言取串：key 为简体原文（与 Localizable 表键一致）
     static func string(_ key: String) -> String {

@@ -13,7 +13,8 @@ enum FamilyAlbumPDF {
     /// 谱面脚本（v5.13，同 GiftBookPDF 口径）：makeAlbum 入口置位，
     /// 自制页固定文案经 t() 取字；内嵌各簿由 GiftBookPDF 按同一
     /// 脚本生成。缺省繁体＝历史定版。
-    private static var script: LibuScript = .traditional
+    /// Swift 6 下用 nonisolated(unsafe) 承接（生成同步串行，同 GiftBookPDF）。
+    nonisolated(unsafe) private static var script: LibuScript = .traditional
     private static func t(_ traditionalForm: String) -> String {
         LibuBookText.fixed(traditionalForm, script: script)
     }
