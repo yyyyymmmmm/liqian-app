@@ -28,6 +28,12 @@ import LiqianCore
 /// 印刷装配的源谱（makePDF 的 includesSupplement 参数），屏幕/基础
 /// 导出、纪念版与家族汇册不再生成——电子版末页一页空栏会被读成
 /// 空白页；drawSupplementPage 本体保留，位置口径不变。
+/// v5.12.1（用户 2026-11-09 批准，修订 v3.1 定版）：内页废止「按
+/// 关系分段、段段换页」——全节拼成一条条目流（每节＝竖排题签列＋
+/// 该节记录列），排满 8 列才换页，题签列不落页末列；姓名超 4 字
+/// 不再静默截断，按字数降字号整列收进；彙总加 keep-together（组
+/// 头不落单、小组整组同页）；金额大写按字数分档降步距防溢出列
+/// 底。拼流/切页/分档/彙总分页全在 Core（LibuPagination）单测钉死。
 /// 免费版每页地脚带「礼记 · 导出」小字——会员版去掉此字样（导出分层卖点），
 /// 届时把 footerBrand 置空即可。
 /// 字体仍用系统 Kaiti SC（书法字体授权是上架前商务事项，见 LIBU-V3-SPEC §5）。
@@ -168,41 +174,34 @@ enum GiftBookPDF {
                         text: prefaceText, hostName: host
                     )
                 }
-                // 内页分段（v3.1）：按关系分段、段段换页另起，段首出题签；
-                // 只有一段（或空册）时不出题签，与汇总小计的单组口径一致。
-                // 页码全册连续。分组与保序走 Core 的 LibuSections。
+                // 内页条目流（v5.12.1，修订 v3.1 定版）：全节拼成一条
+                // 条目流（每节＝竖排题签列＋该节各笔记录列），整流排满
+                // 8 列才换页；题签列不落页末列（LibuBookFlow 孤行守护
+                // 顺延下页首列）。只有一段（或空册）时不出题签，与汇
+                // 总小计的单组口径一致。页码全册连续。分组保序走 Core
+                // 的 LibuSections，拼流与切页走 LibuBookFlow。
                 let sections = LibuSections.groupByRelation(counted) { $0.relation }
                 let showSectionTitles = sections.count > 1
-                if sections.isEmpty {
+                if counted.isEmpty {
                     drawContentPage(
                         context: context, ledger: ledger, bai: bai,
-                        pageRecords: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs,
-                        sectionTitle: nil, blessedRecordIDs: blessedRecordIDs
+                        entries: [], pageIndex: 1, firstOfDayIDs: firstOfDayIDs,
+                        blessedRecordIDs: blessedRecordIDs
                     )
                 } else {
-                    var pageIndex = 0
-                    for section in sections {
-                        let title = showSectionTitles
-                            ? sectionTitleText(
-                                relation: section.relation,
-                                count: section.records.count
-                            )
-                            : nil
-                        let chunks = stride(
-                            from: 0, to: section.records.count, by: columnsPerPage
-                        ).map {
-                            Array(section.records[$0..<min($0 + columnsPerPage, section.records.count)])
-                        }
-                        for (ci, chunk) in chunks.enumerated() {
-                            pageIndex += 1
-                            drawContentPage(
-                                context: context, ledger: ledger, bai: bai,
-                                pageRecords: chunk, pageIndex: pageIndex,
-                                firstOfDayIDs: firstOfDayIDs,
-                                sectionTitle: ci == 0 ? title : nil,
-                                blessedRecordIDs: blessedRecordIDs
-                            )
-                        }
+                    let flow = LibuBookFlow.entries(
+                        sections: sections, includeTitles: showSectionTitles
+                    )
+                    let flowPages = LibuBookFlow.paginate(
+                        entries: flow, columnsPerPage: columnsPerPage
+                    )
+                    for (i, pageEntries) in flowPages.enumerated() {
+                        drawContentPage(
+                            context: context, ledger: ledger, bai: bai,
+                            entries: pageEntries, pageIndex: i + 1,
+                            firstOfDayIDs: firstOfDayIDs,
+                            blessedRecordIDs: blessedRecordIDs
+                        )
                     }
                 }
                 drawSummary(
@@ -494,9 +493,8 @@ enum GiftBookPDF {
     private static func drawContentPage(
         context: UIGraphicsPDFRendererContext,
         ledger: Ledger, bai: Bool,
-        pageRecords: [GiftRecord], pageIndex: Int,
+        entries: [LibuFlowEntry<GiftRecord>], pageIndex: Int,
         firstOfDayIDs: Set<UUID>,
-        sectionTitle: String?,
         blessedRecordIDs: Set<UUID> = []
     ) {
         context.beginPage()
@@ -516,14 +514,11 @@ enum GiftBookPDF {
         let titleSize = titleAttr.size()
         titleAttr.draw(at: CGPoint(x: (pageW - titleSize.width) / 2, y: 99))
 
-        // 段题签（v3.1）：只在段首页、欄題之下出（续页不重复，老谱规矩）。
-        // 出题签的页，列线与记录列整体下移让位。
-        let recordsTop = contentTop + (sectionTitle != nil ? 36 : 0)
-        if let sectionTitle {
-            drawSectionTitle(sectionTitle, bai: bai, topY: 126)
-        }
+        // 条目流时代列顶恒为 contentTop：题签是流中一列、不再占页首
+        // 横带，整页列线与记录列不再下移让位（v5.12.1）。
+        let recordsTop = contentTop
 
-        // 列间朱砂（白事素蓝）细线（自欄題/题签下方起）
+        // 列间朱砂（白事素蓝）细线（自欄題下方起）
         main.withAlphaComponent(0.45).setStroke()
         for i in 1..<columnsPerPage {
             let x = contentRight - colW * CGFloat(i)
@@ -533,17 +528,58 @@ enum GiftBookPDF {
             line.lineWidth = 0.75
             line.stroke()
         }
+        // 题签列的右界线加重：题签列与其右邻（上一节末笔）之间以主色
+        // 重线分隔，「新节起」一眼可辨。流中第 j 列的题签，其右界线
+        // 是第 j 条列线；j=0 时右界即版框右边线，不另画。
+        for (j, entry) in entries.enumerated() where j > 0 {
+            guard case .sectionTitle = entry else { continue }
+            let x = contentRight - colW * CGFloat(j)
+            main.withAlphaComponent(0.85).setStroke()
+            let heavy = UIBezierPath()
+            heavy.move(to: CGPoint(x: x, y: recordsTop + 6))
+            heavy.addLine(to: CGPoint(x: x, y: contentBottom))
+            heavy.lineWidth = 1.25
+            heavy.stroke()
+        }
 
-        for (i, r) in pageRecords.enumerated() {
+        for (i, entry) in entries.enumerated() {
             // 右起：第 0 列在最右
             let centerX = contentRight - colW * (CGFloat(i) + 0.5)
-            var y = recordsTop
+            switch entry {
+            case .sectionTitle(let relation, let count):
+                // 竖排题签列（v5.12.1）：繁体关系名＋汉字笔数，与记录
+                // 列同顶；楷体 13 小于欄題 15、不抢层级，主色。
+                _ = drawVertical(
+                    verticalSectionTitleText(relation: relation, count: count),
+                    centerX: centerX, topY: recordsTop,
+                    font: kaitiFont(13), color: main, step: 18
+                )
+            case .record(let r):
+                drawRecordColumn(
+                    r, centerX: centerX, topY: recordsTop, bai: bai,
+                    main: main, ink: ink, sub: sub,
+                    firstOfDayIDs: firstOfDayIDs, blessedRecordIDs: blessedRecordIDs
+                )
+            }
+        }
+    }
+
+    /// 一笔记录列（自 drawContentPage 拆出，绘制口径与旧版逐项一致，
+    /// 仅三处随 v5.12.1 改：姓名走分档全名、金额大写走分档步距、
+    /// 间隔/步距常量与 LibuColumnMetrics 同源）。
+    private static func drawRecordColumn(
+        _ r: GiftRecord,
+        centerX: CGFloat, topY: CGFloat, bai: Bool,
+        main: UIColor, ink: UIColor, sub: UIColor,
+        firstOfDayIDs: Set<UUID>, blessedRecordIDs: Set<UUID>
+    ) {
+            var y = topY
             // 「聲」小印记（v4.2）：此笔有语音祝福时，姓名列右上出主色
             // 方框小字（白事走素蓝主色），卷末祝福索引页可扫码聆听
             if blessedRecordIDs.contains(r.id) {
                 let markSize: CGFloat = 16
                 let markRect = CGRect(
-                    x: centerX + colW / 2 - markSize - 3, y: recordsTop + 1,
+                    x: centerX + colW / 2 - markSize - 3, y: topY + 1,
                     width: markSize, height: markSize
                 )
                 main.setStroke()
@@ -560,41 +596,45 @@ enum GiftBookPDF {
                     y: markRect.midY - ms.height / 2
                 ))
             }
-            // 姓名：楷体大字，限 4 字高（用户数据原样）；按 3 字位归一排版
+            // 姓名：楷体大字全名（v5.12.1 不再截断，LibuNameLayout
+            // 分档；≤4 字与旧版字号/归一同值）
             y = drawNameColumn(
                 r.person,
-                centerX: centerX, topY: y,
-                font: kaitiFont(20), color: ink, step: 27
+                centerX: centerX, topY: y, color: ink
             )
-            y += 14
-            // 金额大写（正式财务繁体，PDF 专用；白事奠儀不缀「整」）
+            y += LibuColumnMetrics.gapAfterName
+            // 金额大写（正式财务繁体，PDF 专用；白事奠儀不缀「整」）：
+            // 步距按大写字数分档，长串自动收紧防压版框下线
+            let upper = upperAmount(cents: r.amountCents, bai: bai)
+            let amountTier = LibuAmountLayout.tier(uppercaseCount: upper.count)
             y = drawVertical(
-                upperAmount(cents: r.amountCents, bai: bai),
+                upper,
                 centerX: centerX, topY: y,
-                font: kaitiFont(13), color: main, step: 18
+                font: kaitiFont(amountTier.fontSize), color: main,
+                step: amountTier.step
             )
-            y += 10
+            y += LibuColumnMetrics.gapAfterAmount
             // 小字：阿拉伯金额 + 方式（随礼另注方向，避免混册时看错；方式为记录数据原样）
             var small = "\(LedgerMath.fmtMoney(cents: r.amountCents)) · \(r.method)"
             if r.direction == LiqianConstants.given { small += " · 隨禮" }
             y = drawVertical(
                 small,
                 centerX: centerX, topY: y,
-                font: serifFont(9), color: sub, step: 13
+                font: serifFont(9), color: sub, step: LibuColumnMetrics.smallStep
             )
             // 逐笔日期：该日首笔才标农历月日小字（生成串转繁体），同日连排不重复
             if firstOfDayIDs.contains(r.id) {
-                y += 8
+                y += LibuColumnMetrics.gapBeforeDate
                 _ = drawVertical(
                     LibuText.traditionalGenerated(LiqianDate.lunarMonthDay(for: r.date)),
                     centerX: centerX, topY: y,
-                    font: kaitiFont(10.5), color: sub, step: 14
+                    font: kaitiFont(10.5), color: sub,
+                    step: LibuColumnMetrics.dateStep
                 )
             }
-        }
     }
 
-    // MARK: - 段题签（v3.1）
+    // MARK: - 节题签（v5.12.1 竖排题签列；v3.1 横排题签带退役）
 
     /// 关系名的繁体字面（仅系统词表内的值）：关系是 Picker 选的系统词，
     /// 不是用户自由文本，换繁体与欄題/汇总固定串同口径；词表外的关系
@@ -608,44 +648,28 @@ enum GiftBookPDF {
         traditionalRelations[relation] ?? relation
     }
 
-    /// 段题签文案：繁体关系名 · 汉字笔数（如「親戚 · 拾貳筆」）
-    private static func sectionTitleText(relation: String, count: Int) -> String {
-        "\(traditionalRelation(relation)) · \(LibuText.chineseCount(count))筆"
+    /// 竖排题签列文案：繁体关系名＋汉字笔数＋「筆」（如「親戚肆筆」）；
+    /// 笔数仍为整节总数、只在节首题签列出（续页不重复）。横排时代的
+    /// 「 · 」分隔符在竖排里不成字，略去（v5.12.1）。
+    private static func verticalSectionTitleText(relation: String, count: Int) -> String {
+        "\(traditionalRelation(relation))\(LibuText.chineseCount(count))筆"
     }
 
-    /// 段题签绘制：楷体 13（小于欄題 15，不抢层级）、主色，水平居中于版心；
-    /// 题文两侧各缀一段 30pt 主色细线，与版框线语言一致。
-    private static func drawSectionTitle(_ text: String, bai: Bool, topY: CGFloat) {
-        let main = bai ? baiPrimary : cinnabar
-        let attr = NSAttributedString(
-            string: text,
-            attributes: [.font: kaitiFont(13), .foregroundColor: main]
-        )
-        let size = attr.size()
-        let x = (pageW - size.width) / 2
-        attr.draw(at: CGPoint(x: x, y: topY))
-        main.withAlphaComponent(0.6).setStroke()
-        let midY = topY + size.height / 2
-        for (x1, x2) in [(x - 42, x - 12), (x + size.width + 12, x + size.width + 42)] {
-            let line = UIBezierPath()
-            line.move(to: CGPoint(x: x1, y: midY))
-            line.addLine(to: CGPoint(x: x2, y: midY))
-            line.lineWidth = 0.75
-            line.stroke()
-        }
-    }
-
-    /// 姓名列（v2.10 双字名间字）：竖排按 3 字位归一——3 字及以上自然排；
-    /// 恰 2 字时两字间让出一个字距（总跨度＝3 字位，与三字名底边齐）；
-    /// 1 字名居中于中间字位。返回姓名列底边 y，金额列自此往下接（口径同旧）。
+    /// 姓名列：竖排全名（v5.12.1 起不再截断——旧版 Array(name.prefix(4))
+    /// 会静默砍掉 5 字以上姓名的尾字，礼谱是留存物、错名性质重）。字号/
+    /// 步距走 LibuNameLayout 分档：≤4 字原档且沿 v2.10 的 3 字位归一
+    /// （双字名间字、单字名居中、底边与三字名齐）；5 字以上降档整列
+    /// 收进，槽位按实际字数。返回姓名列底边 y，金额列自此往下接。
     @discardableResult
     private static func drawNameColumn(
         _ name: String,
         centerX: CGFloat, topY: CGFloat,
-        font: UIFont, color: UIColor, step: CGFloat
+        color: UIColor
     ) -> CGFloat {
-        let chars = Array(name.prefix(4))
+        let chars = Array(name)
         guard !chars.isEmpty else { return topY }
+        let tier = LibuNameLayout.tier(characterCount: chars.count)
+        let font = kaitiFont(tier.fontSize)
         let slots: [Int]
         switch chars.count {
         case 1: slots = [1]
@@ -660,10 +684,10 @@ enum GiftBookPDF {
             let size = attr.size()
             attr.draw(at: CGPoint(
                 x: centerX - size.width / 2,
-                y: topY + CGFloat(slot) * step
+                y: topY + CGFloat(slot) * tier.step
             ))
         }
-        return topY + CGFloat(max(3, chars.count)) * step
+        return topY + LibuNameLayout.height(characterCount: chars.count)
     }
 
     /// 金额大写分派：红事走正式财务繁体（圓整），白事走奠儀版（不缀整）
@@ -675,12 +699,15 @@ enum GiftBookPDF {
 
     // MARK: - 汇总页（封底）
 
-    /// 汇总流式行：正文行与段头行（段头主色、略大），dy 为行后步进
+    /// 汇总流式行：正文行与段头行（段头主色、略大），dy 为行后步进；
+    /// group 为所属组序号（引言块 0／按方式 1／按日 2／按關係 3），
+    /// 供 LibuSummaryPaginator 做 keep-together 分页（v5.12.1）
     private struct SummaryLine {
         let text: String
         let size: CGFloat
         let isHeader: Bool
         let dy: CGFloat
+        let group: Int
     }
 
     private static func drawSummary(
@@ -701,8 +728,11 @@ enum GiftBookPDF {
 
         // —— 组装全部汇总行（固定文字繁体；人名/方式/关系等记录数据原样）——
         var lines: [SummaryLine] = []
+        var currentGroup = 0
         func add(_ s: String, size: CGFloat = 15.5, header: Bool = false, dy: CGFloat = 34) {
-            lines.append(SummaryLine(text: s, size: size, isHeader: header, dy: dy))
+            lines.append(SummaryLine(
+                text: s, size: size, isHeader: header, dy: dy, group: currentGroup
+            ))
         }
         add("總人數 \(peopleCount) 人 · 總筆數 \(counted.count) 筆")
         if !receivedList.isEmpty {
@@ -730,6 +760,7 @@ enum GiftBookPDF {
             byMethod.append(("其他", otherMethods.reduce(0) { $0 + $1.amountCents }, otherMethods.count))
         }
         if !byMethod.isEmpty {
+            currentGroup = 1
             add("按方式", size: 16, header: true, dy: 36)
             for item in byMethod {
                 add("\(item.method)：\(LedgerMath.fmtMoney(cents: item.cents)) · \(item.count) 筆", dy: 30)
@@ -741,6 +772,7 @@ enum GiftBookPDF {
         let dayGroups = Dictionary(grouping: counted, by: \.date)
             .sorted { $0.key < $1.key }
         if dayGroups.count > 1 {
+            currentGroup = 2
             add("按日小計", size: 16, header: true, dy: 36)
             for (date, list) in dayGroups {
                 let rec = list.filter { $0.direction == LiqianConstants.received }
@@ -759,6 +791,7 @@ enum GiftBookPDF {
         // 与全谱用户数据口径一致。只有一种关系时与总计重复，不出此节）
         let relGroups = Dictionary(grouping: counted, by: \.relation)
         if relGroups.count > 1 {
+            currentGroup = 3
             add("按關係小計", size: 16, header: true, dy: 36)
             let catalog = RelationCatalog.all()
             let orderedRelations = catalog.filter { relGroups[$0] != nil }
@@ -776,41 +809,28 @@ enum GiftBookPDF {
             }
         }
 
-        // —— 分页：末页底部留给校对与落款印章（行不得排进 pageH-300 以下）——
+        // —— 分页（v5.12.1：LibuSummaryPaginator，Core 纯函数）：末页
+        // 底部留给校对与落款印章（行不得排进 pageH-300 以下）；组头
+        // 不落单、小组（引言块/按方式/按關係）整组同页、按日大组可
+        // 拆但组头不落单，末页挪行后复核不断组。旧版为扁平行数组
+        // 机械切块，彙总会断在小計组中间。
         let firstStartY: CGFloat = 190 // 首页题下（题 132 + 24 号字 + 呼吸）
         let contStartY = contentTop
         let lastBottom = pageH - 300
-        var chunks: [[SummaryLine]] = []
-        var current: [SummaryLine] = []
-        var y = firstStartY
-        for line in lines {
-            if y + line.dy > contentBottom && !current.isEmpty {
-                chunks.append(current)
-                current = []
-                y = contStartY
-            }
-            current.append(line)
-            y += line.dy
+        let keepWholeByGroup: [Int: Bool] = [0: true, 1: true, 2: false, 3: true]
+        let summaryRows = lines.map {
+            LibuSummaryRow(
+                dy: $0.dy, isHeader: $0.isHeader, group: $0.group,
+                keepGroupWhole: keepWholeByGroup[$0.group] ?? false
+            )
         }
-        chunks.append(current)
-        // 恰好整页排满时尾部会多一个空块，去掉免得出一页空白汇总
-        if chunks.count > 1, chunks[chunks.count - 1].isEmpty {
-            chunks.removeLast()
-        }
-        // 末页溢出校对区时，把末尾行整体挪到新的一页
-        func endY(of chunk: [SummaryLine], pageIndex: Int) -> CGFloat {
-            (pageIndex == 0 ? firstStartY : contStartY) + chunk.reduce(0) { $0 + $1.dy }
-        }
-        while chunks.count > 0, endY(of: chunks[chunks.count - 1], pageIndex: chunks.count - 1) > lastBottom,
-              chunks[chunks.count - 1].count > 1 {
-            var moved: [SummaryLine] = []
-            while endY(of: chunks[chunks.count - 1], pageIndex: chunks.count - 1) > lastBottom,
-                  chunks[chunks.count - 1].count > 1 {
-                moved.insert(chunks[chunks.count - 1].removeLast(), at: 0)
-            }
-            chunks.append(moved)
-        }
-        if chunks.isEmpty { chunks = [[]] }
+        let chunks: [[SummaryLine]] = LibuSummaryPaginator.paginate(
+            rows: summaryRows,
+            firstPageCapacity: contentBottom - firstStartY,
+            pageCapacity: contentBottom - contStartY,
+            lastPageCapacity: lastBottom - contStartY,
+            lastPageFirstCapacity: lastBottom - firstStartY
+        ).map { page in page.map { lines[$0] } }
 
         for (pi, chunk) in chunks.enumerated() {
             context.beginPage()
