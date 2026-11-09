@@ -36,4 +36,16 @@ public enum TextSizeScale {
         guard let floor = tier.floorIndex else { return systemIndex }
         return max(systemIndex, floor)
     }
+
+    /// 大场模式保底下标（v5.14）：批量补录「大字模式」不再写死 pt，
+    /// 改走 dynamicTypeSize 环境档——保底 accessibility2（下标 8），
+    /// 比 App 内「特大」档（accessibility1）再高一档：办席现场隔桌
+    /// 可读；金额语义档（.largeTitle）在该档下 ≈33pt，与旧写死
+    /// 34pt 相当。同样只设保底，系统更大时尊重系统。
+    public static let bigModeFloorIndex = 8
+
+    /// 大场目标下标＝开启时 max(系统下标， 大场保底），关闭时恒等系统值
+    public static func bigModeTargetIndex(systemIndex: Int, bigMode: Bool) -> Int {
+        bigMode ? max(systemIndex, bigModeFloorIndex) : systemIndex
+    }
 }

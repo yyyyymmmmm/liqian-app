@@ -155,17 +155,14 @@ public struct LedgerCoverCard: View {
 
     /// 事由小签（PRO-AUDIT #6）：30×64 朱砂窄签、竖排事由、无高光拟物；
     /// 满块封面移交礼簿详情页头部（LedgerDetailView 自有封面块）。
-    /// 小签圆角自 v5 走同心推导（容器 coverCorner − 卡内边距），不再手算 4。
+    /// 小签圆角 v5.14 改走 iOS 26 系统 ConcentricRectangle：本签是卡面
+    /// 内边距内嵌元素（容器 coverCorner、四边 cardPadding），正是系统
+    /// 同心机制的适用场景，圆角由系统按实际边距推导，不再手算。
     private var coverBlock: some View {
         let base = isBai ? Palette.baiPrimaryFill : Palette.primaryFill
         return ZStack {
-            RoundedRectangle(
-                cornerRadius: LiqianRadius.concentric(
-                    container: LiqianMetrics.coverCorner,
-                    padding: LiqianMetrics.cardPadding
-                )
-            )
-            .fill(base)
+            ConcentricRectangle()
+                .fill(base)
             VStack(spacing: LiqianMetrics.spacingXS) {
                 Text(ledger.type.map { String($0) }.joined(separator: "\n"))
                     .font(.liqianSerifFixed(size: 15))

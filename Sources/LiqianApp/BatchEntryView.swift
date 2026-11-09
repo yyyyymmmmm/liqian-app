@@ -20,9 +20,20 @@ struct BatchEntryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var systemTypeSize
 
-    /// 大字模式（办席当天用）：字号与行高放大，持久化记住选择
+    /// 大字模式（办席当天用）：持久化记住选择。v5.14 起不再写死 pt——
+    /// 改走 dynamicTypeSize 环境注入（Core TextSizeScale 大场保底档，
+    /// 只设保底、与 v5.13 字号机制同源），全页语义字阶按系统比例放大。
     @AppStorage("batchBigMode") private var bigMode = false
+
+    /// 生效字号：系统值与大场保底的较大者（口径同 ContentView 根注入）
+    private var effectiveTypeSize: DynamicTypeSize {
+        let all = DynamicTypeSize.allCases
+        let systemIndex = all.firstIndex(of: systemTypeSize) ?? 3
+        let target = TextSizeScale.bigModeTargetIndex(systemIndex: systemIndex, bigMode: bigMode)
+        return all[min(target, all.count - 1)]
+    }
     @State private var direction = LiqianConstants.received
     @State private var rows: [Row] = (0..<4).map { _ in Row() }
     @State private var errorRow: Int?
@@ -97,7 +108,6 @@ struct BatchEntryView: View {
                         showPhotoOCR = true
                     } label: {
                         Label("拍照识别礼单", systemImage: "camera.viewfinder")
-                            .font(bigMode ? .system(size: 20) : nil)
                     }
                     .frame(minHeight: LiqianMetrics.minTapTarget)
                     Text("纸质礼单拍一张，自动认出姓名和金额，核对后导入（按收礼记）。")
@@ -150,15 +160,13 @@ struct BatchEntryView: View {
                                     .foregroundStyle(Palette.stone)
                                     .frame(width: 24)
                                 TextField("姓名 / 称呼", text: $rows[i].person)
-                                    .font(bigMode ? .system(size: 20) : nil)
                                     .focused($focusedField, equals: .person(i))
                                     .submitLabel(.next)
                                     .onSubmit { focusedField = .amount(i) }
                                 TextField("金额（元）", text: $rows[i].amount, prompt: Text("金额"))
                                     .keyboardType(.decimalPad)
                                     .focused($focusedField, equals: .amount(i))
-                                    .font(bigMode ? .system(size: 34, weight: .semibold).monospacedDigit() : nil)
-                                    .frame(width: bigMode ? 150 : 96)
+                                    .frame(width: effectiveTypeSize.isAccessibilitySize ? 150 : 96)
                                 Button(role: .destructive) {
                                     if rows.count > 1 {
                                         rows.remove(at: i)
@@ -177,7 +185,7 @@ struct BatchEntryView: View {
                                     .padding(.leading, LiqianMetrics.spacingXL)
                             }
                         }
-                        .frame(minHeight: bigMode ? 76 : LiqianMetrics.minTapTarget)
+                        .frame(minHeight: effectiveTypeSize.isAccessibilitySize ? 76 : LiqianMetrics.minTapTarget)
                     }
                     Button {
                         rows.append(Row())
@@ -188,6 +196,7 @@ struct BatchEntryView: View {
                 }
                 }
             }
+            .dynamicTypeSize(effectiveTypeSize)
             .scrollContentBackground(.hidden)
             .background(Palette.groupedBackground.ignoresSafeArea())
             // 滚动交互式收起键盘（v4.4）；逐行增删平滑过渡（以行数为值）
@@ -320,7 +329,6 @@ struct BatchEntryView: View {
                 .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $pasteText)
-                .font(bigMode ? .system(size: 20) : nil)
                 .frame(minHeight: 140)
             Button {
                 parsedLines = LedgerTextParser.parse(pasteText)
@@ -361,7 +369,6 @@ struct BatchEntryView: View {
     @ViewBuilder
     private func parsedRow(_ line: ParsedLine) -> some View {
         parsedRowContent(line)
-            .font(bigMode ? .system(size: 17) : nil)
     }
 
     @ViewBuilder
@@ -373,7 +380,6 @@ struct BatchEntryView: View {
                     .foregroundStyle(Palette.success)
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? ""))
-                        .font(bigMode ? .system(size: 17) : nil)
                         .foregroundStyle(Palette.ink)
                     if existingNames.contains(name) {
                         Text("本礼簿已有同名记录，导入后将并列保存")
@@ -450,7 +456,6 @@ struct BatchEntryView: View {
                 .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $aiText)
-                .font(bigMode ? .system(size: 20) : nil)
                 .frame(minHeight: 140)
             Button {
                 Task { await runAIParse() }
@@ -521,7 +526,6 @@ struct BatchEntryView: View {
     @ViewBuilder
     private func aiParsedRow(_ line: AIPreviewLine) -> some View {
         aiParsedRowContent(line)
-            .font(bigMode ? .system(size: 17) : nil)
     }
 
     @ViewBuilder
@@ -534,7 +538,6 @@ struct BatchEntryView: View {
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                     HStack(spacing: LiqianMetrics.spacingS) {
                         Text("\(name) · \(LedgerMath.fmtMoney(cents: cents))" + (relation.map { " · \($0)" } ?? "") + (method.map { " · \($0)" } ?? ""))
-                            .font(bigMode ? .system(size: 17) : nil)
                             .foregroundStyle(Palette.ink)
                         aiBadge
                     }
