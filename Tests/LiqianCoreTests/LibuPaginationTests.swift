@@ -347,7 +347,8 @@ final class LibuPaginationTests: XCTestCase {
         XCTAssertTrue(source.contains("verticalSectionTitleText"), "题签列文案函数须在位")
         XCTAssertFalse(source.contains("func drawSectionTitle"), "横排题签带不许回潮")
         XCTAssertFalse(source.contains("func sectionTitleText"), "横排题签文案不许回潮")
-        XCTAssertFalse(source.contains("by: columnsPerPage"), "逐节独立切块（段段换页）不许回潮")
+        XCTAssertFalse(source.contains("to: section.records.count"), "逐节独立切块（段段换页）不许回潮")
+        XCTAssertFalse(source.contains("pageRecords"), "旧内页签名（逐节页记录）不许回潮")
         XCTAssertFalse(source.contains("prefix(4)"), "姓名 4 字硬截不许回潮")
         XCTAssertTrue(source.contains("let chars = Array(name)"), "姓名必须整串入列")
     }
