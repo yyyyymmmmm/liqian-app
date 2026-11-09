@@ -152,7 +152,7 @@ struct LibuExportView: View {
                                 .font(.footnote)
                                 .foregroundStyle(Palette.danger)
                         } else if pdfURL == nil {
-                            Text("印刷版沿用上方预览的同一份谱面（含谱序）：还没生成预览时，点这里会先生成预览再装配。")
+                            Text("印刷版沿用上方预览的同一份谱面（含谱序）。")
                                 .font(.footnote)
                                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                         }
@@ -195,7 +195,7 @@ struct LibuExportView: View {
                 } header: {
                     Text("成书")
                 } footer: {
-                    Text("印刷版礼谱（出血＋封面展开图＋印刷参数页）与家族汇册是 Pro 权益；装订成书首批为人工履约内测，先看说明登记意向。")
+                    Text("印刷版礼谱与家族汇册是 Pro 权益；装订成书首批为人工履约内测。")
                 }
             }
             .listStyle(.insetGrouped)

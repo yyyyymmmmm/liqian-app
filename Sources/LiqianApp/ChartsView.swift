@@ -471,7 +471,7 @@ struct ChartsView: View {
             Text("暂无可统计的往来")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            Text("在「首页」记下收礼或随礼后，这里会生成总览、收送趋势、关系分布与人物洞察。示例礼簿的数据不计入统计。")
+            Text("在「首页」记一笔后，这里会生成图表。示例礼簿的数据不计入统计。")
                 .font(.subheadline)
                 .foregroundStyle(Palette.stone)
                 .fixedSize(horizontal: false, vertical: true)
@@ -648,7 +648,7 @@ struct ChartsView: View {
                         .foregroundStyle(Palette.stone)
                 }
                 if selectedMonthRecords.isEmpty {
-                    Text("这个月没有往来记录。点选或拖动上方图表可切换月份。")
+                    Text("这个月没有往来记录。")
                         .font(.caption)
                         .foregroundStyle(Palette.stone)
                 } else {
@@ -911,11 +911,6 @@ struct ChartsView: View {
                     .foregroundStyle(Palette.stone)
             }
 
-            if scope == .all {
-                Text("累计净额自窗口首月起算；全史净额见总览卡「净往来」。")
-                    .font(.caption)
-                    .foregroundStyle(Palette.stone)
-            }
         }
         .liqianCardSurface()
     }
@@ -1268,7 +1263,7 @@ struct ChartsView: View {
                         // 图标签带上日期消歧，明细行仍显示原标题。
                         y: .value("场合", occasionChartLabel(row))
                     )
-                    .foregroundStyle(Palette.primary.opacity(barOpacity(total: row.total, in: occasionRows.map(\.total))))
+                    .foregroundStyle(Palette.stone.opacity(barOpacity(total: row.total, in: occasionRows.map(\.total))))
                     .cornerRadius(4)
                     .annotation(position: .trailing, alignment: .leading, spacing: 4) {
                         Text(LedgerMath.fmtMoney(cents: row.total))
@@ -1361,7 +1356,7 @@ struct ChartsView: View {
                         x: .value("往来", Double(person.received + person.given) * entrance / 100.0),
                         y: .value("人物", person.name)
                     )
-                    .foregroundStyle(Palette.primary.opacity(barOpacity(total: person.received + person.given, in: topPeople.map { $0.received + $0.given })))
+                    .foregroundStyle(Palette.stone.opacity(barOpacity(total: person.received + person.given, in: topPeople.map { $0.received + $0.given })))
                     .cornerRadius(4)
                     .annotation(position: .trailing, alignment: .leading, spacing: 4) {
                         Text(LedgerMath.fmtMoney(cents: person.received + person.given))
@@ -1471,7 +1466,7 @@ struct ChartsView: View {
                         x: .value("笔数", Double(row.count) * entrance),
                         y: .value("金额段", row.label)
                     )
-                    .foregroundStyle(Palette.primary.opacity(barOpacity(total: row.count, in: bucketRows.map(\.count))))
+                    .foregroundStyle(Palette.stone.opacity(barOpacity(total: row.count, in: bucketRows.map(\.count))))
                     .cornerRadius(4)
                     .annotation(position: .trailing, alignment: .leading, spacing: 4) {
                         Text("\(row.count) 笔 · \(LedgerMath.fmtMoney(cents: row.totalCents))")

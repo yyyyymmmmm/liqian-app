@@ -265,9 +265,6 @@ struct AdvisorView: View {
             Text("问我一句，我从你的账里查。")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
-            Text("比如谁还没回礼、和谁欠谁、今年和去年比哪个多、最近几个月的趋势、下一场安排。金额都由工具按本机账目现查现算。也可以直接吩咐我记账，如「张三随礼了 500」——我拟好卡片，你核对点确认才入账。")
-                .font(.footnote)
-                .foregroundStyle(Palette.stone)
             // 示例 chips（v5.8.1，审计 #6）：只活在空态——无对话时
             // 作为欢迎卡的一部分出现（点即问），发出第一条消息后
             // 随 messages 非空整体消失，不再常驻输入区上方；成熟
@@ -275,12 +272,8 @@ struct AdvisorView: View {
             if session.messages.isEmpty {
                 exampleChips
             }
-            // v5.4：隐私脚注从输入栈里挪进欢迎卡底部——输入区只剩
-            // 输入坞，不再有文字夹在两层控件之间。
-            Divider()
-            Text("问账走你自己配置的 DeepSeek 接口：问题文字与工具查到的相关结果会发过去帮着组织回答，与问题无关的账目不发；金额全在本机算。对话记录只存这台手机，随时可在右上角菜单里清空。")
-                .font(.caption)
-                .foregroundStyle(Palette.stone)
+            // v5.13 说明书清仓（UI 走查问题 5）：功能说明与隐私长段
+            // 已删——怎么问由示例 chips 承担，隐私口径一句版在 AI 设置页。
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .liqianCardSurface()

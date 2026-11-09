@@ -216,7 +216,7 @@ struct AnnualReportView: View {
     private var highlightsCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("年度之最")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             if let b = highlights.biggest {
                 highlightBlock(label: "最大一笔", line: biggestLine(b))
@@ -275,7 +275,7 @@ struct AnnualReportView: View {
     private var yoyCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("与 \(prevYear) 年比")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             yoyLine("收礼", delta: summary.recv - prevSummary.recv, money: true)
             yoyLine("随礼", delta: summary.given - prevSummary.given, money: true)
@@ -306,7 +306,7 @@ struct AnnualReportView: View {
     private var typeCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("按事由")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             ForEach(typeRows) { t in
                 VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
@@ -342,7 +342,7 @@ struct AnnualReportView: View {
                 Capsule()
                     .fill(Palette.stone.opacity(0.15))
                 Capsule()
-                    .fill(Palette.primary)
+                    .fill(Palette.stone)
                     .frame(width: max(4, geo.size.width * fraction))
             }
         }
@@ -355,7 +355,7 @@ struct AnnualReportView: View {
     private var closingCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text("这一年")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             Text(closingLine)
                 .font(.subheadline)
@@ -370,7 +370,7 @@ struct AnnualReportView: View {
     private var shareCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingSM) {
             Text("分享图卡")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             Text("含开场、一条之最与年度总结；只带往来第一位亲友的姓名，其余为年度汇总，不含明细。")
                 .font(.footnote)

@@ -91,8 +91,6 @@ struct PeopleView: View {
                         ForEach(pendingSends) { r in prepRow(r) }
                     } header: {
                         Text("备礼清单")
-                    } footer: {
-                        Text("还没送出的礼记在这里，送出后在记录里改为已送出。")
                     }
                 }
 
@@ -370,8 +368,6 @@ struct PrepListView: View {
             if pendingSends.isEmpty {
                 ContentUnavailableView {
                     Label("没有待送出的礼", systemImage: "gift")
-                } description: {
-                    Text("记随礼时选「待送出」，会记在这里。")
                 }
                 .padding(.vertical, LiqianMetrics.spacingL)
                 .listRowBackground(Color.clear)

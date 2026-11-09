@@ -380,7 +380,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             HStack {
                 Text("待回礼")
-                    .font(.headline.weight(.bold))
+                    .font(.headline)
                     .foregroundStyle(Palette.ink)
                 Spacer()
                 Text("共 \(pendingPeople.count) 人 · \(LedgerMath.fmtMoney(cents: pendingTotal))")
@@ -433,7 +433,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
                 HStack {
                     Text("本月往来")
-                        .font(.headline.weight(.bold))
+                        .font(.headline)
                         .foregroundStyle(Palette.ink)
                     Spacer()
                     Text("看图表")
@@ -526,7 +526,7 @@ struct HomeView: View {
     private var recentCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text("最近动态")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
                 .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(recentRecords) { r in

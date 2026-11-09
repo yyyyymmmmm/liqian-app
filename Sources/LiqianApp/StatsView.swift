@@ -158,8 +158,6 @@ struct StatsView: View {
                     }
                 } header: {
                     Text("待回")
-                } footer: {
-                    Text("待回为该年收随差额（收多于随的部分），点名字进往来详情。")
                 }
             }
 
@@ -314,7 +312,7 @@ struct StatsView: View {
                 Capsule()
                     .fill(Palette.stone.opacity(0.15))
                 Capsule()
-                    .fill(Palette.primary)
+                    .fill(Palette.stone)
                     .frame(width: max(4, geo.size.width * fraction))
             }
         }

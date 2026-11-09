@@ -216,7 +216,7 @@ struct MeView: View {
                         entryLabel(
                             icon: "tray.and.arrow.up",
                             title: "导出备份（JSON）",
-                            subtitle: "包含全部礼簿、记录、提醒日子与礼簿班子，可用于换机恢复；签名图片与祝福录音不在备份内（保存在本机与 iCloud）"
+                            subtitle: "包含全部礼簿与记录，可用于换机恢复；签名与录音不在备份内"
                         )
                     }
                     csvEntryRow
@@ -252,7 +252,7 @@ struct MeView: View {
                 } header: {
                     Text("数据")
                 } footer: {
-                    Text("iCloud 同步通过你的 iCloud 账号同步礼簿、记录与提醒，换手机或重装 App 后自动回来；导出备份是另一条手动恢复线，两条线互不影响。")
+                    Text("iCloud 同步与导出备份是两条独立的恢复线，互不影响。")
                 }
 
                 // —— 提醒：人情提醒与备份提醒归一组（v5.0.1 IA）——

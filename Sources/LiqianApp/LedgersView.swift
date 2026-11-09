@@ -245,7 +245,7 @@ struct LedgersView: View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             HStack {
                 Text("待回礼")
-                    .font(.headline.weight(.bold))
+                    .font(.headline)
                     .foregroundStyle(Palette.ink)
                 Spacer()
                 Text("共 \(pendingPeople.count) 人 · \(LedgerMath.fmtMoney(cents: pendingTotal))")
@@ -291,7 +291,7 @@ struct LedgersView: View {
     private var yearChartCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             Text("\(LiqianDate.currentYearString()) 年往来")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
             Chart {
                 BarMark(
@@ -328,7 +328,7 @@ struct LedgersView: View {
     private var recentCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
             Text("最近往来")
-                .font(.headline.weight(.bold))
+                .font(.headline)
                 .foregroundStyle(Palette.ink)
                 .padding(.bottom, LiqianMetrics.spacingXS)
             ForEach(recentRecords) { r in
