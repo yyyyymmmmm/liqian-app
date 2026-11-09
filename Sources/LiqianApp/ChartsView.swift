@@ -31,7 +31,6 @@ struct ChartsView: View {
     @State private var relationRoute: RelationRoute?
     /// 入场进度 0→1：驱动柱条生长与环图扫入（Reduce Motion 时恒 1）
     @State private var entrance: Double = 0
-    @Namespace private var rangeNamespace
 
     // MARK: - 数据管线（口径同 StatsView）
 
@@ -390,44 +389,22 @@ struct ChartsView: View {
             entrance = 1
         } else {
             entrance = 0
-            withAnimation(.easeOut(duration: 0.7)) { entrance = 1 }
+            withAnimation(.default) { entrance = 1 }
         }
     }
 
-    // MARK: - 范围选择（滑块式：matchedGeometry 指示器 + 选择触感，贴手无迟滞弹簧）
+    // MARK: - 范围选择（v5.14 全原生整改：系统 segmented Picker，与全 App
+    // 其余分段同款；旧自绘胶囊指示器＋matchedGeometry 滑移整段删除）
 
     private var rangeSelector: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-            HStack(spacing: 3) {
+            Picker("范围", selection: $scope) {
                 ForEach(ChartScope.allCases) { item in
-                    Button {
-                        if scope != item {
-                            // v5：指示器滑移曲线对齐 MotionTokens 液体弹簧令牌
-                            withAnimation(MotionTokens.resolved(MotionTokens.liquidSpring, reduceMotion: reduceMotion)) {
-                                scope = item
-                            }
-                        }
-                    } label: {
-                        Text(item.label)
-                            .font(.subheadline.weight(scope == item ? .semibold : .regular))
-                            .foregroundStyle(scope == item ? Palette.ink : Palette.stone)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 7)
-                            .background {
-                                if scope == item {
-                                    Capsule()
-                                        .fill(Palette.surface)
-                                        .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
-                                        .matchedGeometryEffect(id: "rangePill", in: rangeNamespace)
-                                }
-                            }
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
+                    Text(item.label).tag(item)
                 }
             }
-            .padding(3)
-            .background(Palette.stone.opacity(0.12), in: Capsule())
+            .pickerStyle(.segmented)
+            .labelsHidden()
             .sensoryFeedback(.selection, trigger: scope)
 
             if scope == .year {
@@ -1024,12 +1001,12 @@ struct ChartsView: View {
     // MARK: - 占比条分段（v4.7.1，竞品对标 B：随手记式占比的一行化）
 
     /// 事由占比：按往来总额（收+送）分段，色彩与关系环图同阶（sliceColor）
-    private var typeShareSegments: [ShareBar.Segment] {
+    private var typeShareSegments: [ShareStackBar.Segment] {
         let total = typeRows.reduce(0) { $0 + $1.received + $1.given }
         guard total > 0 else { return [] }
         return typeRows.enumerated().map { idx, row in
             let frac = Double(row.received + row.given) / Double(total)
-            return ShareBar.Segment(
+            return ShareStackBar.Segment(
                 id: row.type,
                 fraction: frac * entrance,
                 rawFraction: frac,
@@ -1051,12 +1028,12 @@ struct ChartsView: View {
     }
 
     /// 红白占比：红事朱砂、白事素蓝（与红白条图同色义）
-    private var kindShareSegments: [ShareBar.Segment] {
+    private var kindShareSegments: [ShareStackBar.Segment] {
         let total = kindRows.reduce(0) { $0 + $1.received + $1.given }
         guard total > 0 else { return [] }
         return kindRows.map { row in
             let frac = Double(row.received + row.given) / Double(total)
-            return ShareBar.Segment(
+            return ShareStackBar.Segment(
                 id: row.name,
                 fraction: frac * entrance,
                 rawFraction: frac,
@@ -1101,7 +1078,7 @@ struct ChartsView: View {
                     .foregroundStyle(Palette.stone)
             } else {
                 // 占比条（v4.7.1）：先给份额的一眼读数，下方成对条再给收/送结构
-                ShareBar(segments: typeShareSegments, accessibilityText: typeShareAccessibilityText)
+                ShareStackBar(segments: typeShareSegments, accessibilityText: typeShareAccessibilityText)
                 Chart(typeRows) { row in
                     BarMark(
                         x: .value("收礼", Double(row.received) * entrance / 100.0),
@@ -1174,7 +1151,7 @@ struct ChartsView: View {
             cardHeader("红白分开", caption: "红事与白事分开统计")
             // 占比条（v4.7.1）：红/白总份额一行看清，下方条图再拆收/送
             if kindRows.contains(where: { $0.received + $0.given > 0 }) {
-                ShareBar(segments: kindShareSegments, accessibilityText: kindShareAccessibilityText)
+                ShareStackBar(segments: kindShareSegments, accessibilityText: kindShareAccessibilityText)
             }
             Chart(kindRows) { row in
                 BarMark(
@@ -1599,13 +1576,15 @@ struct ChartsView: View {
     }
 }
 
-// MARK: - 占比条（v4.7.1，竞品对标 B）
+// MARK: - 占比条（v4.7.1 立项；v5.14 全原生整改：自绘 GeometryReader 分段
+// 改 Swift Charts 单行堆叠 BarMark，与同页其余图同框架）
 
 /// 单行占比条：分段宽度＝金额占比，段够宽（≥16%）时段内标百分比；
 /// 与卡内条形图上下互补——占比条给「份额」的一眼读数，条形给收/送结构。
 /// 段宽由父层按入场进度（entrance）缩放实现生长动画，百分比按原始
 /// 占比判定与显示；Reduce Motion 时父层 entrance 恒 1，即瞬时呈现。
-private struct ShareBar: View {
+/// 旧自绘版的 2pt 段缝不再复刻：堆叠条以段界色差分段（系统图表惯例）。
+private struct ShareStackBar: View {
     struct Segment: Identifiable {
         var id: String
         /// 已按入场进度缩放的宽度占比
@@ -1621,22 +1600,29 @@ private struct ShareBar: View {
     let accessibilityText: String
 
     var body: some View {
-        GeometryReader { geo in
-            let gaps = CGFloat(max(segments.count - 1, 0)) * 2
-            HStack(spacing: 2) {
-                ForEach(segments) { seg in
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(seg.color)
+        Group {
+            if segments.isEmpty {
+                Color.clear
+            } else {
+                Chart(segments) { seg in
+                    BarMark(
+                        x: .value("占比", max(seg.fraction, 0)),
+                        y: .value("占比条", "占比")
+                    )
+                    .foregroundStyle(seg.color)
+                    .annotation(position: .overlay) {
                         if seg.rawFraction >= 0.16 {
                             Text(seg.percentText)
                                 .font(.caption2.weight(.semibold).monospacedDigit())
                                 .foregroundStyle(seg.labelColor)
                         }
                     }
-                    .frame(width: max(0, (geo.size.width - gaps) * seg.fraction))
                 }
-                Spacer(minLength: 0)
+                .chartXScale(domain: 0.0...1.0)
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .chartLegend(.hidden)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
             }
         }
         .frame(height: 18)
