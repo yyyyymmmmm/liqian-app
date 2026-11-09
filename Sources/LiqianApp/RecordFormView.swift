@@ -14,9 +14,11 @@ import LiqianDesign
 /// 关系/方式/日期/状态/备注收进可展开的「补充信息」；方向分段在卡外上方、
 /// 标准 segmented 不包容器。保存成功在卡上落印收尾（礼簿身份）。
 ///
-/// 输入法互斥（FocusState 三态）：姓名/备注激活→系统键盘、自绘键盘收起；
-/// 金额激活→系统键盘收起（无文本框承接焦点）、自绘键盘作为卡下固定面板升起。
-/// 任何时刻只有一个输入面。
+/// v5.14 全原生整改（第 3 期）：容器 ScrollView＋手堆卡 → 系统 Form
+/// （方向/主表单/附属行各成 Section，「一张纸」的构成改由系统分组
+/// 表面承载）；自绘金额键盘整段删除，金额改系统 decimalPad 键盘的
+/// 真 TextField，旧键盘的输入合法性约束由 Core AmountInputText 承接；
+/// 三个输入面（姓名/金额/备注）自此全走系统键盘、FocusState 互斥退役。
 ///
 /// 保存语义与校验与旧版一致，未动：姓名必填、金额 > 0、
 /// 防重复提交 isSaving、落印等待 1.05s 后关闭（保存并继续则清字段续记）。
@@ -65,7 +67,7 @@ struct RecordFormView: View {
     @State private var showSupplements: Bool
     @FocusState private var focus: Field?
 
-    /// 输入面三态：person/note 走系统键盘，amount 走自绘键盘面板，三者互斥
+    /// 输入焦点（v5.14 起三面全走系统键盘，焦点只管键盘归属）
     enum Field { case person, amount, note }
 
     /// 从账本新建
@@ -205,37 +207,45 @@ struct RecordFormView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: LiqianMetrics.spacingM) {
+            Form {
+                Section {
                     directionSegmented
+                }
+                Section {
                     formCard
-                    // 活礼谱（v4.2）：签名/祝福挂具体一笔，只在编辑态出现
-                    // （新建的笔先保存拿到 id 才有处可挂）
-                    if let existing {
+                }
+                .listRowInsets(EdgeInsets(
+                    top: LiqianMetrics.cardPadding, leading: LiqianMetrics.cardPadding,
+                    bottom: LiqianMetrics.cardPadding, trailing: LiqianMetrics.cardPadding
+                ))
+                .listRowBackground(
+                    (effectiveLedger?.isBai ?? false) ? Palette.baiCard : Palette.card
+                )
+                // 活礼谱（v4.2）：签名/祝福挂具体一笔，只在编辑态出现
+                // （新建的笔先保存拿到 id 才有处可挂）；其自有表面保留，
+                // 以透明行底嵌进分组列表（与旧滚动版的卡片陈列同观感）
+                if let existing {
+                    Section {
                         RecordLiveMediaSection(record: existing)
                     }
-                    if existing == nil {
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
+                if existing == nil {
+                    Section {
                         saveAndContinueCard
                     }
-                    if existing != nil {
+                }
+                if existing != nil {
+                    Section {
                         deleteCard
                     }
                 }
-                .padding(LiqianMetrics.spacingM)
             }
+            .scrollContentBackground(.hidden)
             .background(Palette.pageBG.ignoresSafeArea())
-            // 滚动时可交互式收起系统键盘（v4.4）；只作用于系统键盘，
-            // 自绘金额键盘是 safeAreaInset 面板、不走键盘通道，互斥路径不受影响
+            // 滚动时可交互式收起系统键盘（v4.4，v5.14 起三面全走系统键盘）
             .scrollDismissesKeyboard(.interactively)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // 金额输入面：自绘键盘作为卡下固定面板升起，与系统键盘互斥；
-                // Reduce Motion 时面板改淡入，不滑动（v4.4）
-                if focus == .amount {
-                    amountKeypadPanel
-                        .transition(reduceMotion ? .opacity : .move(edge: .bottom))
-                }
-            }
-            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: focus)
             .navigationTitle(existing == nil ? "记一笔" : "编辑记录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -297,7 +307,14 @@ struct RecordFormView: View {
                 }
             }
             .onChange(of: person) { _, _ in formError = nil }
-            .onChange(of: amountText) { _, _ in formError = nil }
+            .onChange(of: amountText) { _, newValue in
+                // v5.14：旧自绘键盘的输入合法性约束由 Core 净化函数承接
+                // （至多两位小数/整数至多 7 位/不留前导零），系统键盘与
+                // 粘贴进来的文本都过同一道口径；保存侧校验不变
+                let cleaned = AmountInputText.sanitized(newValue)
+                if cleaned != newValue { amountText = cleaned }
+                formError = nil
+            }
         }
     }
 
@@ -311,7 +328,7 @@ struct RecordFormView: View {
         .pickerStyle(.segmented)
     }
 
-    // MARK: - 主卡：一张纸（surface 底 + 令牌圆角），落印盖在卡上
+    // MARK: - 主表单：落印盖在其上（v5.14 起由 Form Section 承载表面）
 
     private var formCard: some View {
         VStack(spacing: LiqianMetrics.spacingM) {
@@ -332,9 +349,8 @@ struct RecordFormView: View {
             nameBlock
             supplementsBlock
         }
-        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false)
         .overlay {
-            // 落印收尾：印盖在卡片中央偏右（全屏居中是旧版位置，纸在哪印落哪）
+            // 落印收尾：印盖在表单中央偏右（全屏居中是旧版位置，纸在哪印落哪）
             SealStampOverlay(
                 char: sealText,
                 bai: effectiveLedger?.isBai ?? false,
@@ -374,32 +390,28 @@ struct RecordFormView: View {
         .frame(minHeight: LiqianMetrics.minTapTarget)
     }
 
-    // MARK: - 金额主角：卡内第一行，点按激活自绘键盘
+    // MARK: - 金额主角：卡内第一行（v5.14：系统 decimalPad 键盘的真
+    // TextField，字阶回自家语义金额口径 liqianMoney(.largeTitle)——
+    // 定版「记账大字显示」档；旧写死 44pt 与自绘光标一并退役）
 
     private var amountBlock: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
             HStack(alignment: .center, spacing: LiqianMetrics.spacingS) {
                 Text("¥")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.liqianMoney(.title2))
                     .foregroundStyle(Palette.sub)
-                Text(amountText.isEmpty ? "0" : amountText)
-                    .font(.system(size: 44, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(amountText.isEmpty ? Palette.sub : Palette.ink)
-                    .contentTransition(.numericText())
+                TextField("金额", text: $amountText, prompt: Text("0"))
+                    .keyboardType(.decimalPad)
+                    .focused($focus, equals: .amount)
+                    .font(.liqianMoney(.largeTitle))
+                    .foregroundStyle(Palette.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                if focus == .amount {
-                    AmountCaret()
-                }
+                    .contentTransition(.numericText())
+                    .accessibilityLabel("金额")
                 Spacer()
             }
             .frame(minHeight: LiqianMetrics.minTapTarget)
-            .contentShape(Rectangle())
-            .onTapGesture { focus = .amount }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("金额")
-            .accessibilityValue(amountText.isEmpty ? "未输入，点按输入金额" : "\(amountText) 元")
-            .accessibilityAddTraits(.isButton)
             if let amountError {
                 Text(amountError)
                     .font(.footnote)
@@ -426,7 +438,6 @@ struct RecordFormView: View {
                             in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                         )
                 }
-                .buttonStyle(ScaleOnPressButtonStyle())
             }
         }
     }
@@ -507,7 +518,6 @@ struct RecordFormView: View {
                                     in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                                 )
                             }
-                            .buttonStyle(ScaleOnPressButtonStyle())
                             .accessibilityLabel("选\(p.name)，\(p.relation)，共 \(p.count) 笔往来")
                         }
                     }
@@ -615,7 +625,7 @@ struct RecordFormView: View {
         }
     }
 
-    // MARK: - 卡外附属行：保存并继续（新建）／删除（编辑），与主卡同语言的次级纸面
+    // MARK: - 附属 Section：保存并继续（新建）／删除（编辑）
 
     private var saveAndContinueCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
@@ -627,7 +637,6 @@ struct RecordFormView: View {
                     .foregroundStyle(Palette.sub)
             }
         }
-        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false, padding: LiqianMetrics.spacingSM)
     }
 
     private var deleteCard: some View {
@@ -635,104 +644,6 @@ struct RecordFormView: View {
             confirmDelete = true
         }
         .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
-        .liqianCardSurface(bai: effectiveLedger?.isBai ?? false, padding: LiqianMetrics.spacingSM)
-    }
-
-    // MARK: - 自绘金额键盘：卡下固定面板，与卡同语言
-    // 面板 surface 底、键面 pageBG＋line 描边、数字 ink、删除 sub；
-    // 全表单仅此一处用 line 细线——面板顶边这条，隔开金额区（卡）与键盘。
-
-    private var amountKeypadPanel: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(Palette.line)
-                .frame(height: 1)
-            amountKeypad
-                .padding(.horizontal, LiqianMetrics.spacingM)
-                .padding(.top, LiqianMetrics.spacingSM)
-                .padding(.bottom, LiqianMetrics.spacingS)
-        }
-        .background(Palette.surface.ignoresSafeArea(edges: .bottom))
-    }
-
-    private var amountKeypad: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: LiqianMetrics.spacingS), count: 3),
-            spacing: LiqianMetrics.spacingS
-        ) {
-            ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9"], id: \.self) { k in
-                keypadKey(k)
-            }
-            keypadKey(".")
-            keypadKey("0")
-            keypadDeleteKey
-        }
-    }
-
-    private func keypadKey(_ label: String) -> some View {
-        Button {
-            keypadInput(label)
-        } label: {
-            Text(label)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(Palette.ink)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .background(Palette.pageBG, in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                        .stroke(Palette.line, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// 删除键：点按删一位，长按清空
-    private var keypadDeleteKey: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                .fill(Palette.pageBG)
-            RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
-                .stroke(Palette.line, lineWidth: 1)
-            Image(systemName: "delete.left")
-                .font(.system(size: 22))
-                .foregroundStyle(Palette.sub)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 56)
-        .contentShape(RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("删除一位，长按清空")
-        .accessibilityAddTraits(.isButton)
-        .onTapGesture { keypadInput("delete") }
-        .onLongPressGesture(minimumDuration: 0.45) { keypadInput("clear") }
-    }
-
-    /// 键盘输入走字符串拼接并做合法性约束：
-    /// 最多两位小数；首位是 0 时再输数字直接替换（不出现 05、00）；
-    /// 整数部分上限 7 位（¥9,999,999），现场记账足够。
-    private func keypadInput(_ key: String) {
-        switch key {
-        case "delete":
-            if !amountText.isEmpty { amountText.removeLast() }
-        case "clear":
-            amountText = ""
-        case ".":
-            if amountText.contains(".") { return }
-            amountText = amountText.isEmpty ? "0." : amountText + "."
-        default:
-            if let dot = amountText.firstIndex(of: ".") {
-                let fracCount = amountText[amountText.index(after: dot)...].count
-                if fracCount >= 2 { return }
-                amountText += key
-            } else if amountText == "0" {
-                amountText = key
-            } else if amountText.count >= 7 {
-                return
-            } else {
-                amountText += key
-            }
-        }
-        amountError = nil
     }
 
     private func save() {
@@ -882,28 +793,5 @@ struct RecordFormView: View {
         try? modelContext.save()
         deleteTrigger += 1
         dismiss()
-    }
-}
-
-/// 金额输入光标：金额面激活时在数字后闪烁的细竖线（品牌色），
-/// 提示「现在敲的是金额」——系统键盘收起后唯一的输入焦点信号
-private struct AmountCaret: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var visible = true
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(Palette.primary)
-            .frame(width: 3, height: 40)
-            .opacity(visible ? 1 : 0)
-            .onAppear {
-                visible = true
-                // Reduce Motion 时光标常亮不闪烁（v4.4）：焦点信号保留、动效去掉
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
-                    visible = false
-                }
-            }
-            .accessibilityHidden(true)
     }
 }
