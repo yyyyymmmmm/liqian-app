@@ -191,21 +191,16 @@ public struct GuestSubmissionsResponseDTO: Codable, Equatable {
 // MARK: - 时间解析（契约时间形如 2026-11-09T07:48:50.070+08:00）
 
 public enum GuestTime {
-    private static let fractionalFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let plainFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    /// 带毫秒优先、无毫秒兜底；解析不了返回 nil（原文仍在 createdAtRaw，不丢数据）
+    /// 带毫秒优先、无毫秒兜底；解析不了返回 nil（原文仍在 createdAtRaw，不丢数据）。
+    /// formatter 每次现构造：ISO8601DateFormatter 非 Sendable，Swift 6 下
+    /// 不许做静态共享属性；本函数只在展示/同步落库时低频调用，现构造成本可忽略。
     public static func parse(_ raw: String) -> Date? {
-        fractionalFormatter.date(from: raw) ?? plainFormatter.date(from: raw)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: raw)
     }
 }
 
