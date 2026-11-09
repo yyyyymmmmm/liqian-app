@@ -98,7 +98,16 @@ struct StatsView: View {
                 ContentUnavailableView {
                     Label("还没有记录", systemImage: "chart.bar.doc.horizontal")
                 } description: {
-                    Text("先记几笔再来看人情总览。")
+                    // 空态分档（v5.13 B 案）：与年度报告同口径，示例-only
+                    // 时明示隔离并指路往来页（往来页不隔离、示例可见）
+                    if SampleScope.statsEmptyKind(
+                        hasSamples: SampleData.hasSamples(ledgers: ledgers),
+                        realRecordCount: snapshots.count
+                    ) == .sampleOnly {
+                        Text("这里统计的是你自己的往来，示例礼簿的数据不计入。想看效果，可以去「往来」页看示例的差额，或记下你的第一笔。")
+                    } else {
+                        Text("先记几笔再来看人情总览。")
+                    }
                 }
             } else {
                 list

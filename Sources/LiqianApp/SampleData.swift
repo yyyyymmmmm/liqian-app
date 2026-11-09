@@ -8,10 +8,12 @@ import LiqianCore
 /// - 跨簿差额：赵国强、马小东在两本簿都有往来，往来页能看到汇总与差额；
 /// - 待送出：王建国一笔待送出，演示备礼清单（待回按差额口径 max(balance, 0)，v2.4 定版）。
 ///
-/// 身份口径（PRO-AUDIT-2 诊断三定版）：示例身份＝生成时记录的账本 ID 集合
-/// （UserDefaults 键 sampleLedgerIDs，不进备份），hasSamples/清除/防重/统计隔离
-/// 全部按「ID 集合 ∩ 现存账本」判定——改名不再脱钩。旧版按标题前缀生成的示例
-/// 没有 ID 记录，sampleIDs(ledgers:) 一并认领其 ID，保证旧示例同样可清、可隔离。
+/// 身份口径（PRO-AUDIT-2 诊断三定版，v5.13 收口）：示例身份＝生成时
+/// 记录的账本 ID 集合（UserDefaults 键 sampleLedgerIDs，不进备份），
+/// hasSamples/清除/防重/统计隔离全部按「ID 集合 ∩ 现存账本」判定
+/// （Core SampleScope 纯函数）——改名不再脱钩。v5.13 起去掉旧版的
+/// 标题前缀认领：用户自建的「示例·…」真礼簿是真实数据，不再被
+/// 标题误吞进隔离（诊断报告相邻风险 1）。
 enum SampleData {
     private static let idsKey = "sampleLedgerIDs"
 
@@ -25,11 +27,11 @@ enum SampleData {
         UserDefaults.standard.set(ids.map(\.uuidString), forKey: idsKey)
     }
 
-    /// 当前实际存在的示例账本 ID：存储集合 ∩ 现存账本 ∪ 旧版标题前缀认领
+    /// 当前实际存在的示例账本 ID：存储集合 ∩ 现存账本（只认 ID，
+    /// 标题不参与判定，v5.13 收口，见文件头）
     static func sampleIDs(ledgers: [Ledger]) -> Set<UUID> {
-        var ids = storedIDs.intersection(Set(ledgers.map(\.id)))
-        ids.formUnion(ledgers.filter { $0.title.hasPrefix("示例") }.map(\.id))
-        return ids
+        SampleScope.sampleIDs(
+            storedIDs: storedIDs, existingIDs: Set(ledgers.map(\.id)))
     }
 
     static func hasSamples(ledgers: [Ledger]) -> Bool {
