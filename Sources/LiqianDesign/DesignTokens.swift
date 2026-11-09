@@ -90,7 +90,7 @@ public enum LiqianRadius {
 }
 
 // MARK: - Motion 动效口径（v5.14 全原生整改后）
-// 自研 MotionTokens 四档曲线（press/liquidSpring/pageCrossfade/sealIn）
+// 自研动效令牌四档曲线（press/liquidSpring/pageCrossfade/sealIn）
 // 已整层退役：内容切换与入场一律系统默认动画（.default），落印走系统
 // .bouncy 预设弹簧（见 Components.SealStampOverlay），玻璃按钮的按压
 // 形变由系统玻璃自带。此处不再设任何自研曲线令牌——新动效先问系统

@@ -325,7 +325,7 @@ public struct SealStampOverlay: View {
                             withAnimation(.easeIn(duration: 0.2)) { landed = true }
                         } else {
                             // v5.14（第 3 期用户提前拍板）：落印曲线由自研
-                            // MotionTokens.sealIn 换系统 .bouncy 预设弹簧——
+                            // sealIn 令牌换系统 .bouncy 预设弹簧——
                             // 缩放落下＋回正的盖印观感由系统弹簧拼装，
                             // 印章图形本体不动（品牌内容）
                             withAnimation(.bouncy) { landed = true }
