@@ -119,11 +119,19 @@ Toggle/Picker/无障碍与对话框标题）426 条全覆盖＋L10n 键与 v5.13
   SwiftUI 字面量查表路径，繁体档下仍显简体原文——法律文本的繁体版需
   法务口径另行定稿，不在本版机校范围。
 
-## 七、验收（收尾提交后回填）
-- CI run：待回填
-- 单测：待回填（基线 346，新增 AppLanguageTests 9＋SampleScopeTests 4
-  ＋TextSizeTierTests 4＝预期 363）
-- 解包验：5.13.0/80 ×2、无 LiqianShare.appex、zh-Hant.lproj 在包：待回填
+## 七、验收（已回填）
+- CI run 42544821495（workflow_dispatch @ feat/v513-lang-ui），attempt 1
+  经 API 实查 conclusion=success。首轮 run 42544336507 红：前任半成品的
+  3 处 Swift 6 并发错误（可变静态 script/bundleCache）与 TuistStrings
+  生成重名，已按仓内先例与退表法修复（提交 6a4241b 及后续 \n 键修正）。
+- 单测：363 个 distinct 用例 0 失败（346 基线＋新增 17：AppLanguageTests 9
+  ＋SampleScopeTests 4＋TextSizeTierTests 4），日志 TEST SUCCEEDED。
+- 解包验（IPA 4,466,084 字节）：App 与 Widget 均 5.13.0/80；PlugIns 仅
+  LiqianWidget.appex、无 LiqianShare.appex；zh-Hant.lproj 在包且
+  Localizable.strings 编译后 431 条在册，关键键（隨禮/禮簿/彙總复合键/
+  跟隨系統/字號/B 案示例版空态文案/真换行题字键）逐一命中。
+- 红线：分支 diff 31 文件，AnalyzerFeeder 零改动；GuestSecrets 预签断言
+  随 CI 全绿（v5.12 配发键注入不受影响）。
 
 ## 八、真机未验（如实声明）
 - 繁体档全程观感：主要页面、首开引导、导出简体谱/繁体谱各一份的实际呈现；
