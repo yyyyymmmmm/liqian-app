@@ -324,7 +324,11 @@ public struct SealStampOverlay: View {
                         if reduceMotion {
                             withAnimation(.easeIn(duration: 0.2)) { landed = true }
                         } else {
-                            withAnimation(MotionTokens.sealIn) { landed = true }
+                            // v5.14（第 3 期用户提前拍板）：落印曲线由自研
+                            // MotionTokens.sealIn 换系统 .bouncy 预设弹簧——
+                            // 缩放落下＋回正的盖印观感由系统弹簧拼装，
+                            // 印章图形本体不动（品牌内容）
+                            withAnimation(.bouncy) { landed = true }
                         }
                     }
             }
@@ -518,23 +522,3 @@ public struct StatGrid<Content: View>: View {
     }
 }
 
-// MARK: - 按压反馈按钮样式：按下缩放 0.98（弹簧），减动效开启时不缩放
-
-public struct ScaleOnPressButtonStyle: ButtonStyle {
-    public init() {}
-
-    public func makeBody(configuration: Configuration) -> some View {
-        PressableLabel(configuration: configuration)
-    }
-
-    private struct PressableLabel: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            configuration.label
-                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1.0)
-                .animation(MotionTokens.press, value: configuration.isPressed)
-        }
-    }
-}

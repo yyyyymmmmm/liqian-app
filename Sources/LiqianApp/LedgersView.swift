@@ -121,7 +121,6 @@ struct LedgersView: View {
                                 )
                                 .matchedTransitionSource(id: ledger.id, in: zoomSpace)
                             }
-                            .buttonStyle(ScaleOnPressButtonStyle())
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(cardRowInsets)

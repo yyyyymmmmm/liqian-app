@@ -239,7 +239,7 @@ struct OnboardingView: View {
 
     private var continueButton: some View {
         Button {
-            withAnimation(MotionTokens.pageCrossfade) { page += 1 }
+            withAnimation(.default) { page += 1 }
         } label: {
             Text("继续")
                 .font(.headline)

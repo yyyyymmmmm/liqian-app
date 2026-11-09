@@ -180,7 +180,6 @@ struct HomeView: View {
                                 )
                                 .matchedTransitionSource(id: ledger.id, in: zoomSpace)
                             }
-                            .buttonStyle(ScaleOnPressButtonStyle())
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(cardRowInsets)
@@ -454,8 +453,7 @@ struct HomeView: View {
             }
             .liqianCardSurface()
         }
-        // 整卡可点也要有按压反馈（与礼簿行 ScaleOnPress 同口径，不用 .plain 裸跳）
-        .buttonStyle(ScaleOnPressButtonStyle())
+        // v5.14：按压反馈回系统默认按钮样式（列表行高亮），自研 ScaleOnPress 已退役
     }
 
     // MARK: - 快捷动作
@@ -517,7 +515,6 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, minHeight: LiqianMetrics.minTapTarget)
             .contentShape(Rectangle())
         }
-        .buttonStyle(ScaleOnPressButtonStyle())
         .disabled(!enabled)
     }
 
@@ -679,7 +676,6 @@ struct HomeView: View {
                     .stroke(Palette.paperLine, lineWidth: 1)
             )
         }
-        .buttonStyle(ScaleOnPressButtonStyle())
     }
 
     // MARK: - 旗舰卡直达导出的数据透传（与 LedgerDetailView 同口径）

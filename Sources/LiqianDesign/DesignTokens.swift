@@ -49,7 +49,7 @@ public extension View {
     }
 }
 
-// MARK: - Elevation 两档（转正：替换全仓散落阴影字面量）
+// MARK: - Elevation（转正：替换全仓散落阴影字面量；v5.14 后仅剩卡档）
 
 /// 阴影规格令牌：全仓阴影只许引用这两档（登记例外：落印浮层阴影属
 /// 落印签名动效、年度报告分享图卡是静态成品绘制，均不在 UI 令牌口径内）。
@@ -66,10 +66,11 @@ public struct LiqianShadow: Sendable {
 }
 
 public enum LiqianElevation {
-    /// 卡档：贴面卡片的轻投影（原散落值 black 0.05–0.08 / r12 一带收敛于此）
+    /// 卡档：贴面卡片的轻投影（原散落值 black 0.05–0.08 / r12 一带收敛于此）。
+    /// v5.14 收敛后全仓仅剩一处在用——首开引导的礼谱封面意象（静态
+    /// 内容意象、非列表卡面，系统无等价的静态意象投影），保留本档；
+    /// 原「浮档」（floating）在 v5 玻璃收敛后已无调用点，本期随归位删除。
     public static let card = LiqianShadow(opacity: 0.06, radius: 12, y: 4)
-    /// 浮档：浮层与悬浮控件（原散落值 black 0.16–0.20 / r10–16 一带收敛于此）
-    public static let floating = LiqianShadow(opacity: 0.18, radius: 14, y: 6)
 }
 
 public extension View {
@@ -88,25 +89,12 @@ public enum LiqianRadius {
     }
 }
 
-// MARK: - Motion 四档曲线＋行为令牌（值取自审计枚举，逐点替换散落曲线）
-
-public enum MotionTokens {
-    /// 按压：ScaleOnPress 与一切点按反馈
-    public static let press = Animation.snappy(duration: 0.22, extraBounce: 0.05)
-    /// 液体弹簧：分段指示器滑移、Tab 形变等跟手位移
-    public static let liquidSpring = Animation.interactiveSpring(response: 0.34, dampingFraction: 0.72)
-    /// 页面交叉淡化：内容切换的默认过渡
-    public static let pageCrossfade = Animation.easeInOut(duration: 0.25)
-    /// 落印：盖印签名动效专用（不改清单登记项，值与 v4 既有 .bouncy 0.45 一致）
-    public static let sealIn = Animation.bouncy(duration: 0.45, extraBounce: 0.12)
-
-    /// 双 Reduce 降级口径：Reduce Motion 开启时返回 nil（调用方以
-    /// withAnimation(resolved) 包裹，nil 即瞬时切换）；Reduce Transparency
-    /// 的降级由系统玻璃自动回退实色，不在代码层处理。
-    public static func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : animation
-    }
-}
+// MARK: - Motion 动效口径（v5.14 全原生整改后）
+// 自研 MotionTokens 四档曲线（press/liquidSpring/pageCrossfade/sealIn）
+// 已整层退役：内容切换与入场一律系统默认动画（.default），落印走系统
+// .bouncy 预设弹簧（见 Components.SealStampOverlay），玻璃按钮的按压
+// 形变由系统玻璃自带。此处不再设任何自研曲线令牌——新动效先问系统
+// 有没有，没有再议（全原生标准）。
 
 // MARK: - 金额语义双色（v5.0.2 用户改版定版，docs/DESIGN.md 金额节）
 // 记账软件式表达：逐笔金额 = 符号（LedgerMath.signedMoney）＋语义双色。

@@ -98,7 +98,7 @@ struct AdvisorView: View {
                     }
                     .padding(LiqianMetrics.spacingM)
                     .animation(
-                        MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
+                        reduceMotion ? nil : .default,
                         value: session.messages.count
                     )
                 }
@@ -229,7 +229,7 @@ struct AdvisorView: View {
                 if reduceMotion {
                     entered = true
                 } else {
-                    withAnimation(MotionTokens.pageCrossfade) { entered = true }
+                    withAnimation(.default) { entered = true }
                 }
             }
         }
@@ -252,7 +252,7 @@ struct AdvisorView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(
-            MotionTokens.resolved(MotionTokens.pageCrossfade, reduceMotion: reduceMotion),
+            reduceMotion ? nil : .default,
             value: session.activityText
         )
         .transition(reduceMotion ? .identity : .opacity)
@@ -1320,7 +1320,7 @@ private struct CardInModifier: ViewModifier {
                 // 首卡 0.12s、其后每张 +0.12s：与结论打字机并行浮入，不抢读
                 try? await Task.sleep(nanoseconds: UInt64(120_000_000 * Double(index + 1)))
                 if Task.isCancelled { return }
-                withAnimation(MotionTokens.pageCrossfade) { shown = true }
+                withAnimation(.default) { shown = true }
             }
     }
 }
