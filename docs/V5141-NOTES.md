@@ -92,3 +92,20 @@
 4. 倒计时：红事未来簿卡面与详情头部显「还有 N 天」、已过显「已过
    N 天」；白事簿两处都不显。
 5. 繁体档抽查新文案（记录日期/整批日期脚注/失败文案繁体形态）。
+
+
+## 验收追记（2026-11-13）
+
+- CI run 43403302671（workflow_dispatch，head dccb886）：attempt 1
+  经 API 实查 completed/success。首轮 run 43401793671 仅挂一条自家
+  守卫断言（键字面量误写 liqian. 前缀，实为 lastUsedLedgerID），
+  修正后重跑全绿——产品代码零失败。
+- 单测：Executed 385 tests, 0 failures（372 基线＋SaveFlow/倒计时
+  逻辑 9＋源码守卫 4），All tests passed。
+- 解包验：App Info.plist 5.14.1/82、Widget 5.14.1/82；PlugIns 只有
+  LiqianWidget.appex，无 LiqianShare.appex（基线不变）。
+- IPA：4,437,240 字节，md5 d78b65878515bf08c36c82b64562d1fa，
+  ~/workspace/your_files/liqian-v5.14.1/liqian-native-unsigned.ipa。
+- AnalyzerFeeder 零改动（分支 diff 名单核对不在内）；全分支对基线
+  d085a80 共 16 文件 +569/−36。
+- 真机未验项见上节清单（1–5），照例待用户装机验。
