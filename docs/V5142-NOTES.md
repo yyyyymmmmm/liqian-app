@@ -88,3 +88,18 @@ persistence-diag-codex-line.md、persistence-diag-claude-line.md（仓库外）�
   数据」诊断行（模式/文件名/大小，模式翻转有后缀）；②有没有
   「找回数据」回执弹窗。模式锁定后新记数据应稳定落在同一店面，
   杀 App 重开不丢为最低验收线。
+
+## 验收追记（补验实数，2026-11-13 14:00 UTC 后稀疏查询实查）
+- CI run 43434300728 attempt 1：经 `gh api .../attempts/1` 实查
+  **status=completed、conclusion=success**，head_sha=aad7180
+  与分支头对位。
+- 单测实数：run 日志总汇行 **Executed 398 tests, with 0 failures**
+  （385 基线＋本版新增 13，与预期一致），0 失败。
+- IPA：已落 ~/workspace/your_files/liqian-v5.14.2/
+  liqian-native-unsigned.ipa，**4,515,548 字节，md5
+  7cef96daa752fb1267001c892e322b38**。
+- 解包验：App Info.plist＝**5.14.2 / 83**，Widget（LiqianWidget
+  .appex）Info.plist＝**5.14.2 / 83**；PlugIns 仅 LiqianWidget
+  .appex，**无 LiqianShare.appex**。
+- 至此上一节三项待补验（attempt 结论/单测实数/解包验）全部销账；
+  真机未验声明不变（见上节）。
