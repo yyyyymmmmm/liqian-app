@@ -324,6 +324,8 @@ struct RecordFormView: View {
                 formError = nil
             }
         }
+        // 存储不安全时整页阻断（v5.14.2，见 StorageGuard）
+        .storageBlockGuard()
     }
 
     // MARK: - 方向：标准 segmented，卡外上方，不包任何额外胶囊容器

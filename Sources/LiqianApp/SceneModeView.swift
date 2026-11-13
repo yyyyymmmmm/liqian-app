@@ -295,6 +295,8 @@ struct SceneModeView: View {
         .sheet(isPresented: $showExport) {
             LibuExportView(ledger: ledger, records: ledgerRecords)
         }
+        // 存储不安全时整页阻断（v5.14.2，见 StorageGuard）
+        .storageBlockGuard()
     }
 
     // MARK: 头部：礼簿名 + 播报开关 + 结束（出复核单）

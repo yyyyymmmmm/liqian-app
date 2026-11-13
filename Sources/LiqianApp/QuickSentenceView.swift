@@ -178,6 +178,8 @@ struct QuickSentenceView: View {
                 transcriber.stop()
             }
         }
+        // 存储不安全时整页阻断（v5.14.2，见 StorageGuard）
+        .storageBlockGuard()
     }
 
     /// 语音面板入口（v5.6）：先启动转写会话、再上面板；启动即失败

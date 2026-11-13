@@ -128,6 +128,8 @@ struct LedgerFormView: View {
             .sensoryFeedback(.success, trigger: saveTrigger)
             .sensoryFeedback(.warning, trigger: errorTrigger)
         }
+        // 存储不安全时整页阻断（v5.14.2，见 StorageGuard）
+        .storageBlockGuard()
     }
 
     /// 礼谱信息行：与本表单一致的行首标签样式

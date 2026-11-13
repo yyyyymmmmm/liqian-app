@@ -189,13 +189,20 @@ struct MeView: View {
                 // 在首页/往来/礼簿列表空态，审计 #4）；备份提醒行已移
                 // 「提醒」组。
                 Section {
-                    Toggle(isOn: $cloudSync.syncEnabled) {
+                    // 开关诚实化（v5.14.2）：本地回退/锁定本地时 CloudKit
+                    // 本安装用不了，开关强制呈关且不可拨——旧版开关开着、
+                    // 小字说不支持的矛盾态就此销账（见 CloudSync）
+                    Toggle(isOn: Binding(
+                        get: { cloudSync.syncToggleLockedOff ? false : cloudSync.syncEnabled },
+                        set: { cloudSync.syncEnabled = $0 }
+                    )) {
                         entryLabel(
                             icon: "icloud",
                             title: "iCloud 同步",
                             subtitle: cloudSync.statusSubtitle
                         )
                     }
+                    .disabled(cloudSync.syncToggleLockedOff)
                     .task { await cloudSync.refreshAccountStatus() }
                     if cloudSync.showsSettingsShortcut {
                         Button {
@@ -249,6 +256,11 @@ struct MeView: View {
                             subtitle: WidgetDiag.status().summaryLine
                         )
                     }
+                    // 存储诊断行（v5.14.2）：当前存储模式＋店面文件＋
+                    // 大小一行小字，用户截图回传即可判读落在哪家店
+                    Text(cloudSync.diagnosticLine)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 } header: {
                     Text("数据")
                 } footer: {

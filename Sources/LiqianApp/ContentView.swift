@@ -56,8 +56,23 @@ struct ContentView: View {
     @State private var shareImportText = ""
     @State private var showShareImportResult = false
     @State private var shareImportResultText = ""
-    /// 存储健康（v4.2）：应急内存模式绝不沉默，顶部挂红条警示
+    /// 存储健康（v4.2 起）：应急内存模式绝不沉默，顶部挂警示条；
+    /// v5.14.2 扩为 storageUnsafe（自检失败/救援落盘失败同罪），
+    /// 条改固定红＋启动弹窗＋记账入口阻断（见 StorageGuard）
     @EnvironmentObject private var cloudSync: CloudSyncManager
+    /// 存储不安全启动弹窗（v5.14.2）：每次启动不安全就弹一次，
+    /// 「去导出备份」直达「我的」Tab；记账入口另有整页阻断兜底
+    @State private var showStorageAlert = false
+
+    /// 救援回执弹窗绑定（v5.14.2）：真找回数据才有值，关掉即销
+    private var rescueAlertBinding: Binding<Bool> {
+        Binding(
+            get: { cloudSync.rescueReceipt != nil },
+            set: { presented in
+                if !presented { cloudSync.dismissRescueReceipt() }
+            }
+        )
+    }
 
     /// 切到后台/多任务预览时是否要盖模糊遮罩
     private var shieldVisible: Bool {
@@ -131,14 +146,17 @@ struct ContentView: View {
             .tabBarMinimizeBehavior(.onScrollDown)
             .scrollEdgeEffectStyle(.soft, for: .top)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if cloudSync.isEmergencyStorage {
+                // 存储不安全硬显形（v5.14.2）：内存模式/落盘自检失败/
+                // 救援落盘失败一律固定警示红（不随主题变色——旧版用
+                // 主题色，腾讯蓝主题下是蓝条，用户根本没认出是警示）
+                if cloudSync.storageUnsafe {
                     Text("数据存储异常：现在记的内容不会被保存，请先到「我的 → 数据」导出备份。")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Palette.primary)
+                        .background(Color.red)
                 }
             }
             .blur(radius: shieldVisible ? 20 : 0)
@@ -179,6 +197,11 @@ struct ContentView: View {
         }
         .task {
             TrashStore.purgeExpired()
+            // 存储不安全（v5.14.2）：启动先弹窗拦一道（红条常驻、
+            // 记账入口另有整页阻断，这里负责把话说到用户眼前）
+            if cloudSync.storageUnsafe {
+                showStorageAlert = true
+            }
             refreshWidgetSummary()
             checkQuickRecord()
             checkShareImport()
@@ -290,6 +313,20 @@ struct ContentView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(shareImportResultText)
+        }
+        // 存储不安全阻断弹窗（v5.14.2）：口径定版——先导出备份、
+        // 再联系支持；修好之前记的账关掉 App 就会丢
+        .alert("数据现在存不住", isPresented: $showStorageAlert) {
+            Button("去导出备份") { tabSelection = 3 }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("数据现在存不住，先导出备份并联系支持。修好之前记的账，关掉 App 就会丢。")
+        }
+        // 搁浅数据救援回执（v5.14.2）：真找回才弹，没找到安静无打扰
+        .alert("找回数据", isPresented: rescueAlertBinding) {
+            Button("好", role: .cancel) { cloudSync.dismissRescueReceipt() }
+        } message: {
+            Text(cloudSync.rescueReceipt ?? "")
         }
         .sheet(item: $deepLinkBlessing) { blessing in
             BlessingPlayerView(blessing: blessing)

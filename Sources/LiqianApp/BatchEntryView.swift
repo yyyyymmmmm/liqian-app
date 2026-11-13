@@ -253,6 +253,8 @@ struct BatchEntryView: View {
                 }
             }
         }
+        // 存储不安全时整页阻断（v5.14.2，见 StorageGuard）
+        .storageBlockGuard()
     }
 
     /// 实时汇总条（两种录入模式通用）：本礼簿已记笔数/合计/最近一笔，
