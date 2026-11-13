@@ -74,4 +74,51 @@ final class StoreLockGuardTests: XCTestCase {
                 "\(file) 必须挂存储阻断守卫")
         }
     }
+
+    /// v5.14.3 门禁收口：带 CloudKit 选项的容器构造只许出现在
+    /// CloudSync.swift（唯一入口 makeCloudKitContainer 内部）；
+    /// Sources 下任何其他文件出现 cloudKitDatabase: .private 即回潮
+    /// ——无 entitlement 直建是不可捕获异常，v5.14.2 救援曾因此装机必崩
+    func testCloudKitConstructionOnlyBehindGateway() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourcesDir = root.appendingPathComponent("Sources")
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourcesDir, includingPropertiesForKeys: nil
+        ) else {
+            throw XCTSkip("仓库源码不在预期路径，守卫跳过")
+        }
+        var checked = 0
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            if url.lastPathComponent == "CloudSync.swift" { continue }
+            let text = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertFalse(
+                text.contains("cloudKitDatabase: .private"),
+                "\(url.lastPathComponent) 不得直接构造 CloudKit 容器，必须走 CloudSyncManager.makeCloudKitContainer")
+            checked += 1
+        }
+        XCTAssertGreaterThan(checked, 0, "守卫必须真扫到文件（防空转假绿）")
+        let cloud = try repoSource("Sources/LiqianApp/CloudSync.swift")
+        XCTAssertTrue(cloud.contains("func makeCloudKitContainer"), "唯一入口必须在位")
+        XCTAssertTrue(cloud.contains("hasCloudKitEntitlement()"), "入口内必须先过 entitlement 门禁")
+        let rescue = try repoSource("Sources/LiqianApp/StoreRescue.swift")
+        XCTAssertTrue(rescue.contains("makeCloudKitContainer"), "救援的 CloudKit 候选必须经唯一入口")
+        XCTAssertTrue(rescue.contains("allowCloudKit"), "救援必须先过调用方的门禁判定")
+    }
+
+    /// v5.14.3 救援出启动关键路径＋防死循环：触发收敛到
+    /// CloudSyncManager.runRescueIfNeeded、由 ContentView 首帧后
+    /// .task 调用；开扫前先写尝试计数（storeRescueAttempts）
+    func testRescueOffLaunchPathWithAttemptCap() throws {
+        let cloud = try repoSource("Sources/LiqianApp/CloudSync.swift")
+        XCTAssertTrue(cloud.contains("storeRescueAttempts"), "救援尝试计数键必须在位（开扫前先写）")
+        XCTAssertTrue(cloud.contains("func runRescueIfNeeded"), "救援触发必须收敛到专用方法")
+        XCTAssertTrue(cloud.contains("rescueMaxAttempts"), "尝试上限必须在位（防每启必崩死循环）")
+        let content = try repoSource("Sources/LiqianApp/ContentView.swift")
+        XCTAssertTrue(
+            content.contains("cloudSync.runRescueIfNeeded()"),
+            "救援必须由 ContentView 首帧后 .task 触发，不许回 init")
+    }
 }

@@ -64,7 +64,8 @@ struct ContentView: View {
     /// 「去导出备份」直达「我的」Tab；记账入口另有整页阻断兜底
     @State private var showStorageAlert = false
 
-    /// 救援回执弹窗绑定（v5.14.2）：真找回数据才有值，关掉即销
+    /// 救援回执弹窗绑定（v5.14.2；v5.14.3 起救援在首帧后跑，
+    /// 回执随之在首帧后才可能置位，呈现口径不变）
     private var rescueAlertBinding: Binding<Bool> {
         Binding(
             get: { cloudSync.rescueReceipt != nil },
@@ -207,6 +208,10 @@ struct ContentView: View {
             checkShareImport()
             checkShortcutPending()
             calibrateReminders()
+            // 搁浅数据救援（v5.14.3）：首帧之后才跑，不在启动关键
+            // 路径上；门禁与尝试计数防死循环都在 CloudSyncManager
+            // .runRescueIfNeeded 内部，回执仍走 cloudSync.rescueReceipt
+            cloudSync.runRescueIfNeeded()
             // 宾客回执（v5.12）：冷启动先同步一次（锁屏只盖界面，
             // 同步本身只拉回执元数据落库，不展示）
             await GuestSyncCenter.shared.syncAll(in: modelContext)

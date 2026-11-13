@@ -15,6 +15,14 @@ import os
 /// - 与主店同一物理文件的候选跳过（同店重开，读到的就是主店自己）；
 /// - 全部候选扫完才统一 save 一次；save 失败返回 completed=false，
 ///   调用方不置救援完成标志，下次启动重试（按 ID 去重，重试安全）。
+/// - CloudKit 候选只许经全仓唯一入口 CloudSyncManager
+///   .makeCloudKitContainer 建（v5.14.3 收口，入口内含 entitlement
+///   门禁），且调用方判定门关着（allowCloudKit=false）时直接跳过：
+///   无 entitlement 强建 CloudKit 容器是不可捕获异常，do/catch
+///   接不住——v5.14.2 本文件直建正是装机每启必崩的崩点。
+/// - 触发时机自 v5.14.3 起在 ContentView 首帧之后（调用方
+///   CloudSyncManager.runRescueIfNeeded 承接尝试计数防死循环），
+///   不压启动关键路径。
 enum StoreRescue {
     private static let logger = Logger(subsystem: "site.didichou.liqian", category: "store")
 
@@ -25,7 +33,7 @@ enum StoreRescue {
     }
 
     @MainActor
-    static func run(main: ModelContainer, schema: Schema) -> Outcome {
+    static func run(main: ModelContainer, schema: Schema, allowCloudKit: Bool) -> Outcome {
         var outcome = Outcome()
         let mainContext = ModelContext(main)
         guard var mainSnapshot = try? snapshot(of: mainContext) else {
@@ -34,34 +42,45 @@ enum StoreRescue {
         }
         let mainURL = main.configurations.first?.url
 
-        let candidates: [(name: String, config: ModelConfiguration)] = [
-            ("cloudKitDefault", ModelConfiguration(
-                schema: schema,
-                cloudKitDatabase: .private(CloudSyncManager.containerIdentifier))),
-            ("localDefault", ModelConfiguration(
-                schema: schema, cloudKitDatabase: .none)),
-            ("localExplicit", ModelConfiguration(
-                schema: schema, url: CloudSyncManager.localStoreURL,
-                cloudKitDatabase: .none)),
-        ]
+        // 候选只记名字、逐个现开（CloudKit 候选必须经唯一入口拿
+        // 容器，不能像本地候选这样先把配置摆出来——摆配置再直建
+        // 正是 v5.14.2 的绕门写法）
+        let candidateNames = ["cloudKitDefault", "localDefault", "localExplicit"]
 
         var insertedAny = false
-        for candidate in candidates {
+        for name in candidateNames {
             // 显式 URL 候选文件不存在就不必开（开了只是造一个空文件）；
             // 主店正是它时更不用开。默认位置两候选无法预知路径，开后比对。
-            if candidate.name == "localExplicit" {
+            if name == "localExplicit" {
                 if mainURL == CloudSyncManager.localStoreURL { continue }
                 if !FileManager.default.fileExists(atPath: CloudSyncManager.localStoreURL.path) { continue }
             }
             let container: ModelContainer
-            do {
-                container = try ModelContainer(for: schema, configurations: [candidate.config])
-            } catch {
-                // 候选打不开（如重签环境下 CloudKit 容器创建被拒）：
-                // 记一行日志跳过，不挡其余候选，更不挡启动
-                logger.error(
-                    "rescue candidate \(candidate.name, privacy: .public) open failed: \(error.localizedDescription, privacy: .public)")
-                continue
+            if name == "cloudKitDefault" {
+                // 门禁：调用方判定不过（无 entitlement 或锁定依据
+                // 记着 CloudKit 走不通）→ 直接跳过，连入口都不进；
+                // 进了入口也要再过探针，拒建/抛错同样跳过
+                guard allowCloudKit,
+                      let opened = CloudSyncManager.makeCloudKitContainer(schema: schema).container
+                else {
+                    logger.info("rescue candidate cloudKitDefault skipped: gateway closed")
+                    continue
+                }
+                container = opened
+            } else {
+                let config = name == "localDefault"
+                    ? ModelConfiguration(schema: schema, cloudKitDatabase: .none)
+                    : ModelConfiguration(
+                        schema: schema, url: CloudSyncManager.localStoreURL,
+                        cloudKitDatabase: .none)
+                do {
+                    container = try ModelContainer(for: schema, configurations: [config])
+                } catch {
+                    // 本地候选打不开：记一行日志跳过，不挡其余候选
+                    logger.error(
+                        "rescue candidate \(name, privacy: .public) open failed: \(error.localizedDescription, privacy: .public)")
+                    continue
+                }
             }
             if let url = container.configurations.first?.url, let mainURL, url == mainURL {
                 continue
@@ -75,14 +94,14 @@ enum StoreRescue {
                 try copy(plan: plan, from: sourceContext, into: mainContext)
             } catch {
                 logger.error(
-                    "rescue copy from \(candidate.name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    "rescue copy from \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
                 continue
             }
             insertedAny = true
             outcome.ledgersMerged += plan.ledgerIDs.count
             outcome.recordsMerged += plan.recordIDs.count
             logger.info(
-                "rescue merged from \(candidate.name, privacy: .public): ledgers=\(plan.ledgerIDs.count, privacy: .public) records=\(plan.recordIDs.count, privacy: .public)")
+                "rescue merged from \(name, privacy: .public): ledgers=\(plan.ledgerIDs.count, privacy: .public) records=\(plan.recordIDs.count, privacy: .public)")
             // 主店快照随并入更新（未 save 的插入对同 context 的 fetch
             // 可见），下一个候选按新快照去重，不会重复并入
             if let updated = try? snapshot(of: mainContext) {

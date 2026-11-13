@@ -27,8 +27,13 @@ import LiqianCore
 /// ③ CloudKit 创建错误不再被 try? 吞，进 store 日志；每次启动的
 ///    模式/依据/store 路径与大小记日志并在「我的 → 数据」显形；
 /// ④ 容器建好后做写-回读自检，失败或内存模式一律硬显形并阻断记账；
-/// ⑤ 首次启动跑一次搁浅数据救援（StoreRescue），把其他候选店面里
-///    主店没有的礼簿按 ID 去重并入，并给用户可见回执。
+/// ⑤ 搁浅数据救援（StoreRescue）把其他候选店面里主店没有的礼簿
+///    按 ID 去重并入，并给用户可见回执。救援自 v5.14.3 起移出
+///    init：ContentView 首帧后才跑、开扫前先写尝试计数、建
+///    CloudKit 容器只许走本文件唯一入口（含 entitlement 门禁）——
+///    v5.14.2 救援在 init 尾部无门禁直建 CloudKit 容器，重签无
+///    entitlement 环境触发不可捕获异常，且完成标志后写，装机
+///    每启必崩（定因见 liqian-review/v5142-crash-diag.md）。
 @MainActor
 final class CloudSyncManager: ObservableObject {
 
@@ -44,6 +49,11 @@ final class CloudSyncManager: ObservableObject {
     static let lastModeKey = "storeModeLastLaunch"
     /// 搁浅数据救援完成标志（v5.14.2）：置位后不再重跑，幂等守门
     static let rescueDoneKey = "storeRescueV5142Done"
+    /// 救援尝试计数（v5.14.3）：开扫**之前**先自增落盘——崩在半途
+    /// 计数已增，配合上限杜绝「标志后写、崩即每启必崩」死循环
+    static let rescueAttemptsKey = "storeRescueAttempts"
+    /// 救援自动尝试上限（v5.14.3）：未完成且计数达此数即停自动跑
+    static let rescueMaxAttempts = 2
 
     static let storeLogger = Logger(subsystem: "site.didichou.liqian", category: "store")
 
@@ -122,6 +132,8 @@ final class CloudSyncManager: ObservableObject {
 
     /// 容器：LiqianApp 用它挂 .modelContainer
     let container: ModelContainer
+    /// 本次启动建容器用的模型清单（救援在首帧后跑，届时复用同一份）
+    private let schema: Schema
     /// 本次启动的实际存储模式
     let storeMode: StoreMode
     /// 「我的 → 数据」的存储诊断小字（模式＋文件＋大小，启动时定版）
@@ -158,6 +170,7 @@ final class CloudSyncManager: ObservableObject {
         self.enabledAtLaunch = enabled
 
         let schema = Self.makeSchema()
+        self.schema = schema
         let previousToken = defaults.string(forKey: Self.lastModeKey)
         let outcome = Self.launch(schema: schema, enabled: enabled, defaults: defaults)
         self.container = outcome.container
@@ -169,10 +182,17 @@ final class CloudSyncManager: ObservableObject {
         let info = Self.storeInfo(for: outcome.container, emergency: outcome.emergency)
         let token = outcome.emergency ? "emergency"
             : (outcome.mode == .cloudKit ? "cloudKit" : "local")
-        self.diagnosticLine = Self.makeDiagnosticLine(
+        var diagLine = Self.makeDiagnosticLine(
             mode: outcome.mode, emergency: outcome.emergency,
             url: info.url, bytes: info.bytes, flipped: previousToken != nil && previousToken != token
         )
+        // 救援已达尝试上限且仍未完成（v5.14.3）：不再自动跑，
+        // 在诊断行显形——用户截图回传即可判读
+        if !defaults.bool(forKey: Self.rescueDoneKey),
+           defaults.integer(forKey: Self.rescueAttemptsKey) >= Self.rescueMaxAttempts {
+            diagLine += "（" + L10n.string("旧数据查找已暂停") + "）"
+        }
+        self.diagnosticLine = diagLine
         defaults.set(token, forKey: Self.lastModeKey)
         Self.storeLogger.info(
             "launch token=\(token, privacy: .public) basis=\(outcome.basis, privacy: .public) store=\(info.url?.path ?? "-", privacy: .public) bytes=\(info.bytes ?? -1) prev=\(previousToken ?? "-", privacy: .public)"
@@ -191,25 +211,11 @@ final class CloudSyncManager: ObservableObject {
             Task { await refreshAccountStatus() }
         }
 
-        // —— 搁浅数据救援：本版首次启动跑一次（内存模式不跑——并进
-        // 内存也留不住；落盘失败不置完成标志，下次启动按 ID 去重重试）
-        if !outcome.emergency, !defaults.bool(forKey: Self.rescueDoneKey) {
-            let main = outcome.container
-            Task { @MainActor in
-                let result = StoreRescue.run(main: main, schema: schema)
-                if result.completed {
-                    defaults.set(true, forKey: Self.rescueDoneKey)
-                    if result.ledgersMerged > 0 || result.recordsMerged > 0 {
-                        self.rescueReceipt = L10n.format(
-                            "找回 %lld 本礼簿、%lld 笔记录，已并入本机",
-                            result.ledgersMerged, result.recordsMerged
-                        )
-                    }
-                } else {
-                    self.storageUnsafe = true
-                }
-            }
-        }
+        // —— 搁浅数据救援不在 init 里跑（v5.14.3）：改由
+        // ContentView 首帧后 .task 调 runRescueIfNeeded()——救援
+        // 打开候选店面属于重活且有平台异常面，绝不许再压在启动
+        // 关键路径上（v5.14.2 在此派发、首候选无门禁建 CloudKit
+        // 容器，重签环境装机每启必崩，见 crash-diag 报告）
     }
 
     deinit {
@@ -329,19 +335,37 @@ final class CloudSyncManager: ObservableObject {
         return text.contains(containerIdentifier)
     }
 
-    /// CloudKit 配置：保持平台要求形态（不显式指定 URL，平台镜像的
-    /// 店面位置由诊断行与日志暴露，见 storeInfo）。创建错误原样交出，
-    /// 不许 try? 吞（v5.14.2 定因项）。
-    private static func makeCloudContainer(schema: Schema) -> (container: ModelContainer?, error: Error?) {
+    /// 全仓唯一「建 CloudKit 容器」入口（v5.14.3 收口）：主启动链
+    /// 与搁浅救援共用，任何地方不得绕过它直接构造带
+    /// cloudKitDatabase 的容器（源码守卫单测钉死）。入口内先过
+    /// entitlement 门禁：探针不过直接拒建（entitled=false），
+    /// 绝不真去构造——无 entitlement 强建会触发不可捕获异常、
+    /// 启动即崩（v4.0 实锤；v5.14.2 救援绕过门禁直建正是装机
+    /// 每启必崩的崩点）。创建错误原样交出，不许 try? 吞。
+    /// CloudKit 配置保持平台要求形态（不显式指定 URL，平台镜像
+    /// 的店面位置由诊断行与日志暴露，见 storeInfo）。
+    static func makeCloudKitContainer(
+        schema: Schema
+    ) -> (container: ModelContainer?, entitled: Bool, error: Error?) {
+        guard hasCloudKitEntitlement() else {
+            storeLogger.error("cloudKit container refused at gateway: no entitlement")
+            return (nil, false, nil)
+        }
         let config = ModelConfiguration(
             schema: schema,
             cloudKitDatabase: .private(containerIdentifier)
         )
         do {
-            return (try ModelContainer(for: schema, configurations: [config]), nil)
+            return (try ModelContainer(for: schema, configurations: [config]), true, nil)
         } catch {
-            return (nil, error)
+            return (nil, true, error)
         }
+    }
+
+    /// 主启动链的薄封装（v5.14.3 起实现收敛到唯一入口）
+    private static func makeCloudContainer(schema: Schema) -> (container: ModelContainer?, error: Error?) {
+        let gate = makeCloudKitContainer(schema: schema)
+        return (gate.container, gate.error)
     }
 
     /// 本地配置（v5.14.2 起显式固定 URL）；文件存储再失败则内存兜底
@@ -431,6 +455,48 @@ final class CloudSyncManager: ObservableObject {
     /// 救援回执看过后关闭（ContentView 的回执弹窗用）
     func dismissRescueReceipt() {
         rescueReceipt = nil
+    }
+
+    /// 救援可否碰 CloudKit 候选（v5.14.3）：entitlement 门禁探针不过、
+    /// 或本次锁定依据本身就记着 CloudKit 走不通（noEntitlement /
+    /// cloudKitCreateFailed）时关门——救援只扫本地候选，绝不许
+    /// 绕开门禁（v5.14.2 崩点正是救援无门禁直建 CloudKit 容器）
+    private var rescueCloudKitAllowed: Bool {
+        guard Self.hasCloudKitEntitlement() else { return false }
+        return launchBasis != Basis.noEntitlement.rawValue
+            && launchBasis != Basis.cloudKitCreateFailed.rawValue
+    }
+
+    /// 搁浅数据救援触发点（v5.14.3 起由 ContentView 首帧后 .task
+    /// 调用，不再压在 init 的启动关键路径上）：
+    /// - 内存模式不跑（并进内存也留不住，口径同 v5.14.2）；
+    /// - **开扫之前**先把尝试计数自增落盘：崩在半途计数已增、
+    ///   完成标志未置，下次启动按计数判是否还自动跑；计数达
+    ///   上限且未完成 → 不再自动跑（诊断行显形），杜绝每启必崩；
+    /// - 跑完才写完成标志；落盘失败不置标志，按 ID 去重下次重试；
+    /// - 键兼容 v5.14.2 已装机环境：那边只可能写过 done（崩在
+    ///   半途则什么都没写），attempts 键缺失按 0 读，容忍半写。
+    func runRescueIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !isEmergencyStorage else { return }
+        guard !defaults.bool(forKey: Self.rescueDoneKey) else { return }
+        let attempts = defaults.integer(forKey: Self.rescueAttemptsKey)
+        guard attempts < Self.rescueMaxAttempts else { return }
+        defaults.set(attempts + 1, forKey: Self.rescueAttemptsKey)
+        let result = StoreRescue.run(
+            main: container, schema: schema,
+            allowCloudKit: rescueCloudKitAllowed)
+        if result.completed {
+            defaults.set(true, forKey: Self.rescueDoneKey)
+            if result.ledgersMerged > 0 || result.recordsMerged > 0 {
+                rescueReceipt = L10n.format(
+                    "找回 %lld 本礼簿、%lld 笔记录，已并入本机",
+                    result.ledgersMerged, result.recordsMerged
+                )
+            }
+        } else {
+            storageUnsafe = true
+        }
     }
 
     // MARK: - 账号探测与同步事件
