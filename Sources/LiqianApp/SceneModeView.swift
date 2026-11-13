@@ -521,7 +521,14 @@ struct SceneModeView: View {
                 date: LiqianDate.todayString()
             )
         )
-        try? modelContext.save()
+        // v5.14.1：落库失败必须当场显形——不进本场名单、不播报、
+        // 姓名金额原样保留可重按（审计 A5：现场最怕台上报了数账上没有）
+        guard SaveSupport.attempt(modelContext, onFailure: { errorText = $0 }) else {
+            errorTrigger += 1
+            isSaving = false
+            return
+        }
+        SaveSupport.rememberLedger(ledger.id)
         session.append(SceneEntry(person: name, amountCents: cents, method: method, relation: relation))
         saveTrigger += 1
         if announceEnabled {

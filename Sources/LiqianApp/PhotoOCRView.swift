@@ -145,9 +145,13 @@ struct PhotoOCRView: View {
     @State private var skippedCount = 0
     @State private var ocrLines: [String] = []
     @State private var errorText: String?
+    /// 整批日期（v5.14.1）：确认页可选，一批一个日期，默认今天；
+    /// 识别对象多为往年纸质旧礼单，日期在这里改对再导入
+    @State private var batchDate = Date()
     @State private var isEnhancing = false
     @State private var showAIGuide = false
     @State private var saveTrigger = 0
+    @State private var errorTrigger = 0
 
     private var isBai: Bool { ledger.isBai }
 
@@ -193,6 +197,7 @@ struct PhotoOCRView: View {
                 }
             }
             .sensoryFeedback(.success, trigger: saveTrigger)
+            .sensoryFeedback(.warning, trigger: errorTrigger)
             .alert("AI 还没准备好", isPresented: $showAIGuide) {
                 Button("去设置") {
                     NotificationCenter.default.post(name: .liqianOpenAISettings, object: nil)
@@ -294,6 +299,7 @@ struct PhotoOCRView: View {
                     .font(.footnote)
                     .foregroundStyle(stone)
             }
+            DatePicker("记录日期", selection: $batchDate, displayedComponents: .date)
             if let errorText {
                 Text(errorText)
                     .font(.footnote)
@@ -559,7 +565,8 @@ struct PhotoOCRView: View {
         """
 
     /// 一次导入：沿用批量补录的落库口径——方向收礼、关系默认朋友、
-    /// 方式默认现金、日期今天（AI 增强带来的关系同理带入）
+    /// 方式默认现金、日期用整批所选（v5.14.1，默认今天；AI 增强带来
+    /// 的关系同理带入）
     private func importAll() {
         var parsed: [(name: String, cents: Int, relation: String?)] = []
         for row in rows {
@@ -580,12 +587,18 @@ struct PhotoOCRView: View {
                     amountCents: item.cents,
                     direction: LiqianConstants.received,
                     method: "现金",
-                    date: LiqianDate.todayString()
+                    date: LiqianDate.string(from: batchDate)
                 )
             )
         }
-        try? modelContext.save()
+        // v5.14.1：失败显形在确认页、不报数不关页，核对内容原样
+        // 保留可重试（审计 A5）；成功才回写上次使用
+        guard SaveSupport.attempt(modelContext, onFailure: { errorText = $0 }) else {
+            errorTrigger += 1
+            return
+        }
         saveTrigger += 1
+        SaveSupport.rememberLedger(ledger.id)
         onSaved(parsed.count)
         dismiss()
     }

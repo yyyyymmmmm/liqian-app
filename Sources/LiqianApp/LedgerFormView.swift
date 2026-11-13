@@ -24,6 +24,9 @@ struct LedgerFormView: View {
     @State private var verifier: String
     @State private var location: String
     @State private var titleError: String?
+    /// 保存落库失败的显形文案（v5.14.1）：save 不再静默，失败留在
+    /// 表单里明说、内容不丢（见 SaveSupport）
+    @State private var saveError: String?
     @State private var saveTrigger = 0
     @State private var errorTrigger = 0
 
@@ -70,6 +73,11 @@ struct LedgerFormView: View {
                     }
                     if let titleError {
                         Text(titleError)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.danger)
+                    }
+                    if let saveError {
+                        Text(saveError)
                             .font(.footnote)
                             .foregroundStyle(Palette.danger)
                     }
@@ -168,7 +176,13 @@ struct LedgerFormView: View {
                 )
             )
         }
-        try? modelContext.save()
+        // v5.14.1：保存失败必须显形——不关表单、内容原样保留可重试
+        //（审计 A5：旧 try? 静默吞失败是「建了簿再打开没有」的成立路径）
+        guard SaveSupport.attempt(modelContext, onFailure: { saveError = $0 }) else {
+            errorTrigger += 1
+            return
+        }
+        saveError = nil
         saveTrigger += 1
         dismiss()
     }

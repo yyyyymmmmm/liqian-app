@@ -99,7 +99,10 @@ struct GuestReceiptsView: View {
                     ledger: ledger,
                     receiptName: receipt.name,
                     receiptAmountCents: cents,
-                    receiptNote: GuestReceiptMapping.recordNote(blessing: receipt.blessing)
+                    receiptNote: GuestReceiptMapping.recordNote(blessing: receipt.blessing),
+                    // v5.14.1：入账日期默认回执的服务器提交日，解析
+                    // 不了才回退今天（审计 B-3）
+                    receiptDate: receipt.createdAtDate ?? Date()
                 ) { record in
                     markBooked(receipt, recordID: record.id)
                 }

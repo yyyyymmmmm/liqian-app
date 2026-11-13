@@ -22,6 +22,10 @@ import LiqianDesign
 ///
 /// 保存语义与校验与旧版一致，未动：姓名必填、金额 > 0、
 /// 防重复提交 isSaving、落印等待 1.05s 后关闭（保存并继续则清字段续记）。
+///
+/// v5.14.1 热修：①保存走 SaveSupport——失败显形、不装成功（审计
+/// A5）；②日期行提出补充信息、到主表单明面，固定簿默认礼簿事由
+/// 日、回执入账默认回执提交日（审计 B）。
 struct RecordFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -70,7 +74,8 @@ struct RecordFormView: View {
     /// 输入焦点（v5.14 起三面全走系统键盘，焦点只管键盘归属）
     enum Field { case person, amount, note }
 
-    /// 从账本新建
+    /// 从账本新建（v5.14.1：日期默认这本礼簿的事由日——在礼簿里
+    /// 记账，记的绝大多数就是事由当天那笔，默认值先替用户落对）
     init(ledger: Ledger) {
         fixedLedger = ledger
         existing = nil
@@ -80,7 +85,7 @@ struct RecordFormView: View {
         _relation = State(initialValue: "朋友")
         _direction = State(initialValue: LiqianConstants.received)
         _method = State(initialValue: "现金")
-        _date = State(initialValue: Date())
+        _date = State(initialValue: LiqianDate.date(from: ledger.date))
         _status = State(initialValue: LiqianConstants.sentStatus)
         _note = State(initialValue: "")
         _showSupplements = State(initialValue: false)
@@ -121,11 +126,14 @@ struct RecordFormView: View {
     /// 宾客回执入账（v5.12）：账本固定、方向收礼，姓名/金额/备注按回执
     /// 预填（备注＝来源＋祝福，见 GuestReceiptMapping.recordNote），
     /// 补充信息默认展开——备注是这笔的来历，用户保存前应当看得见。
+    /// v5.14.1：日期默认回执的服务器提交日（receiptDate，调用方传
+    /// GuestReceipt.createdAtDate），不再默认今天。
     init(
         ledger: Ledger,
         receiptName: String,
         receiptAmountCents: Int,
         receiptNote: String,
+        receiptDate: Date,
         onSavedNewRecord: @escaping (GiftRecord) -> Void
     ) {
         fixedLedger = ledger
@@ -136,7 +144,7 @@ struct RecordFormView: View {
         _relation = State(initialValue: "朋友")
         _direction = State(initialValue: LiqianConstants.received)
         _method = State(initialValue: "现金")
-        _date = State(initialValue: Date())
+        _date = State(initialValue: receiptDate)
         _status = State(initialValue: LiqianConstants.sentStatus)
         _note = State(initialValue: receiptNote)
         _showSupplements = State(initialValue: true)
@@ -347,6 +355,7 @@ struct RecordFormView: View {
                 replyHintRow(advice)
             }
             nameBlock
+            dateRow
             supplementsBlock
         }
         .overlay {
@@ -539,6 +548,17 @@ struct RecordFormView: View {
         }
     }
 
+    // MARK: - 日期行（v5.14.1 提出补充信息，主表单明面）
+    // 不是婚礼当天给的人也要能当场改对日子，不必先展开折叠区找；
+    // 默认值口径见各 init（固定簿＝事由日／全局＝今天／回执＝提交日）
+
+    private var dateRow: some View {
+        labeledRow("日期") {
+            DatePicker("日期", selection: $date, displayedComponents: .date)
+                .labelsHidden()
+        }
+    }
+
     // MARK: - 补充信息：默认收起，展开为卡内原生行
 
     private var supplementsBlock: some View {
@@ -609,10 +629,6 @@ struct RecordFormView: View {
                             }
                         }
                     }
-                    labeledRow("日期") {
-                        DatePicker("日期", selection: $date, displayedComponents: .date)
-                            .labelsHidden()
-                    }
                     HStack(spacing: LiqianMetrics.spacingSM) {
                         Text("备注")
                             .foregroundStyle(Palette.ink)
@@ -679,7 +695,12 @@ struct RecordFormView: View {
             existing.note = trimmedNote
             existing.date = LiqianDate.string(from: date)
             existing.status = finalStatus
-            try? modelContext.save()
+            // v5.14.1：失败显形、不关页（审计 A5）
+            guard SaveSupport.attempt(modelContext, onFailure: { formError = $0 }) else {
+                isSaving = false
+                errorTrigger += 1
+                return
+            }
             saveTrigger += 1
             dismiss()
         } else {
@@ -695,7 +716,13 @@ struct RecordFormView: View {
                 status: finalStatus
             )
             modelContext.insert(newRecord)
-            try? modelContext.save()
+            // v5.14.1：save 真成功才许回调回执/回写上次使用/落印——
+            // 失败显形在表单里、内容不丢、不关页（审计 A5）
+            guard SaveSupport.attempt(modelContext, onFailure: { formError = $0 }) else {
+                isSaving = false
+                errorTrigger += 1
+                return
+            }
             // 宾客回执入账（v5.12）：落库成功即回调，回执据此置已处理并关联
             onSavedNewRecord?(newRecord)
             // 上次使用回写（v5.8.1）：新建落库成功即记住这本，
@@ -755,7 +782,11 @@ struct RecordFormView: View {
                 )
             )
         }
-        try? modelContext.save()
+        guard SaveSupport.attempt(modelContext, onFailure: { formError = $0 }) else {
+            isSaving = false
+            errorTrigger += 1
+            return
+        }
         // 上次使用回写（v5.8.1）：与 save() 新建同口径
         lastUsedLedgerIDRaw = lid.uuidString
         saveTrigger += 1
@@ -790,7 +821,11 @@ struct RecordFormView: View {
         guard let existing else { return }
         TrashStore.archive(record: existing)
         modelContext.delete(existing)
-        try? modelContext.save()
+        // v5.14.1：删除落库失败同样不许装成功（不关页、表单内显形）
+        guard SaveSupport.attempt(modelContext, onFailure: { formError = $0 }) else {
+            errorTrigger += 1
+            return
+        }
         deleteTrigger += 1
         dismiss()
     }

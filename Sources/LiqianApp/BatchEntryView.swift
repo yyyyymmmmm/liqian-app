@@ -4,8 +4,9 @@ import LiqianCore
 import LiqianDesign
 
 /// 批量补录（FR-02.1）：照着纸质旧礼簿一行行搬进来。
-/// 每行只填姓名+金额，关系默认「朋友」、方式默认「现金」、日期默认今天，
-/// 记完后可在单笔里再改。随礼按已送出记（补录的都是已经发生的事）。
+/// 每行只填姓名+金额，关系默认「朋友」、方式默认「现金」、日期默认
+/// 今天、整批可改（v5.14.1），记完后可在单笔里再改。随礼按已送出
+/// 记（补录的都是已经发生的事）。
 /// 行校验按 form-design 口径：空行跳过、半截行定位到行号就地报错。
 struct BatchEntryView: View {
     let ledger: Ledger
@@ -35,6 +36,9 @@ struct BatchEntryView: View {
         return all[min(target, all.count - 1)]
     }
     @State private var direction = LiqianConstants.received
+    /// 整批日期（v5.14.1）：三个通道（逐行/粘贴/AI）共用，一批一个
+    /// 日期，默认今天；补录旧礼簿时改成当时的日子，整批同日落库
+    @State private var batchDate = Date()
     @State private var rows: [Row] = (0..<4).map { _ in Row() }
     @State private var errorRow: Int?
     @State private var errorMessage: String?
@@ -129,6 +133,13 @@ struct BatchEntryView: View {
                     .pickerStyle(.segmented)
                 }
 
+                Section {
+                    DatePicker("记录日期", selection: $batchDate, displayedComponents: .date)
+                    Text("这一批都记到这天（默认今天）。补录旧礼簿时，改成当时的日子就行。")
+                        .font(.footnote)
+                        .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
+                }
+
                 if mode == .paste {
                     pasteSections
                 } else if mode == .ai {
@@ -142,7 +153,7 @@ struct BatchEntryView: View {
                     .pickerStyle(.segmented)
                     Toggle("大字模式", isOn: $bigMode)
                         .tint(isBai ? Palette.baiPrimary : Palette.primary)
-                    Text("按旧礼簿逐行填写。关系默认「朋友」、方式默认「现金」、日期为今天，保存后可逐笔修改。")
+                    Text("按旧礼簿逐行填写。关系默认「朋友」、方式默认「现金」、日期用上方选的整批日期，保存后可逐笔修改。")
                         .font(.footnote)
                         .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
                     if errorRow == nil, let errorMessage {
@@ -310,12 +321,17 @@ struct BatchEntryView: View {
                     person: item.person,
                     amountCents: item.cents,
                     direction: direction,
-                    date: LiqianDate.todayString()
+                    date: LiqianDate.string(from: batchDate)
                 )
             )
         }
-        try? modelContext.save()
+        // v5.14.1：失败显形、不报数不关页（审计 A5）；成功才回写上次使用
+        guard SaveSupport.attempt(modelContext, onFailure: { errorMessage = $0 }) else {
+            errorTrigger += 1
+            return
+        }
         saveTrigger += 1
+        SaveSupport.rememberLedger(ledger.id)
         onSaved(out.count)
         dismiss()
     }
@@ -325,7 +341,7 @@ struct BatchEntryView: View {
     @ViewBuilder
     private var pasteSections: some View {
         Section {
-            Text("把旧礼簿的文字整段粘进来，一行一笔：「姓名 金额 关系」，关系可不写。粘贴导入一律按收礼记（别人给我），关系没写先按「朋友」、方式「现金」、日期今天，记完点开单笔可以再改。")
+            Text("把旧礼簿的文字整段粘进来，一行一笔：「姓名 金额 关系」，关系可不写。粘贴导入一律按收礼记（别人给我），关系没写先按「朋友」、方式「现金」、日期用整批日期，记完点开单笔可以再改。")
                 .font(.footnote)
                 .foregroundStyle(isBai ? Palette.baiStone : Palette.stone)
             TextEditor(text: $pasteText)
@@ -425,7 +441,7 @@ struct BatchEntryView: View {
                         relation: relation ?? "朋友",
                         amountCents: cents,
                         direction: LiqianConstants.received,
-                        date: LiqianDate.todayString()
+                        date: LiqianDate.string(from: batchDate)
                     )
                 )
                 imported += 1
@@ -434,8 +450,13 @@ struct BatchEntryView: View {
             }
         }
         guard imported > 0 else { return }
-        try? modelContext.save()
+        // v5.14.1：失败显形在粘贴区消息行，不报已导入（审计 A5）
+        guard SaveSupport.attempt(modelContext, onFailure: { pasteMessage = $0 }) else {
+            errorTrigger += 1
+            return
+        }
         saveTrigger += 1
+        SaveSupport.rememberLedger(ledger.id)
         if failedRaws.isEmpty {
             onSaved(imported)
             dismiss()
@@ -662,7 +683,7 @@ struct BatchEntryView: View {
                         amountCents: cents,
                         direction: LiqianConstants.received,
                         method: method ?? "现金",
-                        date: LiqianDate.todayString()
+                        date: LiqianDate.string(from: batchDate)
                     )
                 )
                 imported += 1
@@ -671,8 +692,13 @@ struct BatchEntryView: View {
             }
         }
         guard imported > 0 else { return }
-        try? modelContext.save()
+        // v5.14.1：失败显形在 AI 区消息行，不报已导入（审计 A5）
+        guard SaveSupport.attempt(modelContext, onFailure: { aiMessage = $0 }) else {
+            errorTrigger += 1
+            return
+        }
         saveTrigger += 1
+        SaveSupport.rememberLedger(ledger.id)
         if remaining.isEmpty {
             onSaved(imported)
             dismiss()

@@ -39,6 +39,10 @@ struct AdvisorView: View {
     /// 历史恢复在持有者 init 里完成，不再有视图侧 loadedHistory。
     @EnvironmentObject private var session: AdvisorSession
     @State private var showClearConfirm = false
+    /// 入账落库失败的显形（v5.14.1）：save 没成功时草稿卡不许置
+    /// 「已入账」，失败文案弹给用户、草稿保持待确认可重试（审计 A5）
+    @State private var saveErrorMessage: String?
+    @State private var showSaveError = false
     /// 语音面板（v5.6）：点麦克风开会话＋面板，完成回填输入框、取消不落字
     @State private var showVoicePanel = false
     /// 回执卡点开的记录详情（既有 RecordFormView 编辑形态，与礼簿详情同口径）
@@ -218,6 +222,11 @@ struct AdvisorView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("问答历史会从本机删除，账本记录不受影响。")
+        }
+        .alert("没存上", isPresented: $showSaveError) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "")
         }
         .onAppear {
             // 出现基线落定（v5.11.2）：此刻 lastSettledID 指向的回答
@@ -964,7 +973,13 @@ struct AdvisorView: View {
             status: LiqianConstants.sentStatus
         )
         modelContext.insert(record)
-        try? modelContext.save()
+        // v5.14.1：落库真成功才置「已入账」并回写上次使用——失败弹
+        // 显形、草稿卡保持待确认可重试（审计 A5）
+        guard SaveSupport.attempt(modelContext, onFailure: { msg in
+            saveErrorMessage = msg
+            showSaveError = true
+        }) else { return }
+        SaveSupport.rememberLedger(ledger.id)
         session.updateDraft(messageID: messageID, draftID: draft.draftID) {
             $0.state = .saved
             $0.chosenLedgerID = ledger.id
