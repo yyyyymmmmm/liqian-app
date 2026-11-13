@@ -85,3 +85,16 @@ List 单元格的命中是行级的：同一行里塞多个控件，点选由行
 装机后一套验三件：**点金额出数字键盘、点关系才出关系、六预设逐一
 对值**。另两处观感待真机回执：拆行后纸面上下缘内边距变化（16→8＋
 组间距）、落印在新宿主（整组）上的落点位置。
+
+## 验收追记（实数）
+
+- CI run **43451063721**（head b872222）：attempt 1 经 API 实查
+  `completed/success`。全程稀疏单发查询，未再触发限流。
+- 单测（run 日志回收）：**Executed 407 tests, with 0 failures**——
+  与预期 400＋7＝407 精确对位，`** TEST SUCCEEDED **`。
+- IPA：`liqian-native-unsigned.ipa`，**4,516,731 字节**，md5
+  `02324a8887d59c6911b5df00130fb312`，未签名、万能签覆盖安装。
+- 解包验：App 与 Widget（LiqianWidget.appex）的 Info.plist 均为
+  **5.14.4 / 85**；PlugIns 仅 LiqianWidget.appex，**无 LiqianShare.appex**。
+- 真机第一验收线：覆盖装后在记一笔里验三件套——点金额出数字键盘、
+  点关系才出关系、六预设（100/200/300/500/800/1000）逐一点击逐一对值。
