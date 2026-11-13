@@ -363,7 +363,10 @@ struct SceneModeView: View {
 
     // MARK: 登记卡：姓名 + 金额（大字）+ 常用金额/方式/关系 chips + 大登记钮
 
-    private static let quickAmounts = [100, 200, 300, 500, 800, 1000, 2000]
+    // v5.14.4：收敛 Core 单一数据源（与记一笔同源＋2000 档）。
+    // 本处容器为 ScrollView＋chips .bordered 样式，命中本就逐颗精确，
+    // 不受记一笔 Form 单元格行级路由之害——此处仅做数据源收敛。
+    private static let quickAmounts = PresetAmounts.scene
 
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: LiqianMetrics.spacingM) {

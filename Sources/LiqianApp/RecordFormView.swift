@@ -219,16 +219,54 @@ struct RecordFormView: View {
                 Section {
                     directionSegmented
                 }
-                Section {
-                    formCard
+                // 主表单（v5.14.4 拆行）：v5.14 把整卡塞进 Form 的单个
+                // 单元格后，单元格的行级命中路由接管了卡内一切点选——
+                // 同行多颗默认样式 Button 的点选被吞并、最终落末位值
+                // （快捷金额点哪个都成 1000）；与金额同行的关系 Picker
+                // 又抢走金额区的点选（点金额弹关系）。改逐块独占一行：
+                // 行间共用纸面行底＋隐藏分隔线，维持「一张纸」观感，
+                // 命中各归其行。落印宿主随之改挂本组整面。
+                Group {
+                    Section {
+                        if let formError {
+                            Text(formError)
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(Palette.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if needsLedgerPicker {
+                            ledgerPickerRow
+                        }
+                        amountBlock
+                        amountChips
+                        if let advice = replyAdvice {
+                            replyHintRow(advice)
+                        }
+                        nameBlock
+                        dateRow
+                        supplementsToggleRow
+                        if showSupplements {
+                            supplementsRows
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(
+                        top: LiqianMetrics.spacingS, leading: LiqianMetrics.cardPadding,
+                        bottom: LiqianMetrics.spacingS, trailing: LiqianMetrics.cardPadding
+                    ))
+                    .listRowBackground(
+                        (effectiveLedger?.isBai ?? false) ? Palette.baiCard : Palette.card
+                    )
+                    .listRowSeparator(.hidden)
                 }
-                .listRowInsets(EdgeInsets(
-                    top: LiqianMetrics.cardPadding, leading: LiqianMetrics.cardPadding,
-                    bottom: LiqianMetrics.cardPadding, trailing: LiqianMetrics.cardPadding
-                ))
-                .listRowBackground(
-                    (effectiveLedger?.isBai ?? false) ? Palette.baiCard : Palette.card
-                )
+                .overlay {
+                    // 落印收尾：印盖在纸面中央偏右（全屏居中是旧版位置，纸在哪印落哪）
+                    SealStampOverlay(
+                        char: sealText,
+                        bai: effectiveLedger?.isBai ?? false,
+                        presented: showSeal
+                    )
+                    .offset(x: 44)
+                }
                 // 活礼谱（v4.2）：签名/祝福挂具体一笔，只在编辑态出现
                 // （新建的笔先保存拿到 id 才有处可挂）；其自有表面保留，
                 // 以透明行底嵌进分组列表（与旧滚动版的卡片陈列同观感）
@@ -338,38 +376,9 @@ struct RecordFormView: View {
         .pickerStyle(.segmented)
     }
 
-    // MARK: - 主表单：落印盖在其上（v5.14 起由 Form Section 承载表面）
-
-    private var formCard: some View {
-        VStack(spacing: LiqianMetrics.spacingM) {
-            if let formError {
-                Text(formError)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Palette.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if needsLedgerPicker {
-                ledgerPickerRow
-            }
-            amountBlock
-            amountChips
-            if let advice = replyAdvice {
-                replyHintRow(advice)
-            }
-            nameBlock
-            dateRow
-            supplementsBlock
-        }
-        .overlay {
-            // 落印收尾：印盖在表单中央偏右（全屏居中是旧版位置，纸在哪印落哪）
-            SealStampOverlay(
-                char: sealText,
-                bai: effectiveLedger?.isBai ?? false,
-                presented: showSeal
-            )
-            .offset(x: 44)
-        }
-    }
+    // MARK: - 主表单各块（v5.14.4 起逐块独占 Form 一行，组装在 body 的
+    // 主表单 Section 里；旧「整卡一个 VStack 塞进单个单元格」的 formCard
+    // 已退役——单元格行级命中路由吞点选是双症状同根，守卫钉死不许回潮）
 
     /// 选账本行（仅人物/全局入口）：卡内第一行，原生标签行＋菜单 Picker
     @ViewBuilder
@@ -432,12 +441,16 @@ struct RecordFormView: View {
     }
 
     /// 快捷金额：圆角矩形扁平 chips（primaryTint 底＋primary 字），
-    /// 禁止圆形、禁止深红棕——夜晚主题下也不出浑浊色（走令牌即达标）
+    /// 禁止圆形、禁止深红棕——夜晚主题下也不出浑浊色（走令牌即达标）。
+    /// v5.14.4：列表收敛 Core PresetAmounts 单一数据源；每颗小签必须
+    /// .borderless 自带命中——默认样式 Button 在 Form 行内是整行级
+    /// 命中，同行多颗会被行级路由吞并落末位值（点哪个都成 1000 的
+    /// 定因之一，另一个是整卡单单元格，已在 body 拆行）
     private var amountChips: some View {
         HStack(spacing: LiqianMetrics.spacingS) {
-            ForEach([100, 200, 300, 500, 800, 1000], id: \.self) { v in
+            ForEach(PresetAmounts.recordForm, id: \.self) { v in
                 Button {
-                    amountText = "\(v)"
+                    amountText = PresetAmounts.amountText(forPreset: v)
                     amountError = nil
                 } label: {
                     Text("\(v)")
@@ -449,6 +462,7 @@ struct RecordFormView: View {
                             in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                         )
                 }
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -529,6 +543,8 @@ struct RecordFormView: View {
                                     in: RoundedRectangle(cornerRadius: LiqianMetrics.controlCorner)
                                 )
                             }
+                            // v5.14.4：同行多颗 Button 必须自带命中（同小签口径）
+                            .buttonStyle(.borderless)
                             .accessibilityLabel("选\(p.name)，\(p.relation)，共 \(p.count) 笔往来")
                         }
                     }
@@ -561,86 +577,88 @@ struct RecordFormView: View {
         }
     }
 
-    // MARK: - 补充信息：默认收起，展开为卡内原生行
+    // MARK: - 补充信息：默认收起；v5.14.4 起开关独占一行、展开内容逐行独占
 
-    private var supplementsBlock: some View {
-        VStack(spacing: LiqianMetrics.spacingSM) {
-            Button {
-                // Reduce Motion 时无动画直接展开（v4.4）；chevron 旋转随之静态切换
-                withAnimation(reduceMotion ? nil : .snappy) { showSupplements.toggle() }
-            } label: {
-                HStack(spacing: LiqianMetrics.spacingS) {
-                    Text("补充信息")
-                        .foregroundStyle(Palette.ink)
-                    Spacer()
-                    if !showSupplements {
-                        Text("\(relation) · \(method)")
-                            .font(.footnote)
-                            .foregroundStyle(Palette.sub)
-                    }
-                    Image(systemName: "chevron.down")
-                        .font(.footnote.weight(.semibold))
+    /// 补充信息开关行：独占一行，点选只归它自己（.plain 自带命中）
+    private var supplementsToggleRow: some View {
+        Button {
+            // Reduce Motion 时无动画直接展开（v4.4）；chevron 旋转随之静态切换
+            withAnimation(reduceMotion ? nil : .snappy) { showSupplements.toggle() }
+        } label: {
+            HStack(spacing: LiqianMetrics.spacingS) {
+                Text("补充信息")
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                if !showSupplements {
+                    Text("\(relation) · \(method)")
+                        .font(.footnote)
                         .foregroundStyle(Palette.sub)
-                        .rotationEffect(.degrees(showSupplements ? 180 : 0))
                 }
-                .frame(minHeight: LiqianMetrics.minTapTarget)
-                .contentShape(Rectangle())
+                Image(systemName: "chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.sub)
+                    .rotationEffect(.degrees(showSupplements ? 180 : 0))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(showSupplements ? "收起补充信息" : "展开补充信息")
+            .frame(minHeight: LiqianMetrics.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showSupplements ? "收起补充信息" : "展开补充信息")
+    }
 
-            if showSupplements {
-                VStack(spacing: LiqianMetrics.spacingSM) {
-                    if !needsLedgerPicker, let l = effectiveLedger {
-                        labeledRow("礼簿") {
-                            Text(l.title)
-                                .foregroundStyle(Palette.sub)
-                        }
-                    }
-                    labeledRow("关系") {
-                        Picker("关系", selection: $relation) {
-                            // 数据源＝关系目录（系统＋自定义）；编辑旧记录时现有关系
-                            // 若已被删除，临时并入保证选中态不丢
-                            ForEach(RelationCatalog.pickerOptions(including: relation), id: \.self) { r in
-                                Text(r).tag(r)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    labeledRow("方式") {
-                        Picker("方式", selection: $method) {
-                            ForEach(LiqianConstants.methods, id: \.self) { m in
-                                Text(m).tag(m)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    if direction == LiqianConstants.given {
-                        VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
-                            Text("状态")
-                                .foregroundStyle(Palette.ink)
-                            Picker("状态", selection: $status) {
-                                Text("已送出").tag(LiqianConstants.sentStatus)
-                                Text("待送出").tag(LiqianConstants.pendingStatus)
-                            }
-                            .pickerStyle(.segmented)
-                            if status == LiqianConstants.pendingStatus {
-                                Text("待送出记录不计入往来差额，送出后请改记为「已送出」。")
-                                    .font(.footnote)
-                                    .foregroundStyle(Palette.sub)
-                            }
-                        }
-                    }
-                    HStack(spacing: LiqianMetrics.spacingSM) {
-                        Text("备注")
-                            .foregroundStyle(Palette.ink)
-                        TextField("备注", text: $note, prompt: Text("选填，实物礼写这里，如：两瓶酒"))
-                            .focused($focus, equals: .note)
-                    }
-                    .frame(minHeight: LiqianMetrics.minTapTarget)
+    /// 补充信息展开内容（v5.14.4：逐行独占）：关系/方式 Picker 各自成行——
+    /// List 行内 Picker 的点选呈现只许发生在它自己那一行；v5.14 时它们与
+    /// 金额 TextField 同挤一个单元格，点金额会被行级路由交给关系 Picker
+    /// 呈现（症状二落点）。状态 segmented 与备注行同理各自成行。
+    @ViewBuilder
+    private var supplementsRows: some View {
+        if !needsLedgerPicker, let l = effectiveLedger {
+            labeledRow("礼簿") {
+                Text(l.title)
+                    .foregroundStyle(Palette.sub)
+            }
+        }
+        labeledRow("关系") {
+            Picker("关系", selection: $relation) {
+                // 数据源＝关系目录（系统＋自定义）；编辑旧记录时现有关系
+                // 若已被删除，临时并入保证选中态不丢
+                ForEach(RelationCatalog.pickerOptions(including: relation), id: \.self) { r in
+                    Text(r).tag(r)
+                }
+            }
+            .labelsHidden()
+        }
+        labeledRow("方式") {
+            Picker("方式", selection: $method) {
+                ForEach(LiqianConstants.methods, id: \.self) { m in
+                    Text(m).tag(m)
+                }
+            }
+            .labelsHidden()
+        }
+        if direction == LiqianConstants.given {
+            VStack(alignment: .leading, spacing: LiqianMetrics.spacingS) {
+                Text("状态")
+                    .foregroundStyle(Palette.ink)
+                Picker("状态", selection: $status) {
+                    Text("已送出").tag(LiqianConstants.sentStatus)
+                    Text("待送出").tag(LiqianConstants.pendingStatus)
+                }
+                .pickerStyle(.segmented)
+                if status == LiqianConstants.pendingStatus {
+                    Text("待送出记录不计入往来差额，送出后请改记为「已送出」。")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.sub)
                 }
             }
         }
+        HStack(spacing: LiqianMetrics.spacingSM) {
+            Text("备注")
+                .foregroundStyle(Palette.ink)
+            TextField("备注", text: $note, prompt: Text("选填，实物礼写这里，如：两瓶酒"))
+                .focused($focus, equals: .note)
+        }
+        .frame(minHeight: LiqianMetrics.minTapTarget)
     }
 
     // MARK: - 附属 Section：保存并继续（新建）／删除（编辑）
