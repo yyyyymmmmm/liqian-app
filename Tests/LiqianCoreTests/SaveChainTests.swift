@@ -163,7 +163,7 @@ final class SaveChainGuardTests: XCTestCase {
             "记一笔 @AppStorage 必须用 DefaultLedgerPicker.lastUsedKey 同键")
         let core = try repoSource("Sources/LiqianCore/DefaultLedger.swift")
         XCTAssertTrue(
-            core.contains("liqian.lastUsedLedgerID"),
+            core.contains("lastUsedKey = \"lastUsedLedgerID\""),
             "lastUsed 键字面量不得漂移（两处写入同一 UserDefaults 键）")
     }
 
