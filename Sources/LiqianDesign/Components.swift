@@ -144,6 +144,13 @@ public struct LedgerCoverCard: View {
             Text(LiqianDate.lunarString(for: ledger.date))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+            // 倒计时（v5.14.1）：距事由日文案与详情头部同口径（Core
+            // LedgerCountdown）；白事恒不显——函数内已抑制，这里只管出
+            if let countdown = LedgerCountdown.text(eventDate: ledger.date, isBai: isBai) {
+                Text(countdown)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
             if !ledger.note.isEmpty {
                 Text(ledger.note)
                     .lineLimit(1)

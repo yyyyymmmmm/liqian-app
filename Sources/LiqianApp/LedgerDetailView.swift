@@ -459,12 +459,21 @@ struct LedgerDetailView: View {
     /// 头部副标题（公历＋农历）：正常字号横排分段；无障碍大字号时改纵排，
     /// 两段各占一行完整呈现——旧实现横排 HStack 在大字号下两段互相挤压截断
     /// （PRO-AUDIT-2 真机待验遗留：详情封面副标题大字号溢出，v4.4 落地）
+    /// 倒计时（v5.14.1）：与礼簿卡副标题同口径（Core LedgerCountdown），
+    /// 白事一律不显、红事已过显「已过 N 天」
+    private var countdownText: String? {
+        LedgerCountdown.text(eventDate: ledger.date, isBai: isBai)
+    }
+
     @ViewBuilder
     private var headerSubtitle: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: LiqianMetrics.spacingXS) {
                 Text(LiqianDate.displayString(for: ledger.date))
                 Text(LiqianDate.lunarString(for: ledger.date))
+                if let countdownText {
+                    Text(countdownText)
+                }
             }
             .font(.footnote)
             .foregroundStyle(Palette.stone)
@@ -472,6 +481,9 @@ struct LedgerDetailView: View {
             HStack(spacing: LiqianMetrics.spacingXS) {
                 Text(LiqianDate.displayString(for: ledger.date))
                 Text(LiqianDate.lunarString(for: ledger.date))
+                if let countdownText {
+                    Text(countdownText)
+                }
             }
             .font(.footnote)
             .foregroundStyle(Palette.stone)
